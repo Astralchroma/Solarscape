@@ -1,0 +1,6 @@
+[package]
+name = "solarscape-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
