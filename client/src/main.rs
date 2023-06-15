@@ -1,8 +1,11 @@
 use anyhow::Result;
-use solarscape_shared::{Clientbound, DisconnectReason, PacketRead, PacketWrite, Serverbound, PROTOCOL_VERSION};
+use solarscape_shared::{
+	data::DisconnectReason::ProtocolViolation,
+	io::{PacketRead, PacketWrite},
+	Clientbound, Serverbound, PROTOCOL_VERSION,
+};
 use std::{panic, process::exit};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
-use DisconnectReason::ProtocolViolation;
 
 #[tokio::main]
 async fn main() -> Result<()> {
