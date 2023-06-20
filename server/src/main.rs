@@ -3,7 +3,7 @@ pub mod server;
 
 use crate::server::Server;
 use anyhow::Result;
-use std::{panic, process::exit, sync::Arc};
+use std::{panic, process::exit};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -14,5 +14,5 @@ async fn main() -> Result<()> {
 		exit(1);
 	}));
 
-	Arc::new(Server {}).await_connections().await
+	Server::new().await_connections().await
 }
