@@ -33,7 +33,8 @@ impl Server {
 	async fn accept_connection(self: Arc<Self>, stream: TcpStream, address: SocketAddr) {
 		if let Some(connection) = Connection::accept(stream, address).await {
 			let mut connections = self.connections.write().await;
-			connections.push(Arc::downgrade(&connection))
+			connections.push(Arc::downgrade(&connection));
+			connections.retain(|connection| connection.strong_count() != 0)
 		}
 	}
 }
