@@ -3,15 +3,20 @@ pub mod server;
 
 use crate::server::Server;
 use anyhow::Result;
-use std::{env, panic, process::exit};
+use std::{env, panic};
+use tokio_util::sync::CancellationToken;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-	// If there is a panic we should always exit immediately, tokio won't do this for us.
+	// If a Tokio task panics, Tokio will catch the panic with the intent that the caller will handle it.
+	// However, generally you shouldn't try to recover a panic, instead your goal should be to safely exit.
+	let hook_token = CancellationToken::new();
+	let token = hook_token.clone();
+
 	let default_panic = panic::take_hook();
 	panic::set_hook(Box::new(move |info| {
 		default_panic(info);
-		exit(1);
+		hook_token.cancel();
 	}));
 
 	let mut cargo = env::current_dir()?;
@@ -26,5 +31,8 @@ async fn main() -> Result<()> {
 		env::set_current_dir(data)?;
 	}
 
-	Server::new().await_connections().await
+	tokio::spawn(Server::new().await_connections());
+
+	token.cancelled_owned().await;
+	Ok(())
 }

@@ -9,3 +9,4 @@ solarscape-shared = { path = "../shared" }
 anyhow.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
