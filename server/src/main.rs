@@ -1,4 +1,5 @@
 pub mod connection;
+pub mod sector;
 pub mod server;
 
 use crate::server::Server;
@@ -34,7 +35,7 @@ async fn main() -> Result<()> {
 
 	let server_token = token.clone();
 	tokio::spawn(async move {
-		let result = Server::new().await_connections().await;
+		let result = Server::run().await;
 		server_token.cancel();
 		if let Err(error) = result {
 			eprintln!("{error:?}")
