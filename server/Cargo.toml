@@ -7,7 +7,9 @@ edition.workspace = true
 solarscape-shared = { path = "../shared" }
 
 anyhow.workspace = true
+env_logger.workspace = true
 hocon.workspace = true
+log.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true

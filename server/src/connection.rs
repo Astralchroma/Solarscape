@@ -1,5 +1,6 @@
 use crate::server::Server;
 use anyhow::Result;
+use log::{info, warn};
 use solarscape_shared::{
 	data::DisconnectReason::{self, Disconnected, InternalError, ProtocolViolation, VersionMismatch},
 	io::{PacketRead, PacketWrite},
@@ -64,11 +65,11 @@ impl Connection {
 	) {
 		let reason = match Connection::communicate(&mut stream, send, disconnect, receive).await {
 			Ok(reason) => {
-				println!("[{}] Disconnected! Reason: {reason:?}", self.identity());
+				info!("[{}] Disconnected! Reason: {reason:?}", self.identity());
 				reason
 			}
 			Err(error) => {
-				eprintln!("[{}] Disconnected! Unhandled error: {error:?}", self.identity());
+				warn!("[{}] Disconnected! Unhandled error: {error:?}", self.identity());
 				InternalError
 			}
 		};
@@ -100,7 +101,7 @@ impl Connection {
 		server: Arc<Server>,
 		receive: &mut UnboundedReceiver<Serverbound>,
 	) -> Result<Option<DisconnectReason>> {
-		println!("[{}] Connecting!", self.identity());
+		info!("[{}] Connecting!", self.identity());
 
 		let protocol_version = match receive.recv().await.ok_or(ChannelClosed)? {
 			Serverbound::Hello(protocol_version) => protocol_version,
@@ -119,7 +120,7 @@ impl Connection {
 
 		self.send(Clientbound::Hello);
 
-		println!("[{}] Connected!", self.identity());
+		info!("[{}] Connected!", self.identity());
 
 		Ok(None)
 	}

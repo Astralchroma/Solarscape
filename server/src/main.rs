@@ -4,6 +4,7 @@ pub mod server;
 
 use crate::server::Server;
 use anyhow::Result;
+use log::{error, LevelFilter::Trace};
 use std::{env, fs, panic};
 use tokio_util::sync::CancellationToken;
 
@@ -19,6 +20,12 @@ async fn main() -> Result<()> {
 		default_panic(info);
 		hook_token.cancel();
 	}));
+
+	env_logger::builder()
+		.filter_level(Trace)
+		.format_module_path(false)
+		.format_target(false)
+		.init();
 
 	let mut cargo = env::current_dir()?;
 	cargo.push("Cargo.toml");
@@ -38,7 +45,7 @@ async fn main() -> Result<()> {
 		let result = Server::run().await;
 		server_token.cancel();
 		if let Err(error) = result {
-			eprintln!("{error:?}")
+			error!("{error:?}");
 		}
 	});
 
