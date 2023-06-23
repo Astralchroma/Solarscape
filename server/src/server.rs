@@ -1,5 +1,6 @@
 use crate::{connection::Connection, sector::Sector};
 use anyhow::Result;
+use log::{info, warn};
 use std::slice::Iter;
 use std::{
 	env, fs,
@@ -30,18 +31,18 @@ impl Server {
 			let key = file_name.to_string_lossy();
 
 			if key.starts_with('.') {
-				println!("{key} is hidden, skipping.");
+				warn!("{key} is hidden, skipping.");
 				continue;
 			}
 
 			if !path.metadata()?.is_dir() {
-				println!("{key} is not a directory, skipping.");
+				warn!("{key} is not a directory, skipping.");
 				continue;
 			}
 
 			sectors.push(Sector::load(&key)?);
 
-			println!("Loaded \"{key}\" sector")
+			info!("Sector \"{key}\" Loaded")
 		}
 
 		let server = Arc::new(Self {
@@ -56,7 +57,7 @@ impl Server {
 		}
 
 		let listener = TcpListener::bind("[::]:23500").await?;
-		println!("Listening on [::]:23500");
+		info!("Listening on [::]:23500");
 
 		loop {
 			let (stream, address) = listener.accept().await?;
