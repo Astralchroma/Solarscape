@@ -3,7 +3,7 @@ pub mod server;
 
 use crate::server::Server;
 use anyhow::Result;
-use std::{panic, process::exit};
+use std::{env, panic, process::exit};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -13,6 +13,18 @@ async fn main() -> Result<()> {
 		default_panic(info);
 		exit(1);
 	}));
+
+	let mut cargo = env::current_dir()?;
+	cargo.push("Cargo.toml");
+
+	// if Cargo.toml exists, assume we are running in a development environment.
+	if cargo.exists() {
+		let mut data = env::current_dir()?;
+		data.push("server");
+		data.push("run");
+
+		env::set_current_dir(data)?;
+	}
 
 	Server::new().await_connections().await
 }
