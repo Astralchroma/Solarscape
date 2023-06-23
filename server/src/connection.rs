@@ -1,3 +1,4 @@
+use crate::server::Server;
 use anyhow::Result;
 use solarscape_shared::{
 	data::DisconnectReason::{self, Disconnected, InternalError, ProtocolViolation, VersionMismatch},
@@ -19,7 +20,7 @@ pub struct Connection {
 }
 
 impl Connection {
-	pub async fn accept(stream: TcpStream, address: SocketAddr) -> Option<Arc<Connection>> {
+	pub async fn accept(server: Arc<Server>, stream: TcpStream, address: SocketAddr) -> Option<Arc<Connection>> {
 		let (send_sender, send) = mpsc::unbounded_channel();
 		let (disconnect_sender, disconnect) = mpsc::unbounded_channel();
 		let (receive_sender, mut receive) = mpsc::unbounded_channel();
@@ -36,7 +37,7 @@ impl Connection {
 				.oversee_communication(stream, send, disconnect, receive_sender),
 		);
 
-		match connection.handshake(&mut receive).await {
+		match connection.handshake(server, &mut receive).await {
 			Err(error) => {
 				connection.disconnect(Err(error));
 				return None;
@@ -96,6 +97,7 @@ impl Connection {
 
 	async fn handshake(
 		self: &Arc<Self>,
+		server: Arc<Server>,
 		receive: &mut UnboundedReceiver<Serverbound>,
 	) -> Result<Option<DisconnectReason>> {
 		println!("[{}] Connecting!", self.identity());
@@ -107,6 +109,12 @@ impl Connection {
 
 		if protocol_version != *PROTOCOL_VERSION {
 			return Ok(Some(VersionMismatch(*PROTOCOL_VERSION)));
+		}
+
+		for sector in server.sectors() {
+			let sector_meta = sector.meta().into_owned().to_owned();
+
+			self.send(Clientbound::UpdateSectorMeta(sector_meta))
 		}
 
 		self.send(Clientbound::Hello);

@@ -17,24 +17,31 @@ async fn main() -> Result<()> {
 	}));
 
 	let mut socket = TcpStream::connect("[::1]:23500").await?;
+	let mut sectors = vec![];
 
 	println!("Connecting to [::1]:23500");
 
 	socket.write_packet(&Serverbound::Hello(*PROTOCOL_VERSION)).await?;
 
-	match socket.read_packet().await? {
-		Clientbound::Hello => {}
-		Clientbound::Disconnected(reason) => {
-			eprintln!("Disconnected: {reason:?}");
-			socket.shutdown().await?;
-			return Ok(());
-		}
-		_ => {
-			socket
-				.write_packet(&Serverbound::Disconnected(ProtocolViolation))
-				.await?;
-			socket.shutdown().await?;
-			return Ok(());
+	loop {
+		match socket.read_packet().await? {
+			Clientbound::Hello => break,
+			Clientbound::Disconnected(reason) => {
+				eprintln!("Disconnected: {reason:?}");
+				socket.shutdown().await?;
+				return Ok(());
+			}
+			Clientbound::UpdateSectorMeta(sector_meta) => {
+				println!("Received sector: {}", sector_meta.display_name);
+				sectors.push(sector_meta);
+			}
+			_ => {
+				socket
+					.write_packet(&Serverbound::Disconnected(ProtocolViolation))
+					.await?;
+				socket.shutdown().await?;
+				return Ok(());
+			}
 		}
 	}
 
@@ -42,15 +49,15 @@ async fn main() -> Result<()> {
 
 	loop {
 		match socket.read_packet().await? {
-			Clientbound::Hello => {
-				socket
-					.write_packet(&Serverbound::Disconnected(ProtocolViolation))
-					.await?;
+			Clientbound::Disconnected(reason) => {
+				eprintln!("Disconnected: {reason:?}");
 				socket.shutdown().await?;
 				return Ok(());
 			}
-			Clientbound::Disconnected(reason) => {
-				eprintln!("Disconnected: {reason:?}");
+			_ => {
+				socket
+					.write_packet(&Serverbound::Disconnected(ProtocolViolation))
+					.await?;
 				socket.shutdown().await?;
 				return Ok(());
 			}
