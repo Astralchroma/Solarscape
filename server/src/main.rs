@@ -3,7 +3,7 @@ pub mod server;
 
 use crate::server::Server;
 use anyhow::Result;
-use std::{env, panic};
+use std::{env, fs, panic};
 use tokio_util::sync::CancellationToken;
 
 #[tokio::main]
@@ -28,6 +28,7 @@ async fn main() -> Result<()> {
 		data.push("server");
 		data.push("run");
 
+		fs::create_dir_all(data.clone())?;
 		env::set_current_dir(data)?;
 	}
 
