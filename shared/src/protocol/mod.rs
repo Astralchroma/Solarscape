@@ -1,4 +1,10 @@
+mod clientbound;
+mod serverbound;
+
 use bincode::{Decode, Encode};
+
+pub use clientbound::*;
+pub use serverbound::*;
 
 #[derive(Debug, Decode, Encode)]
 pub enum DisconnectReason {
@@ -6,10 +12,4 @@ pub enum DisconnectReason {
 	InternalError,
 	ProtocolViolation,
 	VersionMismatch(u16),
-}
-
-#[derive(Clone, Debug, Decode, Encode)]
-pub struct SectorData {
-	pub name: Box<str>,
-	pub display_name: Box<str>,
 }

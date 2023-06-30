@@ -2,9 +2,13 @@ use crate::server::Server;
 use anyhow::Result;
 use log::{info, warn};
 use solarscape_shared::{
-	data::DisconnectReason::{self, Disconnected, InternalError, ProtocolViolation, VersionMismatch},
 	io::{PacketRead, PacketWrite},
-	Clientbound, Serverbound, PROTOCOL_VERSION,
+	protocol::{
+		Clientbound,
+		DisconnectReason::{self, Disconnected, InternalError, ProtocolViolation, VersionMismatch},
+		Serverbound,
+	},
+	PROTOCOL_VERSION,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{

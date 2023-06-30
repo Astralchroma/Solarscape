@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::info;
 use serde::Deserialize;
-use solarscape_shared::data::SectorData;
+use solarscape_shared::world::SectorData;
 use std::{
 	env,
 	fs::{self, DirEntry, File},
