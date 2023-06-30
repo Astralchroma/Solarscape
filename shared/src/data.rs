@@ -1,5 +1,4 @@
 use bincode::{Decode, Encode};
-use std::sync::Arc;
 
 #[derive(Debug, Decode, Encode)]
 pub enum DisconnectReason {
@@ -10,7 +9,7 @@ pub enum DisconnectReason {
 }
 
 #[derive(Clone, Debug, Decode, Encode)]
-pub struct SectorMeta {
-	pub name: Arc<str>,
-	pub display_name: Arc<str>,
+pub struct SectorData {
+	pub name: Box<str>,
+	pub display_name: Box<str>,
 }

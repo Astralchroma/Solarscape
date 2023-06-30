@@ -113,9 +113,8 @@ impl Connection {
 		}
 
 		for sector in server.sectors() {
-			let sector_meta = sector.meta().into_owned().to_owned();
-
-			self.send(Clientbound::UpdateSectorMeta(sector_meta))
+			let sector_meta = sector.shared().clone();
+			self.send(Clientbound::SyncSector(sector_meta))
 		}
 
 		self.send(Clientbound::Hello);

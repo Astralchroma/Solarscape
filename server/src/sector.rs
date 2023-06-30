@@ -1,41 +1,70 @@
 use anyhow::Result;
+use log::info;
 use serde::Deserialize;
-use solarscape_shared::data::SectorMeta;
-use std::borrow::Cow;
-use std::{env, fs::File, io::Read, sync::Arc};
+use solarscape_shared::data::SectorData;
+use std::{
+	env,
+	fs::{self, DirEntry, File},
+	io::Read,
+	sync::Arc,
+};
 
 #[repr(transparent)]
 pub struct Sector {
-	meta: SectorMeta,
+	shared: SectorData,
 }
 
 #[derive(Deserialize)]
-struct Configuration {
-	pub display_name: String,
+struct SectorConfig {
+	pub display_name: Box<str>,
 }
 
 impl Sector {
-	pub fn load(key: &str) -> Result<Arc<Sector>> {
-		let mut sector_path = env::current_dir()?;
-		sector_path.push("sectors");
-		sector_path.push(key);
+	pub fn load_all() -> Result<Vec<Arc<Sector>>> {
+		let mut sectors = vec![];
 
-		let mut configuration_path = sector_path.clone();
-		configuration_path.push("sector.conf");
+		let mut sectors_path = env::current_dir()?;
+		sectors_path.push("sectors");
 
-		let mut file = File::open(configuration_path)?;
+		for path in fs::read_dir(sectors_path)? {
+			if let Some(sector) = Sector::load(path?)? {
+				sectors.push(sector);
+			}
+		}
+
+		info!(
+			"Loaded {} Sectors: {:?}",
+			sectors.len(),
+			sectors.iter().map(|sector| sector.display_name()).collect::<Vec<_>>()
+		);
+
+		Ok(sectors)
+	}
+
+	fn load(path: DirEntry) -> Result<Option<Arc<Sector>>> {
+		let file_name = path.file_name();
+		let name = file_name.to_string_lossy();
+
+		if name.starts_with('.') || !path.metadata()?.is_dir() {
+			return Ok(None);
+		}
+
+		let mut config_path = path.path();
+		config_path.push("sector.conf");
+
+		let mut file = File::open(config_path)?;
 		let mut bytes = vec![];
 		file.read_to_end(&mut bytes)?;
 		let string = String::from_utf8(bytes)?;
 
-		let configuration: Configuration = hocon::de::from_str(string.as_str())?;
+		let configuration: SectorConfig = hocon::de::from_str(string.as_str())?;
 
-		Ok(Arc::new(Sector {
-			meta: SectorMeta {
-				name: Arc::from(key),
-				display_name: Arc::from(configuration.display_name),
+		Ok(Some(Arc::new(Sector {
+			shared: SectorData {
+				name: name.into(),
+				display_name: configuration.display_name,
 			},
-		}))
+		})))
 	}
 
 	pub fn run(self: Arc<Self>) -> Result<()> {
@@ -43,11 +72,12 @@ impl Sector {
 	}
 
 	#[allow(clippy::needless_lifetimes)]
-	pub fn meta<'a>(self: &'a Arc<Self>) -> Cow<'a, SectorMeta> {
-		Cow::Borrowed(&self.meta)
+	pub fn shared<'a>(self: &'a Arc<Self>) -> &'a SectorData {
+		&self.shared
 	}
 
-	pub fn display_name(self: &Arc<Self>) -> Arc<str> {
-		self.meta.display_name.clone()
+	#[allow(clippy::needless_lifetimes)]
+	pub fn display_name<'a>(self: &'a Arc<Self>) -> &'a str {
+		&self.shared.display_name
 	}
 }

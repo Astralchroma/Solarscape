@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
 				socket.shutdown().await?;
 				return Ok(());
 			}
-			Clientbound::UpdateSectorMeta(sector_meta) => {
+			Clientbound::SyncSector(sector_meta) => {
 				println!("Received sector: {}", sector_meta.display_name);
 				sectors.push(sector_meta);
 			}

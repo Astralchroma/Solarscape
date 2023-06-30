@@ -1,10 +1,9 @@
 use crate::{connection::Connection, sector::Sector};
 use anyhow::Result;
-use log::{info, warn};
-use std::slice::Iter;
+use log::info;
 use std::{
-	env, fs,
 	net::SocketAddr,
+	slice::Iter,
 	sync::{Arc, Weak},
 	thread,
 };
@@ -20,30 +19,7 @@ pub struct Server {
 
 impl Server {
 	pub async fn run() -> Result<()> {
-		let mut sectors = vec![];
-
-		let mut sectors_path = env::current_dir()?;
-		sectors_path.push("sectors");
-
-		for path in fs::read_dir(sectors_path)? {
-			let path = path?;
-			let file_name = path.file_name();
-			let key = file_name.to_string_lossy();
-
-			if key.starts_with('.') {
-				warn!("{key} is hidden, skipping.");
-				continue;
-			}
-
-			if !path.metadata()?.is_dir() {
-				warn!("{key} is not a directory, skipping.");
-				continue;
-			}
-
-			sectors.push(Sector::load(&key)?);
-
-			info!("Sector \"{key}\" Loaded")
-		}
+		let sectors = Sector::load_all()?;
 
 		let server = Arc::new(Self {
 			sectors: sectors.clone(),
