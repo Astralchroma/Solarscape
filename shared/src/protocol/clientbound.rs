@@ -1,4 +1,4 @@
-use crate::data::{DisconnectReason, SectorData};
+use crate::{protocol::DisconnectReason, world::SectorData};
 use bincode::{Decode, Encode};
 
 #[derive(Debug, Decode, Encode)]

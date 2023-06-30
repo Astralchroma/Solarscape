@@ -1,12 +1,16 @@
-pub mod connection;
-pub mod sector;
-pub mod server;
+mod connection;
+mod server;
+
+pub mod world;
 
 use crate::server::Server;
 use anyhow::Result;
 use log::{error, LevelFilter::Trace};
 use std::{env, fs, panic};
 use tokio_util::sync::CancellationToken;
+
+pub use connection::*;
+pub use server::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
