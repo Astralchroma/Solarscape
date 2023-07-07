@@ -71,12 +71,12 @@ impl Sector {
 		Ok(())
 	}
 
-	#[allow(clippy::needless_lifetimes)]
+	//noinspection RsNeedlessLifetimes
 	pub fn shared<'a>(self: &'a Arc<Self>) -> &'a SectorData {
 		&self.shared
 	}
 
-	#[allow(clippy::needless_lifetimes)]
+	//noinspection RsNeedlessLifetimes
 	pub fn display_name<'a>(self: &'a Arc<Self>) -> &'a str {
 		&self.shared.display_name
 	}
