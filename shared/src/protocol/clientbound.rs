@@ -1,4 +1,7 @@
-use crate::{protocol::DisconnectReason, world::SectorData};
+use crate::{
+	protocol::DisconnectReason,
+	world::{sector::SectorData, voxject::ChunkData},
+};
 use bincode::{Decode, Encode};
 
 #[derive(Debug, Decode, Encode)]
@@ -7,4 +10,5 @@ pub enum Clientbound {
 	Disconnected(DisconnectReason),
 	SyncSector(SectorData),
 	ActiveSector(usize),
+	SyncChunk(ChunkData),
 }
