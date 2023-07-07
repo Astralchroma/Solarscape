@@ -6,4 +6,5 @@ pub enum Clientbound {
 	Hello,
 	Disconnected(DisconnectReason),
 	SyncSector(SectorData),
+	ActiveSector(usize),
 }

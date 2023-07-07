@@ -18,6 +18,7 @@ async fn main() -> Result<()> {
 
 	let mut socket = TcpStream::connect("[::1]:23500").await?;
 	let mut sectors = vec![];
+	let mut sector_id;
 
 	println!("Connecting to [::1]:23500");
 
@@ -32,8 +33,12 @@ async fn main() -> Result<()> {
 				return Ok(());
 			}
 			Clientbound::SyncSector(sector_meta) => {
-				println!("Received sector: {}", sector_meta.display_name);
+				println!("Received sector \"{}\"", sector_meta.display_name);
 				sectors.push(sector_meta);
+			}
+			Clientbound::ActiveSector(active_sector) => {
+				println!("Switched to sector \"{}\"", sectors[active_sector].display_name);
+				sector_id = active_sector;
 			}
 			_ => {
 				socket
