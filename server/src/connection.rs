@@ -121,6 +121,7 @@ impl Connection {
 			self.send(Clientbound::SyncSector(sector_meta))
 		}
 
+		self.send(Clientbound::ActiveSector(0));
 		self.send(Clientbound::Hello);
 
 		info!("[{}] Connected!", self.identity());
