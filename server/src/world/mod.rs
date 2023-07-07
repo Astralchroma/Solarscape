@@ -1,3 +1,2 @@
-mod sector;
-
-pub use sector::*;
+pub mod sector;
+pub mod voxject;

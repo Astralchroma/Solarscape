@@ -1,17 +1,19 @@
+use crate::world::voxject::Voxject;
 use anyhow::Result;
 use log::info;
 use serde::Deserialize;
-use solarscape_shared::world::SectorData;
+use solarscape_shared::world::sector::SectorData;
 use std::{
 	env,
 	fs::{self, DirEntry, File},
 	io::Read,
 	sync::Arc,
+	thread,
 };
 
-#[repr(transparent)]
 pub struct Sector {
 	shared: SectorData,
+	voxject: Voxject,
 }
 
 #[derive(Deserialize)]
@@ -64,6 +66,8 @@ impl Sector {
 				name: name.into(),
 				display_name: configuration.display_name,
 			},
+			// TODO: Remove hack to avoid using tokio where it shouldn't be used.
+			voxject: thread::spawn(Voxject::sphere).join().unwrap(),
 		})))
 	}
 
@@ -79,5 +83,10 @@ impl Sector {
 	//noinspection RsNeedlessLifetimes
 	pub fn display_name<'a>(self: &'a Arc<Self>) -> &'a str {
 		&self.shared.display_name
+	}
+
+	//noinspection RsNeedlessLifetimes
+	pub fn voject<'a>(self: &'a Arc<Self>) -> &'a Voxject {
+		&self.voxject
 	}
 }

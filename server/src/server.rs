@@ -1,4 +1,4 @@
-use crate::{world::Sector, Connection};
+use crate::{world::sector::Sector, Connection};
 use anyhow::Result;
 use log::info;
 use std::{

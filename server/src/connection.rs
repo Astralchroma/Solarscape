@@ -126,6 +126,11 @@ impl Connection {
 
 		info!("[{}] Connected!", self.identity());
 
+		let sector = server.sectors().next().unwrap();
+		for chunk in sector.voject().chunks() {
+			self.send(Clientbound::SyncChunk(*chunk.0.read().await))
+		}
+
 		Ok(None)
 	}
 

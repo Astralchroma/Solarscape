@@ -10,4 +10,4 @@ pub const PROTOCOL_VERSION: Lazy<u16> = Lazy::new(|| {
 		.expect("crate major version invalid")
 });
 
-pub const PACKET_LENGTH_LIMIT: usize = 2 ^ 16;
+pub const PACKET_LENGTH_LIMIT: usize = 1 << 13;

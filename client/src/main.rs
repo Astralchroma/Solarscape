@@ -4,7 +4,7 @@ use solarscape_shared::{
 	protocol::{Clientbound, DisconnectReason::ProtocolViolation, Serverbound},
 	PROTOCOL_VERSION,
 };
-use std::{panic, process::exit};
+use std::{collections::HashMap, panic, process::exit};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 #[tokio::main]
@@ -19,6 +19,7 @@ async fn main() -> Result<()> {
 	let mut socket = TcpStream::connect("[::1]:23500").await?;
 	let mut sectors = vec![];
 	let mut sector_id;
+	let mut chunks = HashMap::new();
 
 	println!("Connecting to [::1]:23500");
 
@@ -58,6 +59,10 @@ async fn main() -> Result<()> {
 				eprintln!("Disconnected: {reason:?}");
 				socket.shutdown().await?;
 				return Ok(());
+			}
+			Clientbound::SyncChunk(chunk) => {
+				println!("Received chunk \"{:?}\"", chunk.grid_position);
+				chunks.insert(chunk.grid_position, chunk);
 			}
 			_ => {
 				socket

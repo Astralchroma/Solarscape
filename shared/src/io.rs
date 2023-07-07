@@ -32,7 +32,7 @@ pub trait PacketRead: AsyncRead + Unpin + Send {
 	async fn read_packet<T: Decode>(&mut self) -> anyhow::Result<T> {
 		let length = self.read_varint_async().await?;
 		if length > PACKET_LENGTH_LIMIT {
-			return Err(anyhow!("packet oversized"));
+			return Err(anyhow!("packet oversized: {length}"));
 		}
 		let mut buffer = vec![0; length];
 		self.read_exact(&mut buffer).await?;
