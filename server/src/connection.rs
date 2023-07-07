@@ -57,7 +57,7 @@ impl Connection {
 
 		tokio::spawn(connection.clone().oversee_processing(receive));
 
-		return Some(connection);
+		Some(connection)
 	}
 
 	async fn oversee_communication(
@@ -139,11 +139,9 @@ impl Connection {
 	}
 
 	async fn process(mut receive: UnboundedReceiver<Serverbound>) -> Result<DisconnectReason> {
-		loop {
-			match receive.recv().await.ok_or(ChannelClosed)? {
-				Serverbound::Hello(_) => return Ok(ProtocolViolation),
-				Serverbound::Disconnected(_) => return Ok(Disconnected),
-			}
+		match receive.recv().await.ok_or(ChannelClosed)? {
+			Serverbound::Hello(_) => Ok(ProtocolViolation),
+			Serverbound::Disconnected(_) => Ok(Disconnected),
 		}
 	}
 
