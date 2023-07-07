@@ -4,7 +4,7 @@ pub mod world;
 
 use once_cell::sync::Lazy;
 
-pub const PROTOCOL_VERSION: Lazy<u16> = Lazy::new(|| {
+pub static PROTOCOL_VERSION: Lazy<u16> = Lazy::new(|| {
 	env!("CARGO_PKG_VERSION_MAJOR")
 		.parse()
 		.expect("crate major version invalid")
