@@ -10,4 +10,5 @@ bincode.workspace = true
 integer-encoding.workspace = true
 nalgebra.workspace = true
 once_cell.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
