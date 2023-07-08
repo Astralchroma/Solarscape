@@ -1,8 +1,8 @@
 use anyhow::Result;
+use solarscape_shared::protocol::PROTOCOL_VERSION;
 use solarscape_shared::{
 	io::{PacketRead, PacketWrite},
 	protocol::{Clientbound, DisconnectReason::ProtocolViolation, Serverbound},
-	PROTOCOL_VERSION,
 };
 use std::{collections::HashMap, panic, process::exit};
 use tokio::{io::AsyncWriteExt, net::TcpStream};

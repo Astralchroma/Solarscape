@@ -6,9 +6,8 @@ use solarscape_shared::{
 	protocol::{
 		Clientbound,
 		DisconnectReason::{self, Disconnected, InternalError, ProtocolViolation, VersionMismatch},
-		Serverbound,
+		Serverbound, PROTOCOL_VERSION,
 	},
-	PROTOCOL_VERSION,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
