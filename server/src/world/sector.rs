@@ -67,7 +67,9 @@ impl Sector {
 				display_name: configuration.display_name,
 			},
 			// TODO: Remove hack to avoid using tokio where it shouldn't be used.
-			voxject: thread::spawn(Voxject::sphere).join().unwrap(),
+			voxject: thread::spawn(Voxject::sphere)
+				.join()
+				.expect("should be able to spawn generation thread"),
 		})))
 	}
 

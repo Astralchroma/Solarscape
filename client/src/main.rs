@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used)]
+
 use anyhow::Result;
 use solarscape_shared::protocol::PROTOCOL_VERSION;
 use solarscape_shared::{
