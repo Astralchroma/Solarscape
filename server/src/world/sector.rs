@@ -1,8 +1,7 @@
-use crate::world::voxject::Voxject;
+use crate::{world::Voxject, Connection};
 use anyhow::Result;
 use log::info;
 use serde::Deserialize;
-use solarscape_shared::world::sector::SectorData;
 use std::{
 	env,
 	fs::{self, DirEntry, File},
@@ -12,13 +11,9 @@ use std::{
 };
 
 pub struct Sector {
-	shared: SectorData,
-	voxject: Voxject,
-}
-
-#[derive(Deserialize)]
-struct SectorConfig {
+	pub name: Box<str>,
 	pub display_name: Box<str>,
+	pub voxject: Voxject,
 }
 
 impl Sector {
@@ -37,7 +32,7 @@ impl Sector {
 		info!(
 			"Loaded {} Sectors: {:?}",
 			sectors.len(),
-			sectors.iter().map(|sector| sector.display_name()).collect::<Vec<_>>()
+			sectors.iter().map(|sector| &sector.display_name).collect::<Vec<_>>()
 		);
 
 		Ok(sectors)
@@ -62,33 +57,17 @@ impl Sector {
 		let configuration: SectorConfig = hocon::de::from_str(string.as_str())?;
 
 		Ok(Some(Arc::new(Sector {
-			shared: SectorData {
-				name: name.into(),
-				display_name: configuration.display_name,
-			},
+			name: name.into(),
+			display_name: configuration.display_name,
 			// TODO: Remove hack to avoid using tokio where it shouldn't be used.
 			voxject: thread::spawn(Voxject::sphere)
 				.join()
 				.expect("should be able to spawn generation thread"),
 		})))
 	}
+}
 
-	pub fn run(self: Arc<Self>) -> Result<()> {
-		Ok(())
-	}
-
-	//noinspection RsNeedlessLifetimes
-	pub fn shared<'a>(self: &'a Arc<Self>) -> &'a SectorData {
-		&self.shared
-	}
-
-	//noinspection RsNeedlessLifetimes
-	pub fn display_name<'a>(self: &'a Arc<Self>) -> &'a str {
-		&self.shared.display_name
-	}
-
-	//noinspection RsNeedlessLifetimes
-	pub fn voject<'a>(self: &'a Arc<Self>) -> &'a Voxject {
-		&self.voxject
-	}
+#[derive(Deserialize)]
+struct SectorConfig {
+	pub display_name: Box<str>,
 }

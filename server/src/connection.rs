@@ -18,7 +18,7 @@ use tokio::{
 };
 
 pub struct Connection {
-	address: SocketAddr,
+	pub address: SocketAddr,
 	send: UnboundedSender<Clientbound>,
 	disconnect: UnboundedSender<Result<DisconnectReason>>,
 }
@@ -68,16 +68,16 @@ impl Connection {
 	) {
 		let reason = match Connection::communicate(&mut stream, send, disconnect, receive).await {
 			Ok(reason) => {
-				info!("[{}] Disconnected! Reason: {reason:?}", self.identity());
+				info!("[{}] Disconnected! Reason: {reason:?}", self.address);
 				reason
 			}
 			Err(error) => {
-				warn!("[{}] Disconnected! Unhandled error: {error:?}", self.identity());
+				warn!("[{}] Disconnected! Unhandled error: {error:?}", self.address);
 				InternalError
 			}
 		};
 
-		let _ = stream.write_packet(&Clientbound::Disconnected(reason)).await;
+		let _ = stream.write_packet(&Clientbound::Disconnected { reason }).await;
 		let _ = stream.shutdown().await;
 	}
 
@@ -91,7 +91,7 @@ impl Connection {
 			select! {
 				disconnect = disconnect.recv() => return disconnect.ok_or(ChannelClosed)?,
 				packet = send.recv() => match packet.ok_or(ChannelClosed)? {
-					Clientbound::Disconnected(reason) => return Ok(reason),
+					Clientbound::Disconnected { reason } => return Ok(reason),
 					packet => stream.write_packet(&packet).await?,
 				},
 				packet = stream.read_packet() => receive.send(packet?)?,
@@ -104,10 +104,12 @@ impl Connection {
 		server: Arc<Server>,
 		receive: &mut UnboundedReceiver<Serverbound>,
 	) -> Result<Option<DisconnectReason>> {
-		info!("[{}] Connecting!", self.identity());
+		info!("[{}] Connecting!", self.address);
 
 		let protocol_version = match receive.recv().await.ok_or(ChannelClosed)? {
-			Serverbound::Hello(protocol_version) => protocol_version,
+			Serverbound::Hello {
+				major_version: protocol_version,
+			} => protocol_version,
 			_ => return Ok(Some(ProtocolViolation)),
 		};
 
@@ -115,20 +117,26 @@ impl Connection {
 			return Ok(Some(VersionMismatch(*PROTOCOL_VERSION)));
 		}
 
-		for sector in server.sectors() {
-			let sector_meta = sector.shared().clone();
-			self.send(Clientbound::SyncSector(sector_meta))
+		for sector in server.sectors.iter() {
+			self.send(Clientbound::SyncSector {
+				name: sector.name.clone(),
+				display_name: sector.display_name.clone(),
+			})
 		}
 
-		self.send(Clientbound::ActiveSector(0));
+		self.send(Clientbound::ActiveSector { network_id: 0 });
+
+		let sector = &server.sectors[0];
+		for chunk in sector.voxject.chunks.values() {
+			self.send(Clientbound::SyncChunk {
+				grid_position: chunk.grid_position,
+				data: *chunk.data.read().await,
+			})
+		}
+
 		self.send(Clientbound::Hello);
 
-		info!("[{}] Connected!", self.identity());
-
-		let sector = server.sectors().next().expect("expected at least one sector");
-		for chunk in sector.voject().chunks() {
-			self.send(Clientbound::SyncChunk(*chunk.0.read().await))
-		}
+		info!("[{}] Connected!", self.address);
 
 		Ok(None)
 	}
@@ -139,17 +147,9 @@ impl Connection {
 
 	async fn process(mut receive: UnboundedReceiver<Serverbound>) -> Result<DisconnectReason> {
 		match receive.recv().await.ok_or(ChannelClosed)? {
-			Serverbound::Hello(_) => Ok(ProtocolViolation),
-			Serverbound::Disconnected(_) => Ok(Disconnected),
+			Serverbound::Hello { .. } => Ok(ProtocolViolation),
+			Serverbound::Disconnected { .. } => Ok(Disconnected),
 		}
-	}
-
-	pub const fn address(&self) -> SocketAddr {
-		self.address
-	}
-
-	pub fn identity(&self) -> String {
-		self.address.to_string()
 	}
 
 	pub fn send(&self, message: Clientbound) {

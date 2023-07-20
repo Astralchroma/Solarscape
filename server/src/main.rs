@@ -5,7 +5,7 @@ mod server;
 
 pub mod world;
 
-use crate::server::Server;
+use crate::Server;
 use anyhow::Result;
 use log::{error, LevelFilter::Trace};
 use std::{env, fs, panic};

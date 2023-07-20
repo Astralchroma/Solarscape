@@ -3,6 +3,6 @@ use bincode::{Decode, Encode};
 
 #[derive(Debug, Decode, Encode)]
 pub enum Serverbound {
-	Hello(u16),
-	Disconnected(DisconnectReason),
+	Hello { major_version: u16 },
+	Disconnected { reason: DisconnectReason },
 }

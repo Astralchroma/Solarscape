@@ -1,11 +1,9 @@
-use crate::{world::sector::Sector, Connection};
+use crate::{world::Sector, Connection};
 use anyhow::Result;
 use log::info;
 use std::{
 	net::SocketAddr,
-	slice::Iter,
 	sync::{Arc, Weak},
-	thread,
 };
 use tokio::{
 	net::{TcpListener, TcpStream},
@@ -13,7 +11,7 @@ use tokio::{
 };
 
 pub struct Server {
-	sectors: Vec<Arc<Sector>>,
+	pub sectors: Vec<Arc<Sector>>,
 	connections: RwLock<Vec<Weak<Connection>>>,
 }
 
@@ -26,17 +24,11 @@ impl Server {
 			connections: RwLock::new(vec![]),
 		});
 
-		for sector in sectors.into_iter() {
-			thread::Builder::new()
-				.name(sector.display_name().to_string())
-				.spawn(|| sector.run())?;
-		}
-
-		let listener = TcpListener::bind("[::]:23500").await?;
+		let socket = TcpListener::bind("[::]:23500").await?;
 		info!("Listening on [::]:23500");
 
 		loop {
-			let (stream, address) = listener.accept().await?;
+			let (stream, address) = socket.accept().await?;
 			tokio::spawn(server.clone().accept_connection(stream, address));
 		}
 	}
@@ -47,10 +39,5 @@ impl Server {
 			connections.push(Arc::downgrade(&connection));
 			connections.retain(|connection| connection.strong_count() != 0)
 		}
-	}
-
-	#[allow(clippy::needless_lifetimes)]
-	pub fn sectors<'a>(self: &'a Arc<Self>) -> Iter<'a, Arc<Sector>> {
-		self.sectors.iter()
 	}
 }

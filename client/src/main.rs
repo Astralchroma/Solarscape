@@ -1,10 +1,9 @@
 #![deny(clippy::unwrap_used)]
 
 use anyhow::Result;
-use solarscape_shared::protocol::PROTOCOL_VERSION;
 use solarscape_shared::{
 	io::{PacketRead, PacketWrite},
-	protocol::{Clientbound, DisconnectReason::ProtocolViolation, Serverbound},
+	protocol::{Clientbound, DisconnectReason::ProtocolViolation, Serverbound, PROTOCOL_VERSION},
 };
 use std::{collections::HashMap, panic, process::exit};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
@@ -25,27 +24,39 @@ async fn main() -> Result<()> {
 
 	println!("Connecting to [::1]:23500");
 
-	socket.write_packet(&Serverbound::Hello(*PROTOCOL_VERSION)).await?;
+	socket
+		.write_packet(&Serverbound::Hello {
+			major_version: *PROTOCOL_VERSION,
+		})
+		.await?;
 
 	loop {
 		match socket.read_packet().await? {
 			Clientbound::Hello => break,
-			Clientbound::Disconnected(reason) => {
+			Clientbound::Disconnected { reason: reason } => {
 				eprintln!("Disconnected: {reason:?}");
 				socket.shutdown().await?;
 				return Ok(());
 			}
-			Clientbound::SyncSector(sector_meta) => {
-				println!("Received sector \"{}\"", sector_meta.display_name);
-				sectors.push(sector_meta);
+			Clientbound::SyncSector { name, display_name } => {
+				println!("Received sector \"{}\"", display_name);
+				sectors.push(display_name);
 			}
-			Clientbound::ActiveSector(active_sector) => {
-				println!("Switched to sector \"{}\"", sectors[active_sector].display_name);
+			Clientbound::ActiveSector {
+				network_id: active_sector,
+			} => {
+				println!("Switched to sector \"{}\"", sectors[active_sector]);
 				sector_id = active_sector;
+			}
+			Clientbound::SyncChunk { grid_position, data } => {
+				println!("Received chunk \"{:?}\"", grid_position);
+				chunks.insert(grid_position, data);
 			}
 			_ => {
 				socket
-					.write_packet(&Serverbound::Disconnected(ProtocolViolation))
+					.write_packet(&Serverbound::Disconnected {
+						reason: ProtocolViolation,
+					})
 					.await?;
 				socket.shutdown().await?;
 				return Ok(());
@@ -57,18 +68,20 @@ async fn main() -> Result<()> {
 
 	loop {
 		match socket.read_packet().await? {
-			Clientbound::Disconnected(reason) => {
+			Clientbound::Disconnected { reason: reason } => {
 				eprintln!("Disconnected: {reason:?}");
 				socket.shutdown().await?;
 				return Ok(());
 			}
-			Clientbound::SyncChunk(chunk) => {
-				println!("Received chunk \"{:?}\"", chunk.grid_position);
-				chunks.insert(chunk.grid_position, chunk);
+			Clientbound::SyncChunk { grid_position, data } => {
+				println!("Received chunk \"{:?}\"", grid_position);
+				chunks.insert(grid_position, data);
 			}
 			_ => {
 				socket
-					.write_packet(&Serverbound::Disconnected(ProtocolViolation))
+					.write_packet(&Serverbound::Disconnected {
+						reason: ProtocolViolation,
+					})
 					.await?;
 				socket.shutdown().await?;
 				return Ok(());
