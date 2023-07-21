@@ -1,4 +1,4 @@
-use crate::world::RADIUS;
+use crate::RADIUS;
 use nalgebra::Vector3;
 use solarscape_shared::world::voxject::CHUNK_VOLUME;
 use tokio::sync::RwLock;

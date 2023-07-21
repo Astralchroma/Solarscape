@@ -1,4 +1,4 @@
-use crate::{world::Voxject, Connection};
+use crate::{Connection, Voxject};
 use anyhow::Result;
 use log::info;
 use serde::Deserialize;

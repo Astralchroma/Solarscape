@@ -1,4 +1,4 @@
-use crate::{world::Sector, Connection};
+use crate::{Connection, Sector};
 use anyhow::Result;
 use log::info;
 use std::{
@@ -10,12 +10,12 @@ use tokio::{
 	sync::RwLock,
 };
 
-pub struct Server {
+pub struct World {
 	pub sectors: Vec<Arc<Sector>>,
 	connections: RwLock<Vec<Weak<Connection>>>,
 }
 
-impl Server {
+impl World {
 	pub async fn run() -> Result<()> {
 		let sectors = Sector::load_all()?;
 

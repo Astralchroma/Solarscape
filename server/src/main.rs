@@ -1,18 +1,22 @@
 #![deny(clippy::unwrap_used)]
 
+mod chunk;
 mod connection;
-mod server;
+mod sector;
+mod voxject;
+mod world;
 
-pub mod world;
-
-use crate::Server;
+use crate::World;
 use anyhow::Result;
 use log::{error, LevelFilter::Trace};
 use std::{env, fs, panic};
 use tokio_util::sync::CancellationToken;
 
+pub use chunk::*;
 pub use connection::*;
-pub use server::*;
+pub use sector::*;
+pub use voxject::*;
+pub use world::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -48,7 +52,7 @@ async fn main() -> Result<()> {
 
 	let server_token = token.clone();
 	tokio::spawn(async move {
-		let result = Server::run().await;
+		let result = World::run().await;
 		server_token.cancel();
 		if let Err(error) = result {
 			error!("{error:?}");

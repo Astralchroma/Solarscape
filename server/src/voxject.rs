@@ -1,4 +1,4 @@
-use crate::world::Chunk;
+use crate::Chunk;
 use nalgebra::Vector3;
 use std::collections::HashMap;
 
