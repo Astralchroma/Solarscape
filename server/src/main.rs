@@ -7,17 +7,17 @@ mod voxject;
 mod world;
 
 pub use chunk::*;
-pub use connection::*;
-pub use sector::*;
 pub use voxject::*;
 pub use world::*;
 
-use crate::world::World;
+use crate::{connection::Connection, world::World};
 use anyhow::Result;
+use log::info;
 use solarscape_shared::setup_logging;
-use std::{env, fs};
+use std::{convert::Infallible, env, fs, sync::Arc};
+use tokio::net::TcpListener;
 
-fn main() -> Result<()> {
+fn main() -> Result<Infallible> {
 	setup_logging();
 
 	let mut cargo = env::current_dir()?;
@@ -33,7 +33,18 @@ fn main() -> Result<()> {
 		env::set_current_dir(data)?;
 	}
 
-	let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+	let world = World::new()?;
 
-	runtime.block_on(World::run())
+	let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+	runtime.block_on(handle_connections(world))
+}
+
+async fn handle_connections(world: Arc<World>) -> Result<Infallible> {
+	let socket = TcpListener::bind("[::]:23500").await?;
+	info!("Listening on [::]:23500");
+
+	loop {
+		let (stream, address) = socket.accept().await?;
+		tokio::spawn(Connection::accept(world.clone(), stream, address));
+	}
 }
