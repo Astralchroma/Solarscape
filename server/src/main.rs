@@ -6,36 +6,22 @@ mod sector;
 mod voxject;
 mod world;
 
-use crate::World;
-use anyhow::Result;
-use log::{error, LevelFilter::Trace};
-use std::{env, fs, panic};
-use tokio_util::sync::CancellationToken;
-
 pub use chunk::*;
 pub use connection::*;
 pub use sector::*;
 pub use voxject::*;
 pub use world::*;
 
+use crate::World;
+use anyhow::Result;
+use log::error;
+use solarscape_shared::setup_logging;
+use std::{env, fs};
+use tokio_util::sync::CancellationToken;
+
 #[tokio::main]
 async fn main() -> Result<()> {
-	let token = CancellationToken::new();
-
-	// If a Tokio task panics, Tokio will catch the panic with the intent that the caller will handle it.
-	// However, generally you shouldn't try to recover a panic, instead your goal should be to safely exit.
-	let hook_token = token.clone();
-	let default_panic = panic::take_hook();
-	panic::set_hook(Box::new(move |info| {
-		default_panic(info);
-		hook_token.cancel();
-	}));
-
-	env_logger::builder()
-		.filter_level(Trace)
-		.format_module_path(false)
-		.format_target(false)
-		.init();
+	setup_logging();
 
 	let mut cargo = env::current_dir()?;
 	cargo.push("Cargo.toml");
@@ -49,6 +35,8 @@ async fn main() -> Result<()> {
 		fs::create_dir_all(data.clone())?;
 		env::set_current_dir(data)?;
 	}
+
+	let token = CancellationToken::new();
 
 	let server_token = token.clone();
 	tokio::spawn(async move {

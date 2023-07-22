@@ -124,17 +124,18 @@ impl Connection {
 			})
 		}
 
-		self.send(Clientbound::ActiveSector { network_id: 0 });
-
 		let sector = &server.sectors[0];
+
+		self.send(Clientbound::ActiveSector {
+			name: sector.name.clone(),
+		});
+
 		for chunk in sector.voxject.chunks.values() {
 			self.send(Clientbound::SyncChunk {
 				grid_position: chunk.grid_position,
 				data: *chunk.data.read().await,
 			})
 		}
-
-		self.send(Clientbound::Hello);
 
 		info!("[{}] Connected!", self.address);
 

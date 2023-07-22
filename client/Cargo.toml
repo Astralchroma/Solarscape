@@ -7,4 +7,6 @@ edition.workspace = true
 solarscape-shared = { path = "../shared" }
 
 anyhow.workspace = true
+log.workspace = true
+nalgebra.workspace = true
 tokio.workspace = true

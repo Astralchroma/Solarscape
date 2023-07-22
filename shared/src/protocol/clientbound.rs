@@ -4,7 +4,6 @@ use nalgebra::Vector3;
 
 #[derive(Debug, Decode, Encode)]
 pub enum Clientbound {
-	Hello,
 	Disconnected {
 		reason: DisconnectReason,
 	},
@@ -13,7 +12,7 @@ pub enum Clientbound {
 		display_name: Box<str>,
 	},
 	ActiveSector {
-		network_id: usize,
+		name: Box<str>,
 	},
 	SyncChunk {
 		#[bincode(with_serde)]
