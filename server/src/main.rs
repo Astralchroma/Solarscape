@@ -2,13 +2,9 @@
 
 mod chunk;
 mod connection;
+mod object;
 mod sector;
-mod voxject;
 mod world;
-
-pub use chunk::*;
-pub use voxject::*;
-pub use world::*;
 
 use crate::{connection::Connection, world::World};
 use anyhow::Result;

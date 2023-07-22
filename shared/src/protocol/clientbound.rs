@@ -1,4 +1,4 @@
-use crate::{protocol::DisconnectReason, world::voxject::CHUNK_VOLUME};
+use crate::{protocol::DisconnectReason, world::object::CHUNK_VOLUME};
 use bincode::{Decode, Encode};
 use nalgebra::Vector3;
 

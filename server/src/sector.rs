@@ -1,4 +1,4 @@
-use crate::voxject::Voxject;
+use crate::object::Object;
 use anyhow::Result;
 use log::info;
 use serde::Deserialize;
@@ -12,7 +12,7 @@ use std::{
 pub struct Sector {
 	pub name: Box<str>,
 	pub display_name: Box<str>,
-	pub voxject: Voxject,
+	pub object: Object,
 }
 
 impl Sector {
@@ -58,7 +58,7 @@ impl Sector {
 		Ok(Some(Arc::new(Sector {
 			name: name.into(),
 			display_name: configuration.display_name,
-			voxject: Voxject::sphere(),
+			object: Object::sphere(),
 		})))
 	}
 }

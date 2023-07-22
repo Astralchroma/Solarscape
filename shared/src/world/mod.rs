@@ -1,1 +1,1 @@
-pub mod voxject;
+pub mod object;

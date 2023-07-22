@@ -130,7 +130,7 @@ impl Connection {
 			name: sector.name.clone(),
 		});
 
-		for chunk in sector.voxject.chunks.values() {
+		for chunk in sector.object.chunks.values() {
 			self.send(Clientbound::SyncChunk {
 				grid_position: chunk.grid_position,
 				data: *chunk.data.read().await,

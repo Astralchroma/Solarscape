@@ -1,15 +1,15 @@
-use crate::Chunk;
+use crate::chunk::Chunk;
 use nalgebra::Vector3;
 use std::collections::HashMap;
 
 pub const CHUNK_RADIUS: i32 = 2;
 pub const RADIUS: f64 = (CHUNK_RADIUS << 4) as f64;
 
-pub struct Voxject {
+pub struct Object {
 	pub chunks: HashMap<Vector3<i32>, Chunk>,
 }
 
-impl Voxject {
+impl Object {
 	/// TODO: Temporary
 	pub fn sphere() -> Self {
 		let mut star = Self { chunks: HashMap::new() };

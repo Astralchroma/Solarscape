@@ -1,6 +1,6 @@
-use crate::RADIUS;
+use crate::object::RADIUS;
 use nalgebra::Vector3;
-use solarscape_shared::world::voxject::CHUNK_VOLUME;
+use solarscape_shared::world::object::CHUNK_VOLUME;
 use tokio::sync::RwLock;
 
 pub struct Chunk {
