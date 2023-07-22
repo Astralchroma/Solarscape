@@ -1,18 +1,25 @@
-use crate::chunk::Chunk;
+use crate::{chunk::Chunk, sector::Sector};
 use nalgebra::Vector3;
-use std::collections::HashMap;
+use std::{
+	collections::HashMap,
+	sync::{atomic::Ordering::Relaxed, Arc},
+};
 
 pub const CHUNK_RADIUS: i32 = 2;
 pub const RADIUS: f64 = (CHUNK_RADIUS << 4) as f64;
 
 pub struct Object {
+	pub object_id: u32,
 	pub chunks: HashMap<Vector3<i32>, Chunk>,
 }
 
 impl Object {
 	/// TODO: Temporary
-	pub fn sphere() -> Self {
-		let mut star = Self { chunks: HashMap::new() };
+	pub fn sphere(sector: &Arc<Sector>) -> Self {
+		let mut star = Self {
+			object_id: sector.object_id_counter.fetch_add(1, Relaxed),
+			chunks: HashMap::new(),
+		};
 		star.populate_sphere();
 		star
 	}

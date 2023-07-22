@@ -3,16 +3,19 @@ use anyhow::Result;
 use log::info;
 use serde::Deserialize;
 use std::{
+	collections::HashMap,
 	env,
 	fs::{self, DirEntry, File},
 	io::Read,
-	sync::Arc,
+	sync::{atomic::AtomicU32, Arc},
 };
+use tokio::sync::RwLock;
 
 pub struct Sector {
 	pub name: Box<str>,
 	pub display_name: Box<str>,
-	pub object: Object,
+	pub object_id_counter: AtomicU32,
+	pub objects: RwLock<HashMap<u32, Object>>,
 }
 
 impl Sector {
@@ -55,11 +58,18 @@ impl Sector {
 
 		let configuration: SectorConfig = hocon::de::from_str(string.as_str())?;
 
-		Ok(Some(Arc::new(Sector {
+		let sector = Arc::new(Sector {
 			name: name.into(),
 			display_name: configuration.display_name,
-			object: Object::sphere(),
-		})))
+			object_id_counter: AtomicU32::new(0),
+			objects: RwLock::new(HashMap::new()),
+		});
+
+		let object = Object::sphere(&sector);
+
+		sector.objects.blocking_write().insert(object.object_id, object);
+
+		Ok(Some(sector))
 	}
 }
 
