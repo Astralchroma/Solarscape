@@ -12,15 +12,12 @@ pub use sector::*;
 pub use voxject::*;
 pub use world::*;
 
-use crate::World;
+use crate::world::World;
 use anyhow::Result;
-use log::error;
 use solarscape_shared::setup_logging;
 use std::{env, fs};
-use tokio_util::sync::CancellationToken;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
 	setup_logging();
 
 	let mut cargo = env::current_dir()?;
@@ -36,17 +33,7 @@ async fn main() -> Result<()> {
 		env::set_current_dir(data)?;
 	}
 
-	let token = CancellationToken::new();
+	let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
-	let server_token = token.clone();
-	tokio::spawn(async move {
-		let result = World::run().await;
-		server_token.cancel();
-		if let Err(error) = result {
-			error!("{error:?}");
-		}
-	});
-
-	token.cancelled_owned().await;
-	Ok(())
+	runtime.block_on(World::run())
 }
