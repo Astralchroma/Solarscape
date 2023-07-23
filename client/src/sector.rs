@@ -1,10 +1,11 @@
 use crate::object::Object;
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::RwLock;
 
 pub struct Sector {
 	pub name: Box<str>,
 	pub display_name: Box<str>,
-	pub objects: RefCell<HashMap<u32, Object>>,
+	pub objects: RwLock<HashMap<u32, Object>>,
 }
 
 impl Sector {
@@ -12,7 +13,7 @@ impl Sector {
 		Arc::new(Self {
 			name,
 			display_name,
-			objects: RefCell::new(HashMap::new()),
+			objects: RwLock::new(HashMap::new()),
 		})
 	}
 }

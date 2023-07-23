@@ -17,6 +17,8 @@ hocon = "0.9"
 log = "0.4"
 once_cell = "1"
 thiserror = "1"
+wgpu = "0.16"
+winit = "0.28"
 
 [workspace.dependencies.bincode]
 version = "2.0.0-rc.3"

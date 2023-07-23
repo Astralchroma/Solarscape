@@ -10,3 +10,5 @@ anyhow.workspace = true
 log.workspace = true
 nalgebra.workspace = true
 tokio.workspace = true
+wgpu.workspace = true
+winit.workspace = true
