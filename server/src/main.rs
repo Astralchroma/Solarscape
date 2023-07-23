@@ -9,12 +9,12 @@ mod world;
 use crate::{connection::Connection, world::World};
 use anyhow::Result;
 use log::info;
-use solarscape_shared::setup_logging;
+use solarscape_shared::shared_main;
 use std::{convert::Infallible, env, fs, sync::Arc};
 use tokio::net::TcpListener;
 
 fn main() -> Result<Infallible> {
-	setup_logging();
+	let runtime = shared_main()?;
 
 	let mut cargo = env::current_dir()?;
 	cargo.push("Cargo.toml");
@@ -31,7 +31,6 @@ fn main() -> Result<Infallible> {
 
 	let world = World::new()?;
 
-	let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 	runtime.block_on(handle_connections(world))
 }
 

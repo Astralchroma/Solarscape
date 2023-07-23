@@ -11,17 +11,20 @@ use log::info;
 use solarscape_shared::{
 	io::{PacketRead, PacketWrite},
 	protocol::{Clientbound, Serverbound, PROTOCOL_VERSION},
-	setup_logging,
+	shared_main,
 };
-use std::convert::Infallible;
+use std::{convert::Infallible, sync::Arc};
 use tokio::net::TcpStream;
 
-#[tokio::main]
-async fn main() -> Result<Infallible> {
-	setup_logging();
+fn main() -> Result<Infallible> {
+	let runtime = shared_main()?;
 
 	let world = World::new();
 
+	runtime.block_on(handle_connection(world))
+}
+
+async fn handle_connection(world: Arc<World>) -> Result<Infallible> {
 	let mut stream = TcpStream::connect("[::1]:23500").await?;
 	info!("Connecting to [::1]:23500");
 
