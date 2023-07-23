@@ -130,11 +130,18 @@ impl Connection {
 			name: sector.name.clone(),
 		});
 
-		for chunk in sector.object.chunks.values() {
-			self.send(Clientbound::SyncChunk {
-				grid_position: chunk.grid_position,
-				data: *chunk.data.read().await,
-			})
+		for object in sector.objects.read().await.values() {
+			self.send(Clientbound::AddObject {
+				object_id: object.object_id,
+			});
+
+			for chunk in object.chunks.values() {
+				self.send(Clientbound::SyncChunk {
+					object_id: object.object_id,
+					grid_position: chunk.grid_position,
+					data: *chunk.data.read().await,
+				});
+			}
 		}
 
 		info!("[{}] Connected!", self.address);

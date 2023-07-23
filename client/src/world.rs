@@ -31,4 +31,11 @@ impl World {
 				.clone(),
 		);
 	}
+
+	pub fn active_sector(&self) -> Arc<Sector> {
+		self.active_sector
+			.borrow()
+			.clone()
+			.expect("active_sector should be set")
+	}
 }

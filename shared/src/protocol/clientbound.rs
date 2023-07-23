@@ -14,7 +14,12 @@ pub enum Clientbound {
 	ActiveSector {
 		name: Box<str>,
 	},
+	AddObject {
+		object_id: u32,
+	},
 	SyncChunk {
+		object_id: u32,
+
 		#[bincode(with_serde)]
 		grid_position: Vector3<i32>,
 

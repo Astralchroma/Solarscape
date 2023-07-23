@@ -1,9 +1,11 @@
 #![deny(clippy::unwrap_used)]
 
+mod chunk;
+mod object;
 mod sector;
 mod world;
 
-use crate::world::World;
+use crate::{chunk::Chunk, object::Object, world::World};
 use anyhow::Result;
 use log::info;
 use solarscape_shared::{
@@ -36,7 +38,33 @@ async fn main() -> Result<Infallible> {
 			Disconnected { reason } => panic!("Disconnected: {reason:?}"),
 			SyncSector { name, display_name } => world.add_sector(name, display_name),
 			ActiveSector { name } => world.set_active_sector(name),
-			SyncChunk { .. } => {}
+			AddObject { object_id } => {
+				info!("Added object {object_id}");
+
+				world
+					.active_sector()
+					.objects
+					.borrow_mut()
+					.insert(object_id, Object::new(object_id));
+			}
+			SyncChunk {
+				object_id,
+				grid_position,
+				data,
+			} => {
+				info!("Added chunk {grid_position:?} to {object_id}");
+
+				let chunk = Chunk { grid_position, data };
+				world
+					.active_sector()
+					.objects
+					.borrow()
+					.get(&object_id)
+					.expect("object_id of chunk should exist")
+					.chunks
+					.borrow_mut()
+					.insert(grid_position, chunk);
+			}
 		}
 	}
 }
