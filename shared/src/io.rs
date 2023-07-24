@@ -6,7 +6,6 @@ use bincode::{
 	error::{DecodeError, EncodeError},
 	Decode, Encode,
 };
-use integer_encoding::{VarIntAsyncReader, VarIntAsyncWriter};
 use std::io::{self, Error, ErrorKind};
 use thiserror::Error;
 use tokio::{
@@ -18,7 +17,7 @@ use tokio::{
 pub trait PacketWrite: AsyncWrite + Unpin + Send {
 	async fn write_packet<T: Encode + Sync>(&mut self, data: &T) -> Result<(), ConnectionError> {
 		let buffer = bincode::encode_to_vec(data, standard())?;
-		self.write_varint_async(buffer.len()).await?;
+		self.write_u16(buffer.len() as u16).await?;
 		self.write_all(&buffer).await?;
 		Ok(())
 	}
@@ -29,7 +28,7 @@ impl PacketWrite for TcpStream {}
 #[async_trait]
 pub trait PacketRead: AsyncRead + Unpin + Send {
 	async fn read_packet<T: Decode>(&mut self) -> Result<T, ConnectionError> {
-		let length = self.read_varint_async().await?;
+		let length = self.read_u16().await? as usize;
 		if length > PACKET_LENGTH_LIMIT {
 			return Err(ConnectionError::OversizedPacket);
 		}

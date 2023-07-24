@@ -8,7 +8,6 @@ anyhow.workspace = true
 async-trait.workspace = true
 bincode.workspace = true
 env_logger.workspace = true
-integer-encoding.workspace = true
 log.workspace = true
 nalgebra.workspace = true
 once_cell.workspace = true

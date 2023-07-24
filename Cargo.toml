@@ -24,12 +24,6 @@ winit = "0.28"
 version = "2.0.0-rc.3"
 features = [ "serde" ]
 
-[workspace.dependencies.integer-encoding]
-version = "3"
-features = [
-	"tokio_async",
-]
-
 [workspace.dependencies.nalgebra]
 version = "0.32"
 features = [ "serde-serialize" ]
