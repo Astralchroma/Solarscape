@@ -117,32 +117,8 @@ impl Connection {
 			return Ok(Some(VersionMismatch(*PROTOCOL_VERSION)));
 		}
 
-		for sector in server.sectors.iter() {
-			self.send(Clientbound::SyncSector {
-				name: sector.name.clone(),
-				display_name: sector.display_name.clone(),
-			})
-		}
-
-		let sector = &server.sectors[0];
-
-		self.send(Clientbound::ActiveSector {
-			name: sector.name.clone(),
-		});
-
-		for object in sector.objects.read().await.values() {
-			self.send(Clientbound::AddObject {
-				object_id: object.object_id,
-			});
-
-			for chunk in object.chunks.values() {
-				self.send(Clientbound::SyncChunk {
-					object_id: object.object_id,
-					grid_position: chunk.grid_position,
-					data: *chunk.data.read().await,
-				});
-			}
-		}
+		server.sync(self);
+		server.sectors[0].subscribe(self).await;
 
 		info!("[{}] Connected!", self.address);
 

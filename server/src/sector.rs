@@ -1,7 +1,8 @@
-use crate::object::Object;
+use crate::{connection::Connection, object::Object};
 use anyhow::Result;
 use log::info;
 use serde::Deserialize;
+use solarscape_shared::protocol::Clientbound;
 use std::{
 	collections::HashMap,
 	env,
@@ -15,7 +16,7 @@ pub struct Sector {
 	pub name: Box<str>,
 	pub display_name: Box<str>,
 	pub object_id_counter: AtomicU32,
-	pub objects: RwLock<HashMap<u32, Object>>,
+	pub objects: RwLock<HashMap<u32, Arc<Object>>>,
 }
 
 impl Sector {
@@ -70,6 +71,22 @@ impl Sector {
 		sector.objects.blocking_write().insert(object.object_id, object);
 
 		Ok(Some(sector))
+	}
+
+	pub fn sync(&self, connection: &Arc<Connection>) {
+		connection.send(Clientbound::SyncSector {
+			name: self.name.clone(),
+			display_name: self.display_name.clone(),
+		})
+	}
+
+	pub async fn subscribe(&self, connection: &Arc<Connection>) {
+		connection.send(Clientbound::ActiveSector {
+			name: self.name.clone(),
+		});
+		for object in self.objects.read().await.values() {
+			object.subscribe(connection).await
+		}
 	}
 }
 

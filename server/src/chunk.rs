@@ -1,9 +1,14 @@
-use crate::object::RADIUS;
+use crate::{
+	connection::Connection,
+	object::{Object, RADIUS},
+};
 use nalgebra::Vector3;
-use solarscape_shared::world::object::CHUNK_VOLUME;
+use solarscape_shared::{protocol::Clientbound, world::object::CHUNK_VOLUME};
+use std::sync::{Arc, Weak};
 use tokio::sync::RwLock;
 
 pub struct Chunk {
+	pub object: Weak<Object>,
 	pub grid_position: Vector3<i32>,
 	pub data: RwLock<[bool; CHUNK_VOLUME]>,
 }
@@ -30,8 +35,9 @@ impl Chunk {
 	}
 
 	/// TODO: Temporary
-	pub fn new_sphere(grid_position: Vector3<i32>) -> Self {
+	pub fn new_sphere(object: Weak<Object>, grid_position: Vector3<i32>) -> Self {
 		let mut chunk = Self {
+			object,
 			grid_position,
 			data: RwLock::new([false; CHUNK_VOLUME]),
 		};
@@ -67,5 +73,18 @@ impl Chunk {
 				}
 			}
 		}
+	}
+
+	pub async fn subscribe(&self, connection: &Arc<Connection>) {
+		let object = match self.object.upgrade() {
+			Some(object) => object,
+			None => return,
+		};
+
+		connection.send(Clientbound::SyncChunk {
+			object_id: object.object_id,
+			grid_position: self.grid_position,
+			data: *self.data.read().await,
+		})
 	}
 }
