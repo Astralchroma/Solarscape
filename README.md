@@ -1,3 +1,3 @@
-- Discord: https://discord.gg/kYFZtajTdx
-- Revolt: https://rvlt.gg/Dy52gYyw
-- Matrix: https://matrix.to/#/#solarscape:matrix.org
+- Discord: https://solarscape.astralchroma.dev/discord
+- Revolt: https://solarscape.astralchroma.dev/revolt
+- Matrix: https://solarscape.astralchroma.dev/matrix
