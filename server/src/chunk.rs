@@ -3,7 +3,10 @@ use crate::{
 	object::{Object, RADIUS},
 };
 use nalgebra::Vector3;
-use solarscape_shared::{protocol::Clientbound, world::object::CHUNK_VOLUME};
+use solarscape_shared::{
+	protocol::Clientbound,
+	world::{chunk::index_of_vec, object::CHUNK_VOLUME},
+};
 use std::sync::{Arc, Weak};
 use tokio::sync::RwLock;
 
@@ -15,23 +18,11 @@ pub struct Chunk {
 
 impl Chunk {
 	pub fn get(&self, cell_position: Vector3<u8>) -> bool {
-		self.data.blocking_read()[Self::index_of(cell_position)]
+		self.data.blocking_read()[index_of_vec(cell_position)]
 	}
 
 	pub fn set(&mut self, cell_position: Vector3<u8>, value: bool) {
-		self.data.blocking_write()[Self::index_of(cell_position)] = value;
-	}
-
-	pub fn index_of(cell_position: Vector3<u8>) -> usize {
-		let x = cell_position.x as usize;
-		let y = cell_position.y as usize;
-		let z = cell_position.z as usize;
-
-		assert!(x <= 0xf);
-		assert!(y <= 0xf);
-		assert!(z <= 0xf);
-
-		(x << 8) + (y << 4) + z
+		self.data.blocking_write()[index_of_vec(cell_position)] = value;
 	}
 
 	/// TODO: Temporary

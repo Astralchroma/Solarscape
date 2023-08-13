@@ -7,7 +7,7 @@ use std::{
 };
 use tokio::sync::RwLock;
 
-pub const CHUNK_RADIUS: i32 = 2;
+pub const CHUNK_RADIUS: i32 = 1;
 pub const RADIUS: f64 = (CHUNK_RADIUS << 4) as f64;
 
 pub struct Object {
@@ -18,7 +18,7 @@ pub struct Object {
 impl Object {
 	/// TODO: Temporary
 	pub fn sphere(sector: &Arc<Sector>) -> Arc<Self> {
-		let mut star = Arc::new(Self {
+		let star = Arc::new(Self {
 			object_id: sector.object_id_counter.fetch_add(1, Relaxed),
 			chunks: RwLock::new(HashMap::new()),
 		});

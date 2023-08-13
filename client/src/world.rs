@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub struct World {
-	sectors: RwLock<Vec<Arc<Sector>>>,
-	active_sector: RwLock<Option<Arc<Sector>>>,
+	sectors: RwLock<Vec<Sector>>,
+	pub active_sector: RwLock<Option<Sector>>,
 }
 
 impl World {
@@ -23,22 +23,15 @@ impl World {
 
 	pub async fn set_active_sector(&self, name: Box<str>) {
 		info!("Active sector is now \"{name}\"");
-		*self.active_sector.write().await = Some(
-			self.sectors
-				.read()
-				.await
-				.iter()
-				.find(|other| other.name == name)
-				.expect("should not set active sector that doesnt exist")
-				.clone(),
-		);
-	}
 
-	pub async fn active_sector(&self) -> Arc<Sector> {
-		self.active_sector
-			.read()
-			.await
-			.clone()
-			.expect("active_sector should be set")
+		let mut sectors = self.sectors.write().await;
+		let (index, _) = sectors
+			.iter()
+			.enumerate()
+			.find(|(_, other)| other.name == name)
+			.expect("active sector should exist");
+		let sector = sectors.remove(index);
+
+		*self.active_sector.write().await = Some(sector);
 	}
 }
