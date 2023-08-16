@@ -1,17 +1,14 @@
-use crate::{chunk::Chunk, object::Object, world::World};
+use crate::{chunk::Chunk, object::Object, orbit_camera::OrbitCamera, world::World};
 use anyhow::Result;
-use bytemuck::cast_slice;
 use log::info;
-use nalgebra::{Matrix4, Point3, Vector3};
 use solarscape_shared::io::{PacketRead, PacketWrite};
 use solarscape_shared::protocol::Clientbound::{ActiveSector, AddObject, Disconnected, SyncChunk, SyncSector};
 use solarscape_shared::protocol::{Serverbound, PROTOCOL_VERSION};
-use std::{convert::Infallible, iter, mem::size_of, sync::Arc};
+use std::{cmp::max, convert::Infallible, iter, mem::size_of, sync::Arc};
 use tokio::{net::TcpStream, runtime::Runtime};
 use wgpu::{
-	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, Backends, BindGroup, BindGroupDescriptor,
-	BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState, BufferAddress,
-	BufferBindingType::Uniform, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
+	include_wgsl, Backends, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState,
+	BufferAddress, BufferBindingType::Uniform, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
 	CompositeAlphaMode::Auto, Device, DeviceDescriptor, Face::Back, Features, FragmentState, FrontFace::Ccw, Instance,
 	InstanceDescriptor, Limits, LoadOp::Clear, MultisampleState, Operations, PipelineLayoutDescriptor,
 	PolygonMode::Fill, PowerPreference::HighPerformance, PresentMode::AutoVsync, PrimitiveState,
@@ -20,22 +17,17 @@ use wgpu::{
 	TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout,
 	VertexFormat::Float32x3, VertexState, VertexStepMode,
 };
-use winit::{
-	dpi::PhysicalSize,
-	event::{
-		Event::{LoopDestroyed, MainEventsCleared, RedrawRequested, WindowEvent},
-		WindowEvent::{CloseRequested, Destroyed, Resized, ScaleFactorChanged},
-	},
-	event_loop::{ControlFlow, EventLoop},
-	window::{Window, WindowBuilder},
-};
+use winit::dpi::PhysicalSize;
+use winit::event::Event::{DeviceEvent, LoopDestroyed, MainEventsCleared, RedrawRequested, WindowEvent};
+use winit::event::WindowEvent::{CloseRequested, Destroyed, MouseInput, MouseWheel, Resized, ScaleFactorChanged};
+use winit::event_loop::{ControlFlow, EventLoop};
+use winit::window::{Window, WindowBuilder};
 
 pub struct Client {
 	window: Window,
 	surface: Surface,
 	device: Device,
 	queue: Queue,
-	camera_bind_group: BindGroup,
 	trans_pipeline: RenderPipeline,
 	world: Arc<World>,
 }
@@ -102,8 +94,8 @@ impl Client {
 					max_vertex_attributes: 1,
 					max_vertex_buffer_array_stride: 12,
 					max_vertex_buffers: 1,
-					min_storage_buffer_offset_alignment: 32,
-					min_uniform_buffer_offset_alignment: 64,
+					min_storage_buffer_offset_alignment: max(adapter.limits().min_storage_buffer_offset_alignment, 0),
+					min_uniform_buffer_offset_alignment: max(adapter.limits().min_uniform_buffer_offset_alignment, 0),
 				},
 			},
 			None,
@@ -132,8 +124,8 @@ impl Client {
 
 		surface.configure(&device, &config);
 
-		let camera_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-			label: Some("camera_group_layout"),
+		let camera_bind_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+			label: Some("camera_bind_layout"),
 			entries: &[BindGroupLayoutEntry {
 				binding: 0,
 				visibility: ShaderStages::VERTEX,
@@ -146,29 +138,6 @@ impl Client {
 			}],
 		});
 
-		let position = Point3::new(32.0, 32.0, 32.0);
-		let target = Point3::new(0.0, 0.0, 0.0);
-
-		let view = Matrix4::look_at_rh(&position, &target, &Vector3::new(0.0, 1.0, 0.0));
-		let projection = Matrix4::new_perspective(16.0 / 9.0, f32::to_radians(45.0), 0.0, f32::MAX);
-
-		let matrix = projection * view;
-
-		let camera_buffer = device.create_buffer_init(&BufferInitDescriptor {
-			label: Some("camera_buffer"),
-			contents: cast_slice(&matrix.as_slice()),
-			usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-		});
-
-		let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
-			label: Some("camera_bind_group"),
-			layout: &camera_group_layout,
-			entries: &[BindGroupEntry {
-				binding: 0,
-				resource: camera_buffer.as_entire_binding(),
-			}],
-		});
-
 		// TODO: Maybe load from a file at runtime to allow modification? If anyone actually wants this, feel free to PR.
 		let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
 
@@ -178,7 +147,7 @@ impl Client {
 			label: Some("trans_pipeline"),
 			layout: Some(&device.create_pipeline_layout(&PipelineLayoutDescriptor {
 				label: Some("trans_pipeline_layout"),
-				bind_group_layouts: &[&camera_group_layout],
+				bind_group_layouts: &[&camera_bind_layout],
 				push_constant_ranges: &[],
 			})),
 			vertex: VertexState {
@@ -224,12 +193,13 @@ impl Client {
 
 		let world = World::new();
 
+		let camera = OrbitCamera::new(&device, &camera_bind_layout);
+
 		let client = Arc::new(Self {
 			window,
 			surface,
 			device,
 			queue,
-			camera_bind_group,
 			trans_pipeline,
 			world,
 		});
@@ -238,11 +208,16 @@ impl Client {
 		let client_clone = client.clone();
 		runtime.spawn(async move { client_clone.handle_connection().await });
 
-		client.event_loop(config, event_loop);
+		client.event_loop(config, event_loop, camera);
 	}
 
-	// We pass ownership of the config because the event_loop needs mutable access, and nothing else needs it.
-	fn event_loop(self: Arc<Self>, mut config: SurfaceConfiguration, event_loop: EventLoop<()>) -> ! {
+	// We pass ownership of config and orbit_camera because the event_loop needs mutable access, and nothing else needs it.
+	fn event_loop(
+		self: Arc<Self>,
+		mut config: SurfaceConfiguration,
+		event_loop: EventLoop<()>,
+		mut camera: OrbitCamera,
+	) -> ! {
 		event_loop.run(move |event, _, control_flow| {
 			let mut resize = |new_size: PhysicalSize<u32>| {
 				config.width = new_size.width;
@@ -255,8 +230,11 @@ impl Client {
 					Resized(new_size) => resize(new_size),
 					CloseRequested | Destroyed => *control_flow = ControlFlow::Exit,
 					ScaleFactorChanged { new_inner_size, .. } => resize(*new_inner_size),
+					MouseWheel { delta, .. } => camera.handle_mouse_wheel(delta),
+					MouseInput { state, button, .. } => camera.handle_mouse_input(state, button),
 					_ => {}
 				},
+				DeviceEvent { event, .. } => camera.handle_device_event(event),
 				MainEventsCleared => self.window.request_redraw(),
 				LoopDestroyed => *control_flow = ControlFlow::Exit,
 				RedrawRequested(window_id) if window_id == self.window.id() => {
@@ -300,7 +278,8 @@ impl Client {
 
 						render_pass.set_pipeline(&self.trans_pipeline);
 
-						render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+						camera.update_matrix(&self.queue, config.width, config.height);
+						camera.use_camera(&mut render_pass);
 
 						for object in active_sector.objects.values() {
 							for chunk in object.chunks.values() {

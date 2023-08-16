@@ -3,6 +3,7 @@
 mod chunk;
 mod client;
 mod object;
+mod orbit_camera;
 mod sector;
 mod triangulation_table;
 mod world;
