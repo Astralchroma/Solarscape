@@ -20,15 +20,12 @@ fn vertex(vertex: VertexData) -> FragmentData {
     var fragment_data: FragmentData;
 
     fragment_data.position = camera * vec4<f32>(vertex.position, 1.0);
-
-    let camera_position = vec3<f32>(camera[0][3], camera[1][3], camera[2][3]);
-    fragment_data.distance = distance(vertex.position, camera_position);
+    fragment_data.distance = distance(vertex.position, vec3<f32>(0.0));
 
     return fragment_data;
 }
 
 @fragment
-fn fragment(in: FragmentData) -> @location(0) vec4<f32> {
-    // Temporary depth shading until we have something better
-    return vec4<f32>(1.0) * pow(in.distance, 5.0) / pow(10.0, 6.3);
+fn fragment(input: FragmentData) -> @location(0) vec4<f32> {
+    return vec4<f32>(vec3<f32>(input.distance / 100.0), 1.0);
 }

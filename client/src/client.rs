@@ -7,16 +7,19 @@ use solarscape_shared::protocol::{Serverbound, PROTOCOL_VERSION};
 use std::{convert::Infallible, iter, mem::size_of, sync::Arc};
 use tokio::sync::mpsc::{self, error::TryRecvError, UnboundedReceiver, UnboundedSender};
 use tokio::{net::TcpStream, runtime::Runtime};
+use wgpu::CompareFunction::Less;
 use wgpu::{
 	include_wgsl, Backends, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState,
 	BufferAddress, BufferBindingType::Uniform, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
-	CompositeAlphaMode::Auto, Device, DeviceDescriptor, Face::Back, Features, FragmentState, FrontFace::Ccw, Instance,
-	InstanceDescriptor, Limits, LoadOp::Clear, MultisampleState, Operations, PipelineLayoutDescriptor,
-	PolygonMode::Fill, PowerPreference::HighPerformance, PresentMode::AutoVsync, PrimitiveState,
-	PrimitiveTopology::TriangleList, Queue, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
-	RenderPipelineDescriptor, RequestAdapterOptions, ShaderStages, Surface, SurfaceConfiguration, TextureAspect,
-	TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout,
-	VertexFormat::Float32x3, VertexState, VertexStepMode,
+	CompareFunction::LessEqual, CompositeAlphaMode::Auto, DepthBiasState, DepthStencilState, Device, DeviceDescriptor,
+	Extent3d, Face::Back, Features, FragmentState, FrontFace::Ccw, Instance, InstanceDescriptor, LoadOp::Clear,
+	MultisampleState, Operations, PipelineLayoutDescriptor, PolygonMode::Fill, PowerPreference::HighPerformance,
+	PresentMode::AutoVsync, PrimitiveState, PrimitiveTopology::TriangleList, Queue, RenderPassColorAttachment,
+	RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
+	RequestAdapterOptions, ShaderStages, StencilState, Surface, SurfaceConfiguration, Texture, TextureAspect,
+	TextureDescriptor, TextureDimension, TextureFormat::Depth32Float, TextureUsages, TextureView,
+	TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat::Float32x3,
+	VertexState, VertexStepMode,
 };
 use winit::dpi::PhysicalSize;
 use winit::event::Event::{DeviceEvent, LoopDestroyed, MainEventsCleared, RedrawRequested, WindowEvent};
@@ -32,6 +35,9 @@ pub struct Client {
 	size: PhysicalSize<u32>,
 	config: SurfaceConfiguration,
 	trans_pipeline: RenderPipeline,
+	depth_texture: Texture,
+	depth_view: TextureView,
+
 	camera: OrbitCamera,
 	sectors: Vec<Arc<SectorMeta>>,
 	current_sector: Option<Sector>,
@@ -71,37 +77,7 @@ impl Client {
 			&DeviceDescriptor {
 				label: None,
 				features: Features::empty(),
-				limits: Limits {
-					max_bind_groups: 1,
-					max_bindings_per_bind_group: 0,
-					max_buffer_size: 37728,
-					max_compute_invocations_per_workgroup: 0,
-					max_compute_workgroup_size_x: 0,
-					max_compute_workgroup_size_y: 0,
-					max_compute_workgroup_size_z: 0,
-					max_compute_workgroup_storage_size: 0,
-					max_compute_workgroups_per_dimension: 0,
-					max_dynamic_storage_buffers_per_pipeline_layout: 0,
-					max_dynamic_uniform_buffers_per_pipeline_layout: 0,
-					max_inter_stage_shader_components: 1,
-					max_push_constant_size: 0,
-					max_sampled_textures_per_shader_stage: 0,
-					max_samplers_per_shader_stage: 0,
-					max_storage_buffer_binding_size: 0,
-					max_storage_buffers_per_shader_stage: 0,
-					max_storage_textures_per_shader_stage: 0,
-					max_texture_array_layers: 0,
-					max_texture_dimension_1d: 0,
-					max_texture_dimension_2d: 0,
-					max_texture_dimension_3d: 0,
-					max_uniform_buffer_binding_size: 64,
-					max_uniform_buffers_per_shader_stage: 1,
-					max_vertex_attributes: 1,
-					max_vertex_buffer_array_stride: 12,
-					max_vertex_buffers: 1,
-					min_storage_buffer_offset_alignment: adapter.limits().min_storage_buffer_offset_alignment,
-					min_uniform_buffer_offset_alignment: adapter.limits().min_uniform_buffer_offset_alignment,
-				},
+				limits: adapter.limits(),
 			},
 			None,
 		))?;
@@ -129,6 +105,9 @@ impl Client {
 
 		surface.configure(&device, &config);
 
+		// TODO: Maybe load from a file at runtime to allow modification? If anyone actually wants this, feel free to PR.
+		let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
+
 		let camera_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
 			label: Some("camera_group_layout"),
 			entries: &[BindGroupLayoutEntry {
@@ -142,9 +121,6 @@ impl Client {
 				count: None,
 			}],
 		});
-
-		// TODO: Maybe load from a file at runtime to allow modification? If anyone actually wants this, feel free to PR.
-		let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
 
 		// Trans rights!
 		// Any PR attempting to remove the variable name will be rejected, and the submitter potentially blocked.
@@ -177,7 +153,13 @@ impl Client {
 				polygon_mode: Fill,
 				conservative: false,
 			},
-			depth_stencil: None,
+			depth_stencil: Some(DepthStencilState {
+				format: Depth32Float,
+				depth_write_enabled: true,
+				depth_compare: Less,
+				stencil: StencilState::default(),
+				bias: DepthBiasState::default(),
+			}),
 			// TODO: Should be a config option
 			multisample: MultisampleState {
 				count: 1,
@@ -196,7 +178,7 @@ impl Client {
 			multiview: None,
 		});
 
-		let (receive_send, receive_receive) = mpsc::unbounded_channel();
+		let (depth_texture, depth_view) = Self::create_depth_buffer(&device, size.width, size.height);
 
 		let client = Self {
 			camera: OrbitCamera::new(&device, &camera_group_layout),
@@ -210,7 +192,11 @@ impl Client {
 			size,
 			config,
 			trans_pipeline,
+			depth_texture,
+			depth_view,
 		};
+
+		let (receive_send, receive_receive) = mpsc::unbounded_channel();
 
 		// At this point this thread becomes the event loop thread, we spin off a tokio task for networking.
 		runtime.spawn(async move { Self::receive_connection(receive_send).await });
@@ -248,9 +234,35 @@ impl Client {
 		});
 	}
 
+	fn create_depth_buffer(device: &Device, width: u32, height: u32) -> (Texture, TextureView) {
+		let depth_texture = device.create_texture(&TextureDescriptor {
+			label: Some("depth_texture"),
+			size: Extent3d {
+				width,
+				height,
+				depth_or_array_layers: 1,
+			},
+			mip_level_count: 1,
+			sample_count: 1,
+			dimension: TextureDimension::D2,
+			format: Depth32Float,
+			usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+			view_formats: &[],
+		});
+
+		let depth_view = depth_texture.create_view(&TextureViewDescriptor::default());
+
+		(depth_texture, depth_view)
+	}
+
 	fn resize(&mut self, new_size: PhysicalSize<u32>) {
 		self.config.width = new_size.width;
 		self.config.height = new_size.height;
+
+		let (depth_texture, depth_view) = Self::create_depth_buffer(&self.device, new_size.width, new_size.height);
+
+		self.depth_texture = depth_texture;
+		self.depth_view = depth_view;
 
 		self.size = new_size;
 
@@ -290,7 +302,14 @@ impl Client {
 					resolve_target: None,
 					view: &view,
 				})],
-				depth_stencil_attachment: None,
+				depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+					view: &self.depth_view,
+					depth_ops: Some(Operations {
+						load: Clear(1.0),
+						store: true,
+					}),
+					stencil_ops: None,
+				}),
 			});
 
 			render_pass.set_pipeline(&self.trans_pipeline);
