@@ -13,6 +13,7 @@ use std::{
 use tokio::sync::RwLock;
 
 pub struct Sector {
+	pub sector_id: usize,
 	pub name: Box<str>,
 	pub display_name: Box<str>,
 	pub object_id_counter: AtomicU32,
@@ -27,7 +28,7 @@ impl Sector {
 		sectors_path.push("sectors");
 
 		for path in fs::read_dir(sectors_path)? {
-			if let Some(sector) = Sector::load(path?)? {
+			if let Some(sector) = Sector::load(path?, sectors.len())? {
 				sectors.push(sector);
 			}
 		}
@@ -41,7 +42,7 @@ impl Sector {
 		Ok(sectors)
 	}
 
-	fn load(path: DirEntry) -> Result<Option<Arc<Sector>>> {
+	fn load(path: DirEntry, sector_id: usize) -> Result<Option<Arc<Sector>>> {
 		let file_name = path.file_name();
 		let name = file_name.to_string_lossy();
 
@@ -60,6 +61,7 @@ impl Sector {
 		let configuration: SectorConfig = hocon::de::from_str(string.as_str())?;
 
 		let sector = Arc::new(Sector {
+			sector_id,
 			name: name.into(),
 			display_name: configuration.display_name,
 			object_id_counter: AtomicU32::new(0),
@@ -82,7 +84,7 @@ impl Sector {
 
 	pub async fn subscribe(&self, connection: &Arc<Connection>) {
 		connection.send(Clientbound::ActiveSector {
-			name: self.name.clone(),
+			sector_id: self.sector_id,
 		});
 		for object in self.objects.read().await.values() {
 			object.subscribe(connection).await

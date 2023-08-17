@@ -1,10 +1,11 @@
-use crate::{chunk::Chunk, object::Object, orbit_camera::OrbitCamera, world::World};
+use crate::{chunk::Chunk, object::Object, orbit_camera::OrbitCamera, sector::Sector, sector::SectorMeta};
 use anyhow::Result;
 use log::info;
 use solarscape_shared::io::{PacketRead, PacketWrite};
-use solarscape_shared::protocol::Clientbound::{ActiveSector, AddObject, Disconnected, SyncChunk, SyncSector};
+use solarscape_shared::protocol::Clientbound::{self, ActiveSector, AddObject, Disconnected, SyncChunk, SyncSector};
 use solarscape_shared::protocol::{Serverbound, PROTOCOL_VERSION};
-use std::{cmp::max, convert::Infallible, iter, mem::size_of, sync::Arc};
+use std::{convert::Infallible, iter, mem::size_of, sync::Arc};
+use tokio::sync::mpsc::{self, error::TryRecvError, UnboundedReceiver, UnboundedSender};
 use tokio::{net::TcpStream, runtime::Runtime};
 use wgpu::{
 	include_wgsl, Backends, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState,
@@ -28,20 +29,17 @@ pub struct Client {
 	surface: Surface,
 	device: Device,
 	queue: Queue,
+	size: PhysicalSize<u32>,
+	config: SurfaceConfiguration,
 	trans_pipeline: RenderPipeline,
-	world: Arc<World>,
+	camera: OrbitCamera,
+	sectors: Vec<Arc<SectorMeta>>,
+	current_sector: Option<Sector>,
 }
 
 impl Client {
 	// TODO: A lot of this renderer initialization should be moved to it's own function so we can re-init the pipeline.
 	pub fn run(runtime: Runtime) -> Result<Infallible> {
-		let event_loop = EventLoop::new();
-
-		let window = WindowBuilder::new()
-			.with_inner_size(PhysicalSize::new(960, 540))
-			.with_title("Solarscape")
-			.build(&event_loop)?;
-
 		let instance = Instance::new(InstanceDescriptor {
 			// Vulkan covers everything we care about.
 			// GL is for that one guy with a 2014 GPU, will be dropped if it becomes too inconvenient to support.
@@ -49,6 +47,13 @@ impl Client {
 			// Don't care, we won't use it anyway :pineapplesquish:
 			dx12_shader_compiler: Default::default(),
 		});
+
+		let event_loop = EventLoop::new();
+
+		let window = WindowBuilder::new()
+			.with_inner_size(PhysicalSize::new(960, 540))
+			.with_title("Solarscape")
+			.build(&event_loop)?;
 
 		let surface = unsafe { instance.create_surface(&window) }?;
 
@@ -64,7 +69,7 @@ impl Client {
 		// This allows older hardware to run the game, although no promise it will be playable.
 		let (device, queue) = runtime.block_on(adapter.request_device(
 			&DeviceDescriptor {
-				label: Some("device"),
+				label: None,
 				features: Features::empty(),
 				limits: Limits {
 					max_bind_groups: 1,
@@ -94,8 +99,8 @@ impl Client {
 					max_vertex_attributes: 1,
 					max_vertex_buffer_array_stride: 12,
 					max_vertex_buffers: 1,
-					min_storage_buffer_offset_alignment: max(adapter.limits().min_storage_buffer_offset_alignment, 0),
-					min_uniform_buffer_offset_alignment: max(adapter.limits().min_uniform_buffer_offset_alignment, 0),
+					min_storage_buffer_offset_alignment: adapter.limits().min_storage_buffer_offset_alignment,
+					min_uniform_buffer_offset_alignment: adapter.limits().min_uniform_buffer_offset_alignment,
 				},
 			},
 			None,
@@ -124,8 +129,8 @@ impl Client {
 
 		surface.configure(&device, &config);
 
-		let camera_bind_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-			label: Some("camera_bind_layout"),
+		let camera_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+			label: Some("camera_group_layout"),
 			entries: &[BindGroupLayoutEntry {
 				binding: 0,
 				visibility: ShaderStages::VERTEX,
@@ -144,10 +149,10 @@ impl Client {
 		// Trans rights!
 		// Any PR attempting to remove the variable name will be rejected, and the submitter potentially blocked.
 		let trans_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-			label: Some("trans_pipeline"),
+			label: None,
 			layout: Some(&device.create_pipeline_layout(&PipelineLayoutDescriptor {
-				label: Some("trans_pipeline_layout"),
-				bind_group_layouts: &[&camera_bind_layout],
+				label: None,
+				bind_group_layouts: &[&camera_group_layout],
 				push_constant_ranges: &[],
 			})),
 			vertex: VertexState {
@@ -191,112 +196,156 @@ impl Client {
 			multiview: None,
 		});
 
-		let world = World::new();
+		let (receive_send, receive_receive) = mpsc::unbounded_channel();
 
-		let camera = OrbitCamera::new(&device, &camera_bind_layout);
+		let client = Self {
+			camera: OrbitCamera::new(&device, &camera_group_layout),
+			sectors: vec![],
+			current_sector: None,
 
-		let client = Arc::new(Self {
 			window,
 			surface,
 			device,
 			queue,
+			size,
+			config,
 			trans_pipeline,
-			world,
-		});
+		};
 
 		// At this point this thread becomes the event loop thread, we spin off a tokio task for networking.
-		let client_clone = client.clone();
-		runtime.spawn(async move { client_clone.handle_connection().await });
+		runtime.spawn(async move { Self::receive_connection(receive_send).await });
 
-		client.event_loop(config, event_loop, camera);
+		client.event_loop(event_loop, receive_receive);
 	}
 
-	// We pass ownership of config and orbit_camera because the event_loop needs mutable access, and nothing else needs it.
-	fn event_loop(
-		self: Arc<Self>,
-		mut config: SurfaceConfiguration,
-		event_loop: EventLoop<()>,
-		mut camera: OrbitCamera,
-	) -> ! {
-		event_loop.run(move |event, _, control_flow| {
-			let mut resize = |new_size: PhysicalSize<u32>| {
-				config.width = new_size.width;
-				config.height = new_size.height;
-				self.surface.configure(&self.device, &config);
-			};
-
-			match event {
-				WindowEvent { event, window_id } if window_id == self.window.id() => match event {
-					Resized(new_size) => resize(new_size),
-					CloseRequested | Destroyed => *control_flow = ControlFlow::Exit,
-					ScaleFactorChanged { new_inner_size, .. } => resize(*new_inner_size),
-					MouseWheel { delta, .. } => camera.handle_mouse_wheel(delta),
-					MouseInput { state, button, .. } => camera.handle_mouse_input(state, button),
-					_ => {}
-				},
-				DeviceEvent { event, .. } => camera.handle_device_event(event),
-				MainEventsCleared => self.window.request_redraw(),
-				LoopDestroyed => *control_flow = ControlFlow::Exit,
-				RedrawRequested(window_id) if window_id == self.window.id() => {
-					let output = match self.surface.get_current_texture() {
-						Ok(value) => value,
-						Err(_) => {
-							self.surface.configure(&self.device, &config);
-							self.surface.get_current_texture().expect("next surface texture")
-						}
-					};
-
-					let view = output.texture.create_view(&TextureViewDescriptor {
-						label: Some("view"),
-						format: Some(config.format),
-						dimension: Some(TextureViewDimension::D2),
-						aspect: TextureAspect::All,
-						base_mip_level: 0,
-						mip_level_count: None,
-						base_array_layer: 0,
-						array_layer_count: None,
-					});
-
-					let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
-
-					let _ = {
-						let active_sector_guard = self.world.active_sector.blocking_write();
-						let active_sector = active_sector_guard.as_ref().unwrap();
-
-						let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-							label: Some("render_pass"),
-							color_attachments: &[Some(RenderPassColorAttachment {
-								ops: Operations {
-									load: Clear(Color::BLACK),
-									store: true,
-								},
-								resolve_target: None,
-								view: &view,
-							})],
-							depth_stencil_attachment: None,
-						});
-
-						render_pass.set_pipeline(&self.trans_pipeline);
-
-						camera.update_matrix(&self.queue, config.width, config.height);
-						camera.use_camera(&mut render_pass);
-
-						for object in active_sector.objects.values() {
-							for chunk in object.chunks.values() {
-								chunk.render(&mut render_pass);
-							}
-						}
-					};
-
-					self.queue.submit(iter::once(encoder.finish()));
-					output.present();
-				}
+	// TODO: This looks very messy, I hate it, clean it up if possible.
+	fn event_loop(mut self, event_loop: EventLoop<()>, mut receive: UnboundedReceiver<Clientbound>) -> ! {
+		event_loop.run(move |event, _, control_flow| match event {
+			WindowEvent { event, window_id } if window_id == self.window.id() => match event {
+				Resized(new_size) => self.resize(new_size),
+				CloseRequested | Destroyed => *control_flow = ControlFlow::Exit,
+				ScaleFactorChanged { new_inner_size, .. } => self.resize(*new_inner_size),
+				MouseWheel { delta, .. } => self.camera.handle_mouse_wheel(delta),
+				MouseInput { state, button, .. } => self.camera.handle_mouse_input(state, button),
 				_ => {}
+			},
+			DeviceEvent { event, .. } => self.camera.handle_device_event(event),
+			MainEventsCleared => {
+				loop {
+					match receive.try_recv() {
+						Ok(packet) => self.process_packet(packet),
+						Err(error) => match error {
+							TryRecvError::Empty => break,
+							TryRecvError::Disconnected => panic!("Disconnected from Server!"),
+						},
+					}
+				}
+				self.window.request_redraw();
 			}
+			LoopDestroyed => *control_flow = ControlFlow::Exit,
+			RedrawRequested(window_id) if window_id == self.window.id() => self.render(),
+			_ => {}
 		});
 	}
 
-	pub async fn handle_connection(&self) -> Result<Infallible> {
+	fn resize(&mut self, new_size: PhysicalSize<u32>) {
+		self.config.width = new_size.width;
+		self.config.height = new_size.height;
+
+		self.size = new_size;
+
+		self.surface.configure(&self.device, &self.config);
+	}
+
+	fn render(&mut self) {
+		let output = match self.surface.get_current_texture() {
+			Ok(value) => value,
+			Err(_) => {
+				self.resize(self.size);
+				self.surface.get_current_texture().expect("next surface texture")
+			}
+		};
+
+		let view = output.texture.create_view(&TextureViewDescriptor {
+			label: None,
+			format: Some(self.config.format),
+			dimension: Some(TextureViewDimension::D2),
+			aspect: TextureAspect::All,
+			base_mip_level: 0,
+			mip_level_count: None,
+			base_array_layer: 0,
+			array_layer_count: None,
+		});
+
+		let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
+
+		{
+			let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+				label: Some("render_pass"),
+				color_attachments: &[Some(RenderPassColorAttachment {
+					ops: Operations {
+						load: Clear(Color::BLACK),
+						store: true,
+					},
+					resolve_target: None,
+					view: &view,
+				})],
+				depth_stencil_attachment: None,
+			});
+
+			render_pass.set_pipeline(&self.trans_pipeline);
+
+			self.camera
+				.update_matrix(&self.queue, self.config.width, self.config.height);
+			self.camera.use_camera(&mut render_pass);
+
+			if let Some(ref sector) = self.current_sector {
+				for object in sector.objects.values() {
+					for chunk in object.chunks.values() {
+						chunk.render(&mut render_pass);
+					}
+				}
+			}
+		}
+
+		self.queue.submit(iter::once(encoder.finish()));
+		output.present();
+	}
+
+	fn process_packet(&mut self, packet: Clientbound) {
+		match packet {
+			Disconnected { .. } => {}
+			SyncSector { name, display_name } => self.sectors.push(SectorMeta::new(name, display_name)),
+			ActiveSector { sector_id } => {
+				self.current_sector = Some(Sector::new(
+					self.sectors
+						.get(sector_id)
+						.expect("active sector meta must already exist")
+						.clone(),
+				))
+			}
+			AddObject { object_id } => {
+				if let Some(ref mut sector) = self.current_sector {
+					sector.objects.insert(object_id, Object::new(object_id));
+				}
+			}
+			SyncChunk {
+				object_id,
+				grid_position,
+				data,
+			} => {
+				if let Some(ref mut sector) = self.current_sector {
+					if let Some(ref mut object) = sector.objects.get_mut(&object_id) {
+						let mut chunk = Chunk::new(&self.device, grid_position, data);
+						chunk.build_mesh(&self.queue);
+						object.chunks.insert(grid_position, chunk);
+					}
+				}
+			}
+		}
+	}
+
+	pub async fn receive_connection(receive: UnboundedSender<Clientbound>) -> Result<Infallible> {
 		let mut stream = TcpStream::connect("[::1]:23500").await?;
 		info!("Connecting to [::1]:23500");
 
@@ -307,43 +356,11 @@ impl Client {
 			.await?;
 
 		loop {
-			match stream.read_packet().await? {
+			let packet = stream.read_packet().await?;
+
+			match packet {
 				Disconnected { reason } => panic!("Disconnected: {reason:?}"),
-				SyncSector { name, display_name } => self.world.add_sector(name, display_name).await,
-				ActiveSector { name } => self.world.set_active_sector(name).await,
-				AddObject { object_id } => {
-					info!("Added object {object_id}");
-
-					self.world
-						.active_sector
-						.write()
-						.await
-						.as_mut()
-						.expect("active sector should be set")
-						.objects
-						.insert(object_id, Object::new(object_id));
-				}
-				SyncChunk {
-					object_id,
-					grid_position,
-					data,
-				} => {
-					info!("Added chunk {grid_position:?} to {object_id}");
-
-					let mut chunk = Chunk::new(&self.device, grid_position, data);
-					chunk.build_mesh(&self.queue);
-					self.world
-						.active_sector
-						.write()
-						.await
-						.as_mut()
-						.expect("active sector should be set")
-						.objects
-						.get_mut(&object_id)
-						.expect("object_id of chunk should exist")
-						.chunks
-						.insert(grid_position, chunk);
-				}
+				_ => receive.send(packet)?,
 			}
 		}
 	}

@@ -6,7 +6,6 @@ mod object;
 mod orbit_camera;
 mod sector;
 mod triangulation_table;
-mod world;
 
 use anyhow::Result;
 use client::Client;

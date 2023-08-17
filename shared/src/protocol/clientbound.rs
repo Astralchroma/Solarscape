@@ -12,7 +12,7 @@ pub enum Clientbound {
 		display_name: Box<str>,
 	},
 	ActiveSector {
-		name: Box<str>,
+		sector_id: usize,
 	},
 	AddObject {
 		object_id: u32,
