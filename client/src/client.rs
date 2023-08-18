@@ -7,11 +7,10 @@ use solarscape_shared::protocol::{Serverbound, PROTOCOL_VERSION};
 use std::{convert::Infallible, iter, mem::size_of, sync::Arc};
 use tokio::sync::mpsc::{self, error::TryRecvError, UnboundedReceiver, UnboundedSender};
 use tokio::{net::TcpStream, runtime::Runtime};
-use wgpu::CompareFunction::Less;
 use wgpu::{
 	include_wgsl, Backends, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState,
 	BufferAddress, BufferBindingType::Uniform, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
-	CompareFunction::LessEqual, CompositeAlphaMode::Auto, DepthBiasState, DepthStencilState, Device, DeviceDescriptor,
+	CompareFunction::Greater, CompositeAlphaMode::Auto, DepthBiasState, DepthStencilState, Device, DeviceDescriptor,
 	Extent3d, Face::Back, Features, FragmentState, FrontFace::Ccw, Instance, InstanceDescriptor, LoadOp::Clear,
 	MultisampleState, Operations, PipelineLayoutDescriptor, PolygonMode::Fill, PowerPreference::HighPerformance,
 	PresentMode::AutoVsync, PrimitiveState, PrimitiveTopology::TriangleList, Queue, RenderPassColorAttachment,
@@ -156,7 +155,7 @@ impl Client {
 			depth_stencil: Some(DepthStencilState {
 				format: Depth32Float,
 				depth_write_enabled: true,
-				depth_compare: Less,
+				depth_compare: Greater,
 				stencil: StencilState::default(),
 				bias: DepthBiasState::default(),
 			}),
@@ -305,7 +304,7 @@ impl Client {
 				depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
 					view: &self.depth_view,
 					depth_ops: Some(Operations {
-						load: Clear(1.0),
+						load: Clear(0.0),
 						store: true,
 					}),
 					stencil_ops: None,
