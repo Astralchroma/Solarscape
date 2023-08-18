@@ -3,14 +3,14 @@ use bytemuck::cast_slice;
 use nalgebra::{convert, Vector3};
 use solarscape_shared::world::{chunk::index_of, object::CHUNK_VOLUME};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{Buffer, BufferDescriptor, BufferUsages, Device, Queue, RenderPass};
+use wgpu::{Buffer, BufferUsages, Device, RenderPass};
 
 pub struct Chunk {
 	pub grid_position: Vector3<i32>,
 	pub data: [bool; CHUNK_VOLUME],
 
 	pub instance_buffer: Buffer,
-	pub vertex_buffer: Buffer,
+	pub vertex_buffer: Option<Buffer>,
 	pub vertex_count: u32,
 }
 
@@ -23,13 +23,7 @@ impl Chunk {
 				contents: cast_slice(convert::<_, Vector3<f32>>(grid_position * 16).as_slice()),
 				usage: BufferUsages::VERTEX,
 			}),
-			vertex_buffer: device.create_buffer(&BufferDescriptor {
-				label: None, // TODO
-				size: 37728,
-				usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-				mapped_at_creation: false,
-			}),
-
+			vertex_buffer: None,
 			grid_position,
 			data,
 			vertex_count: 0,
@@ -37,7 +31,7 @@ impl Chunk {
 	}
 
 	// TODO: Meshes are all blocking built on the main thread. Start here if there is a lot of lag when loading chunks.
-	pub fn build_mesh(&mut self, queue: &Queue) {
+	pub fn build_mesh(&mut self, device: &Device) {
 		// TODO: Not using indexes, this is also wasteful. Start here if there are rendering performance problems.
 		let mut vertices = vec![];
 
@@ -83,18 +77,24 @@ impl Chunk {
 			}
 		}
 
-		queue.write_buffer(&self.vertex_buffer, 0, cast_slice(&vertices));
 		self.vertex_count = vertices.len() as u32 / 3;
-	}
-
-	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
 		if self.vertex_count == 0 {
 			return;
 		}
 
-		render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
-		render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
-		render_pass.draw(0..self.vertex_count, 0..1)
+		self.vertex_buffer = Some(device.create_buffer_init(&BufferInitDescriptor {
+			label: None, // TODO
+			contents: cast_slice(&vertices),
+			usage: BufferUsages::VERTEX,
+		}));
+	}
+
+	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
+		if let Some(ref vertex_buffer) = self.vertex_buffer {
+			render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+			render_pass.set_vertex_buffer(1, vertex_buffer.slice(..));
+			render_pass.draw(0..self.vertex_count, 0..1)
+		};
 	}
 }
 

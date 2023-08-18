@@ -366,7 +366,7 @@ impl Client {
 				if let Some(ref mut sector) = self.current_sector {
 					if let Some(ref mut object) = sector.objects.get_mut(&object_id) {
 						let mut chunk = Chunk::new(&self.device, grid_position, data);
-						chunk.build_mesh(&self.queue);
+						chunk.build_mesh(&self.device);
 						object.chunks.insert(grid_position, chunk);
 					}
 				}
