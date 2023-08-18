@@ -88,6 +88,10 @@ impl Chunk {
 	}
 
 	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
+		if self.vertex_count == 0 {
+			return;
+		}
+
 		render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
 		render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
 		render_pass.draw(0..self.vertex_count, 0..1)
