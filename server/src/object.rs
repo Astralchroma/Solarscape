@@ -8,7 +8,7 @@ use std::{
 use tokio::sync::RwLock;
 
 pub const CHUNK_RADIUS: i32 = 1;
-pub const RADIUS: f64 = (CHUNK_RADIUS << 4) as f64;
+pub const RADIUS: f64 = (CHUNK_RADIUS << 4) as f64 - 0.5;
 
 pub struct Object {
 	pub object_id: u32,
