@@ -2,8 +2,13 @@
 @binding(0)
 var<uniform> camera: mat4x4<f32>;
 
-struct VertexData {
+struct ChunkData {
     @location(0)
+    grid_position: vec3<f32>,
+}
+
+struct VertexData {
+    @location(1)
     position: vec3<f32>,
 }
 
@@ -16,11 +21,13 @@ struct FragmentData {
 }
 
 @vertex
-fn vertex(vertex: VertexData) -> FragmentData {
+fn vertex(chunk: ChunkData, vertex: VertexData) -> FragmentData {
     var fragment_data: FragmentData;
 
-    fragment_data.position = camera * vec4<f32>(vertex.position, 1.0);
-    fragment_data.distance = distance(vertex.position, vec3<f32>(0.0));
+    let position = chunk.grid_position + vertex.position;
+
+    fragment_data.position = camera * vec4<f32>(position, 1.0);
+    fragment_data.distance = distance(position, vec3<f32>(0.0));
 
     return fragment_data;
 }

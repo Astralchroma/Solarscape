@@ -62,10 +62,9 @@ impl OrbitCamera {
 
 		let translation = Matrix4::from_euler_angles(self.rotation_y, self.rotation_x, 0.0)
 			.mul(dvector![0.0, 0.0, self.distance, 0.0])
-			.add(dvector![7.5, 7.5, 7.5, 0.0])
 			.xyz();
 
-		let view = Matrix4::look_at_rh(&Point3::from(translation), &Point3::new(7.5, 7.5, 7.5), &UP_VECTOR);
+		let view = Matrix4::look_at_rh(&Point3::from(translation), &Point3::new(0.0, 0.0, 0.0), &UP_VECTOR);
 		let matrix = projection * view;
 
 		queue.write_buffer(&self.buffer, 0, cast_slice(matrix.as_slice()))

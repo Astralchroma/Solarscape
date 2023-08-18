@@ -133,15 +133,26 @@ impl Client {
 			vertex: VertexState {
 				module: &shader,
 				entry_point: "vertex",
-				buffers: &[VertexBufferLayout {
-					array_stride: size_of::<f32>() as BufferAddress * 3,
-					step_mode: VertexStepMode::Vertex,
-					attributes: &[VertexAttribute {
-						format: Float32x3,
-						offset: 0,
-						shader_location: 0,
-					}],
-				}],
+				buffers: &[
+					VertexBufferLayout {
+						array_stride: size_of::<f32>() as BufferAddress * 3,
+						step_mode: VertexStepMode::Instance,
+						attributes: &[VertexAttribute {
+							format: Float32x3,
+							offset: 0,
+							shader_location: 0,
+						}],
+					},
+					VertexBufferLayout {
+						array_stride: size_of::<f32>() as BufferAddress * 3,
+						step_mode: VertexStepMode::Vertex,
+						attributes: &[VertexAttribute {
+							format: Float32x3,
+							offset: 0,
+							shader_location: 1,
+						}],
+					},
+				],
 			},
 			primitive: PrimitiveState {
 				topology: TriangleList,
