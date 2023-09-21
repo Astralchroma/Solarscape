@@ -10,27 +10,27 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
-anyhow = "1.0.75"
-async-trait = "0.1.73"
-bytemuck = "1.13.1"
-env_logger = "0.10.0"
-hocon = "0.9.0"
-log = "0.4.20"
-once_cell = "1.18.0"
-thiserror = "1.0.47"
-wgpu = "0.17.0"
-winit = "0.28.6"
+anyhow = "=1.0.75"
+async-trait = "=0.1.73"
+bytemuck = "=1.13.1"
+env_logger = "=0.10.0"
+hocon = "=0.9.0"
+log = "=0.4.20"
+once_cell = "=1.18.0"
+thiserror = "=1.0.47"
+wgpu = "=0.17.0"
+winit = "=0.28.6"
 
 [workspace.dependencies.bincode]
-version = "2.0.0-rc.3"
+version = "=2.0.0-rc.3"
 features = [ "serde" ]
 
 [workspace.dependencies.nalgebra]
-version = "0.32.3"
+version = "=0.32.3"
 features = [ "serde-serialize" ]
 
 [workspace.dependencies.serde]
-version = "1.0.183"
+version = "=1.0.183"
 features = [
 	"derive",
 ]
@@ -40,7 +40,7 @@ version = "0.7.8"
 default-features = false
 
 [workspace.dependencies.tokio]
-version = "1.32.0"
+version = "=1.32.0"
 features = [
 	"macros",
 	"net",
