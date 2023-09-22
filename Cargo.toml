@@ -31,7 +31,7 @@ version = "=0.32.3"
 features = [ "serde-serialize" ]
 
 [workspace.dependencies.serde]
-version = "=1.0.183"
+version = "=1.0.188"
 features = [
 	"derive",
 ]
