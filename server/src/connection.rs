@@ -1,4 +1,4 @@
-use crate::world::World;
+use crate::server::Server;
 use anyhow::Result;
 use log::{info, warn};
 use solarscape_shared::{
@@ -24,7 +24,7 @@ pub struct Connection {
 }
 
 impl Connection {
-	pub async fn accept(server: Arc<World>, stream: TcpStream, address: SocketAddr) -> Option<Arc<Connection>> {
+	pub async fn accept(server: Arc<Server>, stream: TcpStream, address: SocketAddr) -> Option<Arc<Connection>> {
 		let (send_sender, send) = mpsc::unbounded_channel();
 		let (disconnect_sender, disconnect) = mpsc::unbounded_channel();
 		let (receive_sender, mut receive) = mpsc::unbounded_channel();
@@ -101,7 +101,7 @@ impl Connection {
 
 	async fn handshake(
 		self: &Arc<Self>,
-		server: Arc<World>,
+		server: Arc<Server>,
 		receive: &mut UnboundedReceiver<Serverbound>,
 	) -> Result<Option<DisconnectReason>> {
 		info!("[{}] Connecting!", self.address);

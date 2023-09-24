@@ -2,12 +2,12 @@ use crate::{connection::Connection, sector::Sector};
 use anyhow::Result;
 use std::sync::Arc;
 
-pub struct World {
+pub struct Server {
 	pub sectors: Vec<Arc<Sector>>,
 }
 
-impl World {
-	pub fn new() -> Result<Arc<World>> {
+impl Server {
+	pub fn new() -> Result<Arc<Server>> {
 		let sectors = Sector::load_all()?;
 
 		Ok(Arc::new(Self {

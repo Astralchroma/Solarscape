@@ -4,9 +4,9 @@ mod chunk;
 mod connection;
 mod object;
 mod sector;
-mod world;
+mod server;
 
-use crate::{connection::Connection, world::World};
+use crate::{connection::Connection, server::Server};
 use anyhow::Result;
 use log::info;
 use solarscape_shared::shared_main;
@@ -24,12 +24,12 @@ fn main() -> Result<Infallible> {
 		env::set_current_dir(working_directory)?;
 	}
 
-	let world = World::new()?;
+	let world = Server::new()?;
 
 	runtime.block_on(handle_connections(world))
 }
 
-async fn handle_connections(world: Arc<World>) -> Result<Infallible> {
+async fn handle_connections(world: Arc<Server>) -> Result<Infallible> {
 	let socket = TcpListener::bind("[::]:23500").await?;
 	info!("Listening on [::]:23500");
 
