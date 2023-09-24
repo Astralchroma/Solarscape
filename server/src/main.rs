@@ -16,17 +16,12 @@ use tokio::net::TcpListener;
 fn main() -> Result<Infallible> {
 	let runtime = shared_main()?;
 
-	let mut cargo = env::current_dir()?;
-	cargo.push("Cargo.toml");
+	if let Ok(_) = env::var("CARGO") {
+		let mut working_directory = env::current_dir()?;
+		working_directory.push("server/run");
 
-	// if Cargo.toml exists, assume we are running in a development environment.
-	if cargo.exists() {
-		let mut data = env::current_dir()?;
-		data.push("server");
-		data.push("run");
-
-		fs::create_dir_all(data.clone())?;
-		env::set_current_dir(data)?;
+		fs::create_dir_all(&working_directory)?;
+		env::set_current_dir(working_directory)?;
 	}
 
 	let world = World::new()?;
