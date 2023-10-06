@@ -304,7 +304,7 @@ impl Client {
 
 		let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
 
-		let mut objects = self.world.query::<&Object>();
+		let mut chunks = self.world.query::<&Chunk>();
 
 		{
 			let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -333,9 +333,7 @@ impl Client {
 				.update_matrix(&self.queue, self.config.width, self.config.height);
 			self.camera.use_camera(&mut render_pass);
 
-			objects
-				.iter()
-				.for_each(|(_, object)| object.chunks.values().for_each(|chunk| chunk.render(&mut render_pass)));
+			chunks.iter().for_each(|(_, chunk)| chunk.render(&mut render_pass));
 		}
 
 		self.queue.submit(iter::once(encoder.finish()));
@@ -370,7 +368,7 @@ impl Client {
 			}
 			AddObject { entity_id } => {
 				let entity = Entity::from_bits(entity_id).expect("valid entity id");
-				self.world.spawn_at(entity, (Object::default(),))
+				self.world.spawn_at(entity, (Object,))
 			}
 			SyncChunk {
 				entity_id,
@@ -381,11 +379,7 @@ impl Client {
 				chunk.build_mesh(&self.device);
 
 				let entity = Entity::from_bits(entity_id).expect("valid entity id");
-				self.world
-					.get::<&mut Object>(entity)
-					.expect("object")
-					.chunks
-					.insert(grid_position, chunk);
+				self.world.spawn_at(entity, (chunk,));
 			}
 		}
 	}

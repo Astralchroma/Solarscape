@@ -7,7 +7,7 @@ mod sector;
 mod server;
 mod sync;
 
-use crate::{connection::Connection, object::Object, sector::Sector, server::Server};
+use crate::{connection::Connection, object::Object, sector::Sector, server::Server, sync::Subscribers};
 use anyhow::Result;
 use hecs::With;
 use solarscape_shared::shared_main;
@@ -34,10 +34,14 @@ fn main() -> Result<Infallible> {
 		.world
 		.query::<With<(), &Sector>>()
 		.into_iter()
-		.map(|(entity, _)| (Object::sphere(entity),))
+		.map(|(sector, _)| (Object { sector }, Subscribers::new()))
 		.collect::<Vec<_>>();
 
-	server.world.spawn_batch(objects);
+	let objects = server.world.spawn_batch(objects).collect::<Vec<_>>();
+
+	for object in objects {
+		Object::generate_sphere(&mut server.world, object)
+	}
 
 	let (incoming_in, incoming) = mpsc::unbounded_channel();
 	runtime.spawn(Connection::r#await(incoming_in));

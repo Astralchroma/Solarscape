@@ -1,5 +1,5 @@
 use crate::sync::{Subscribers, Syncable};
-use crate::{connection::Connection, object::Object, sector::Sector};
+use crate::{chunk::Chunk, connection::Connection, object::Object, sector::Sector};
 use hecs::World;
 use solarscape_shared::protocol::Clientbound;
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
@@ -40,10 +40,27 @@ impl Server {
 					});
 
 					self.world
-						.query::<&Object>()
-						.iter()
-						.filter(|(_, object)| object.sector == sector_entity)
-						.for_each(|(entity, object)| object.sync(entity, &mut connection));
+						.query::<(&Object, &mut Subscribers)>()
+						.into_iter()
+						.filter(|(_, (object, _))| object.sector == sector_entity)
+						.map(|(object_entity, (object, subscribers))| {
+							subscribers.push(entity);
+							object.sync(object_entity, &mut connection);
+
+							object_entity
+						})
+						.collect::<Vec<_>>()
+						.into_iter()
+						.for_each(|object_entity| {
+							self.world
+								.query::<(&Chunk, &mut Subscribers)>()
+								.into_iter()
+								.filter(|(_, (chunk, _))| chunk.object == object_entity)
+								.for_each(|(chunk_entity, (chunk, subscribers))| {
+									subscribers.push(entity);
+									chunk.sync(chunk_entity, &mut connection);
+								});
+						});
 				}
 			}
 		}

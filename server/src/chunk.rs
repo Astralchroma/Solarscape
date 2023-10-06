@@ -1,13 +1,24 @@
-use crate::object::RADIUS;
+use crate::{connection::Connection, object::RADIUS, sync::Syncable};
+use hecs::Entity;
 use nalgebra::Vector3;
+use solarscape_shared::protocol::Clientbound;
 use solarscape_shared::world::{chunk::index_of_vec, object::CHUNK_VOLUME};
 
 pub struct Chunk {
+	pub object: Entity,
 	pub grid_position: Vector3<i32>,
 	pub data: [bool; CHUNK_VOLUME],
 }
 
 impl Chunk {
+	pub fn new(object: Entity, grid_position: Vector3<i32>) -> Self {
+		Self {
+			object,
+			grid_position,
+			data: [false; CHUNK_VOLUME],
+		}
+	}
+
 	pub fn get(&self, cell_position: Vector3<u8>) -> bool {
 		self.data[index_of_vec(cell_position)]
 	}
@@ -17,17 +28,7 @@ impl Chunk {
 	}
 
 	/// TODO: Temporary
-	pub fn new_sphere(grid_position: Vector3<i32>) -> Self {
-		let mut chunk = Self {
-			grid_position,
-			data: [false; CHUNK_VOLUME],
-		};
-		chunk.populate_sphere();
-		chunk
-	}
-
-	/// TODO: Temporary
-	fn populate_sphere(&mut self) {
+	pub fn generate_sphere_section(&mut self) {
 		let chunk_world_position = (self.grid_position * 16).cast();
 
 		for x_i in 0..16 {
@@ -46,13 +47,19 @@ impl Chunk {
 
 					let cell_position = Vector3::new(x_i, y_i, z_i);
 
-					if distance < RADIUS {
-						self.set(cell_position, true);
-					} else {
-						self.set(cell_position, false);
-					}
+					self.set(cell_position, distance < RADIUS);
 				}
 			}
 		}
+	}
+}
+
+impl Syncable for Chunk {
+	fn sync(&self, entity: Entity, connection: &mut Connection) {
+		connection.send(Clientbound::SyncChunk {
+			entity_id: entity.to_bits().get(),
+			grid_position: self.grid_position,
+			data: self.data,
+		})
 	}
 }
