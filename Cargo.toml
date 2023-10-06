@@ -41,6 +41,10 @@ features = [
 version = "=1.32.0"
 features = [
 	"macros",
+	"io-util",
+	"net",
+	"rt-multi-thread",
+	"sync"
 ]
 
 [profile.dev.package."*"]
