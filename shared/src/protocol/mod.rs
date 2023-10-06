@@ -9,6 +9,7 @@ use once_cell::sync::Lazy;
 
 #[derive(Debug, Decode, Encode)]
 pub enum DisconnectReason {
+	ConnectionLost,
 	Disconnected,
 	InternalError,
 	ProtocolViolation,

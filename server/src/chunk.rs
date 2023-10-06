@@ -1,36 +1,26 @@
-use crate::{
-	connection::Connection,
-	object::{Object, RADIUS},
-};
+use crate::object::RADIUS;
 use nalgebra::Vector3;
-use solarscape_shared::{
-	protocol::Clientbound,
-	world::{chunk::index_of_vec, object::CHUNK_VOLUME},
-};
-use std::sync::{Arc, Weak};
-use tokio::sync::RwLock;
+use solarscape_shared::world::{chunk::index_of_vec, object::CHUNK_VOLUME};
 
 pub struct Chunk {
-	pub object: Weak<Object>,
 	pub grid_position: Vector3<i32>,
-	pub data: RwLock<[bool; CHUNK_VOLUME]>,
+	pub data: [bool; CHUNK_VOLUME],
 }
 
 impl Chunk {
 	pub fn get(&self, cell_position: Vector3<u8>) -> bool {
-		self.data.blocking_read()[index_of_vec(cell_position)]
+		self.data[index_of_vec(cell_position)]
 	}
 
 	pub fn set(&mut self, cell_position: Vector3<u8>, value: bool) {
-		self.data.blocking_write()[index_of_vec(cell_position)] = value;
+		self.data[index_of_vec(cell_position)] = value;
 	}
 
 	/// TODO: Temporary
-	pub fn new_sphere(object: Weak<Object>, grid_position: Vector3<i32>) -> Self {
+	pub fn new_sphere(grid_position: Vector3<i32>) -> Self {
 		let mut chunk = Self {
-			object,
 			grid_position,
-			data: RwLock::new([false; CHUNK_VOLUME]),
+			data: [false; CHUNK_VOLUME],
 		};
 		chunk.populate_sphere();
 		chunk
@@ -64,18 +54,5 @@ impl Chunk {
 				}
 			}
 		}
-	}
-
-	pub async fn subscribe(&self, connection: &Arc<Connection>) {
-		let object = match self.object.upgrade() {
-			Some(object) => object,
-			None => return,
-		};
-
-		connection.send(Clientbound::SyncChunk {
-			object_id: object.object_id,
-			grid_position: self.grid_position,
-			data: *self.data.read().await,
-		})
 	}
 }

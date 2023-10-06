@@ -5,18 +5,20 @@ mod connection;
 mod object;
 mod sector;
 mod server;
+mod sync;
 
-use crate::{connection::Connection, server::Server};
+use crate::{connection::Connection, object::Object, sector::Sector, server::Server};
 use anyhow::Result;
-use log::info;
+use hecs::With;
 use solarscape_shared::shared_main;
-use std::{convert::Infallible, env, fs, sync::Arc};
-use tokio::net::TcpListener;
+use std::{convert::Infallible, env, fs};
+use tokio::sync::mpsc;
 
 fn main() -> Result<Infallible> {
 	let runtime = shared_main()?;
 
-	if let Ok(_) = env::var("CARGO") {
+	// Avoid altering project files if running in Cargo
+	if env::var("CARGO").is_ok() {
 		let mut working_directory = env::current_dir()?;
 		working_directory.push("server/run");
 
@@ -24,17 +26,21 @@ fn main() -> Result<Infallible> {
 		env::set_current_dir(working_directory)?;
 	}
 
-	let world = Server::new()?;
+	let mut server = Server::default();
 
-	runtime.block_on(handle_connections(world))
-}
+	server.world.spawn_batch(Sector::load_all()?);
 
-async fn handle_connections(world: Arc<Server>) -> Result<Infallible> {
-	let socket = TcpListener::bind("[::]:23500").await?;
-	info!("Listening on [::]:23500");
+	let objects = server
+		.world
+		.query::<With<(), &Sector>>()
+		.into_iter()
+		.map(|(entity, _)| (Object::sphere(entity),))
+		.collect::<Vec<_>>();
 
-	loop {
-		let (stream, address) = socket.accept().await?;
-		tokio::spawn(Connection::accept(world.clone(), stream, address));
-	}
+	server.world.spawn_batch(objects);
+
+	let (incoming_in, incoming) = mpsc::unbounded_channel();
+	runtime.spawn(Connection::r#await(incoming_in));
+
+	server.run(incoming);
 }

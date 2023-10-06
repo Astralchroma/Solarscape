@@ -1,147 +1,97 @@
-use crate::server::Server;
 use anyhow::Result;
-use log::{info, warn};
-use solarscape_shared::{
-	io::{PacketRead, PacketWrite},
-	protocol::{
-		Clientbound,
-		DisconnectReason::{self, Disconnected, InternalError, ProtocolViolation, VersionMismatch},
-		Serverbound, PROTOCOL_VERSION,
-	},
-};
-use std::{net::SocketAddr, sync::Arc};
-use tokio::{
-	io::AsyncWriteExt,
-	net::TcpStream,
-	select,
-	sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
-};
+use log::info;
+use solarscape_shared::io::{PacketRead, PacketWrite};
+use solarscape_shared::protocol::DisconnectReason::{ConnectionLost, ProtocolViolation, VersionMismatch};
+use solarscape_shared::protocol::{Clientbound, DisconnectReason, Serverbound, PROTOCOL_VERSION};
+use std::{convert::Infallible, io, net::SocketAddr};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::{net::TcpListener, net::TcpStream, select};
 
 pub struct Connection {
-	pub address: SocketAddr,
-	send: UnboundedSender<Clientbound>,
-	disconnect: UnboundedSender<Result<DisconnectReason>>,
+	address: SocketAddr,
+	send_in: UnboundedSender<Clientbound>,
+	receive_out: UnboundedReceiver<Serverbound>,
 }
 
 impl Connection {
-	pub async fn accept(server: Arc<Server>, stream: TcpStream, address: SocketAddr) -> Option<Arc<Connection>> {
-		let (send_sender, send) = mpsc::unbounded_channel();
-		let (disconnect_sender, disconnect) = mpsc::unbounded_channel();
-		let (receive_sender, mut receive) = mpsc::unbounded_channel();
+	pub fn address(&self) -> &SocketAddr {
+		&self.address
+	}
 
-		let connection = Arc::new(Connection {
-			address,
-			send: send_sender,
-			disconnect: disconnect_sender,
-		});
-
-		tokio::spawn(
-			connection
-				.clone()
-				.oversee_communication(stream, send, disconnect, receive_sender),
-		);
-
-		match connection.handshake(server, &mut receive).await {
-			Err(error) => {
-				connection.disconnect(Err(error));
-				return None;
-			}
-			Ok(reason) => {
-				if let Some(reason) = reason {
-					connection.disconnect(Ok(reason));
-					return None;
-				}
-			}
+	pub fn send(&self, packet: Clientbound) {
+		// TODO: This is dumb
+		if let Clientbound::Disconnected { .. } = packet {
+			return;
 		}
 
-		tokio::spawn(connection.clone().oversee_processing(receive));
-
-		Some(connection)
-	}
-
-	async fn oversee_communication(
-		self: Arc<Self>,
-		mut stream: TcpStream,
-		send: UnboundedReceiver<Clientbound>,
-		disconnect: UnboundedReceiver<Result<DisconnectReason>>,
-		receive: UnboundedSender<Serverbound>,
-	) {
-		let reason = match Connection::communicate(&mut stream, send, disconnect, receive).await {
-			Ok(reason) => {
-				info!("[{}] Disconnected! Reason: {reason:?}", self.address);
-				reason
-			}
-			Err(error) => {
-				warn!("[{}] Disconnected! Unhandled error: {error:?}", self.address);
-				InternalError
-			}
-		};
-
-		let _ = stream.write_packet(&Clientbound::Disconnected { reason }).await;
-		let _ = stream.shutdown().await;
-	}
-
-	async fn communicate(
-		stream: &mut TcpStream,
-		mut send: UnboundedReceiver<Clientbound>,
-		mut disconnect: UnboundedReceiver<Result<DisconnectReason>>,
-		receive: UnboundedSender<Serverbound>,
-	) -> Result<DisconnectReason> {
-		loop {
-			select! {
-				disconnect = disconnect.recv() => return disconnect.ok_or(ChannelClosed)?,
-				packet = send.recv() => match packet.ok_or(ChannelClosed)? {
-					Clientbound::Disconnected { reason } => return Ok(reason),
-					packet => stream.write_packet(&packet).await?,
-				},
-				packet = stream.read_packet() => receive.send(packet?)?,
-			}
+		if self.send_in.send(packet).is_err() {
+			todo!("handle errors lol")
 		}
 	}
 
-	async fn handshake(
-		self: &Arc<Self>,
-		server: Arc<Server>,
-		receive: &mut UnboundedReceiver<Serverbound>,
-	) -> Result<Option<DisconnectReason>> {
-		info!("[{}] Connecting!", self.address);
+	pub fn receive(&mut self) -> &mut UnboundedReceiver<Serverbound> {
+		&mut self.receive_out
+	}
 
-		let protocol_version = match receive.recv().await.ok_or(ChannelClosed)? {
-			Serverbound::Hello {
-				major_version: protocol_version,
-			} => protocol_version,
-			_ => return Ok(Some(ProtocolViolation)),
+	pub fn disconnect(self, reason: DisconnectReason) {
+		let _ = self.send_in.send(Clientbound::Disconnected { reason });
+	}
+
+	async fn handshake(&mut self) -> Result<(), DisconnectReason> {
+		let protocol_version = match self.receive_out.recv().await.ok_or(ConnectionLost)? {
+			Serverbound::Hello { major_version } => major_version,
+			_ => return Err(ProtocolViolation),
 		};
 
 		if protocol_version != *PROTOCOL_VERSION {
-			return Ok(Some(VersionMismatch(*PROTOCOL_VERSION)));
+			return Err(VersionMismatch(*PROTOCOL_VERSION));
 		}
 
-		server.sync(self);
-		server.sectors[0].subscribe(self).await;
-
-		info!("[{}] Connected!", self.address);
-
-		Ok(None)
+		Ok(())
 	}
 
-	async fn oversee_processing(self: Arc<Self>, receive: UnboundedReceiver<Serverbound>) {
-		self.disconnect(Connection::process(receive).await);
-	}
+	pub async fn r#await(incoming: UnboundedSender<Self>) -> Result<Infallible, io::Error> {
+		// TODO: config or a cli option or something idk
+		let socket = TcpListener::bind("[::]:23500").await?;
+		info!("Listening on [::]:23500");
 
-	async fn process(mut receive: UnboundedReceiver<Serverbound>) -> Result<DisconnectReason> {
-		match receive.recv().await.ok_or(ChannelClosed)? {
-			Serverbound::Hello { .. } => Ok(ProtocolViolation),
-			Serverbound::Disconnected { .. } => Ok(Disconnected),
+		loop {
+			let (stream, address) = socket.accept().await?;
+			tokio::spawn(Self::accept(incoming.clone(), stream, address));
 		}
 	}
 
-	pub fn send(&self, message: Clientbound) {
-		let _ = self.send.send(message);
+	async fn accept(incoming: UnboundedSender<Self>, stream: TcpStream, address: SocketAddr) {
+		let (send_in, send_out) = mpsc::unbounded_channel();
+		let (receive_in, receive_out) = mpsc::unbounded_channel();
+
+		tokio::spawn(Self::process(stream, send_out, receive_in));
+
+		let mut connection = Connection {
+			address,
+			send_in,
+			receive_out,
+		};
+
+		if let Err(reason) = connection.handshake().await {
+			connection.disconnect(reason);
+			return;
+		}
+
+		let _ = incoming.send(connection);
 	}
 
-	fn disconnect(&self, disconnect: Result<DisconnectReason>) {
-		let _ = self.disconnect.send(disconnect);
+	async fn process(
+		mut stream: TcpStream,
+		mut send_out: UnboundedReceiver<Clientbound>,
+		receive_in: UnboundedSender<Serverbound>,
+	) -> Result<Infallible> {
+		loop {
+			select! {
+				packet = send_out.recv() => stream.write_packet(&packet.ok_or(ChannelClosed)?).await?,
+				packet = stream.read_packet() => receive_in.send(packet?)?,
+			}
+		}
 	}
 }
 
