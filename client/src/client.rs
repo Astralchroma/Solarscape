@@ -214,36 +214,6 @@ impl Client {
 		client.event_loop(event_loop, receive_receive);
 	}
 
-	// TODO: This looks very messy, I hate it, clean it up if possible.
-	fn event_loop(mut self, event_loop: EventLoop<()>, mut receive: UnboundedReceiver<Clientbound>) -> ! {
-		event_loop.run(move |event, _, control_flow| match event {
-			WindowEvent { event, window_id } if window_id == self.window.id() => match event {
-				Resized(new_size) => self.resize(new_size),
-				CloseRequested | Destroyed => *control_flow = ControlFlow::Exit,
-				ScaleFactorChanged { new_inner_size, .. } => self.resize(*new_inner_size),
-				MouseWheel { delta, .. } => self.camera.handle_mouse_wheel(delta),
-				MouseInput { state, button, .. } => self.camera.handle_mouse_input(state, button),
-				_ => {}
-			},
-			DeviceEvent { event, .. } => self.camera.handle_device_event(event),
-			MainEventsCleared => {
-				loop {
-					match receive.try_recv() {
-						Ok(packet) => self.process_packet(packet),
-						Err(error) => match error {
-							TryRecvError::Empty => break,
-							TryRecvError::Disconnected => panic!("Disconnected from Server!"),
-						},
-					}
-				}
-				self.window.request_redraw();
-			}
-			LoopDestroyed => *control_flow = ControlFlow::Exit,
-			RedrawRequested(window_id) if window_id == self.window.id() => self.render(),
-			_ => {}
-		});
-	}
-
 	fn create_depth_buffer(device: &Device, width: u32, height: u32) -> (Texture, TextureView) {
 		let depth_texture = device.create_texture(&TextureDescriptor {
 			label: Some("depth_texture"),
@@ -277,6 +247,36 @@ impl Client {
 		self.size = new_size;
 
 		self.surface.configure(&self.device, &self.config);
+	}
+
+	// TODO: This looks very messy, I hate it, clean it up if possible.
+	fn event_loop(mut self, event_loop: EventLoop<()>, mut receive: UnboundedReceiver<Clientbound>) -> ! {
+		event_loop.run(move |event, _, control_flow| match event {
+			WindowEvent { event, window_id } if window_id == self.window.id() => match event {
+				Resized(new_size) => self.resize(new_size),
+				CloseRequested | Destroyed => *control_flow = ControlFlow::Exit,
+				ScaleFactorChanged { new_inner_size, .. } => self.resize(*new_inner_size),
+				MouseWheel { delta, .. } => self.camera.handle_mouse_wheel(delta),
+				MouseInput { state, button, .. } => self.camera.handle_mouse_input(state, button),
+				_ => {}
+			},
+			DeviceEvent { event, .. } => self.camera.handle_device_event(event),
+			MainEventsCleared => {
+				loop {
+					match receive.try_recv() {
+						Ok(packet) => self.process_packet(packet),
+						Err(error) => match error {
+							TryRecvError::Empty => break,
+							TryRecvError::Disconnected => panic!("Disconnected from Server!"),
+						},
+					}
+				}
+				self.window.request_redraw();
+			}
+			LoopDestroyed => *control_flow = ControlFlow::Exit,
+			RedrawRequested(window_id) if window_id == self.window.id() => self.render(),
+			_ => {}
+		});
 	}
 
 	fn render(&mut self) {
