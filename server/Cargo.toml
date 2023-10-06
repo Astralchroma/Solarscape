@@ -13,5 +13,4 @@ log.workspace = true
 nalgebra.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokio-util.workspace = true
 tokio.workspace = true

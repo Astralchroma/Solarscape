@@ -37,17 +37,10 @@ features = [
 	"derive",
 ]
 
-[workspace.dependencies.tokio-util]
-version = "0.7.9"
-default-features = false
-
 [workspace.dependencies.tokio]
 version = "=1.32.0"
 features = [
 	"macros",
-	"net",
-	"rt-multi-thread",
-	"sync",
 ]
 
 [profile.dev.package."*"]
