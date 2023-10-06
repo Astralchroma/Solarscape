@@ -34,13 +34,13 @@ impl Sector {
 		let name = file_name.to_string_lossy();
 
 		let mut config_path = path.path();
-		config_path.push("sector.conf");
+		config_path.push("sector.toml");
 
 		let mut file = File::open(config_path)?;
 		let mut string = String::new();
 		file.read_to_string(&mut string)?;
 
-		let configuration: SectorConfig = hocon::de::from_str(string.as_str())?;
+		let configuration: SectorConfig = toml::from_str(&string)?;
 
 		let sector = Sector {
 			name: name.into(),
@@ -69,5 +69,5 @@ pub enum SectorLoadError {
 	IoError(#[from] io::Error),
 
 	#[error(transparent)]
-	ParseError(#[from] hocon::Error),
+	ParseError(#[from] toml::de::Error),
 }
