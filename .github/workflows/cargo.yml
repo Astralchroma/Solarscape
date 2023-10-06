@@ -1,0 +1,21 @@
+on: push
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: swatinem/rust-cache@v2
+    - run: cargo clippy --all-features --all-targets --message-format=json-diagnostic-rendered-ansi | jq -r 'select(.reason == "compiler-message") | .message as $message | $message.spans[] | select(.is_primary == true) | "::" + $message.level + " file=" + .file_name + ",line=" + (.line_start | tostring) + ",endLine=" + (.line_end | tostring) + ",title=" + $message.message + "::" + $message.rendered'
+  format:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: cargo fmt --check
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: swatinem/rust-cache@v2
+    - run: RUSTFLAGS=-Awarnings cargo build --message-format=json-diagnostic-rendered-ansi | jq -r 'select(.reason == "compiler-message") | .message as $message | $message.spans[] | select(.is_primary == true) | "::" + $message.level + " file=" + .file_name + ",line=" + (.line_start | tostring) + ",endLine=" + (.line_end | tostring) + ",title=" + $message.message + "::" + $message.rendered'
