@@ -1,5 +1,6 @@
 use crate::connection::Connection;
 use crate::sync::{Subscribers, Syncable};
+use hecs::Entity;
 use log::{error, info};
 use serde::Deserialize;
 use solarscape_shared::protocol::Clientbound;
@@ -53,8 +54,9 @@ impl Sector {
 }
 
 impl Syncable for Sector {
-	fn sync(&self, connection: &mut Connection) {
+	fn sync(&self, entity: Entity, connection: &mut Connection) {
 		connection.send(Clientbound::SyncSector {
+			entity_id: entity.to_bits().get(),
 			name: self.name.clone(),
 			display_name: self.display_name.clone(),
 		})

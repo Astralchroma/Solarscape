@@ -33,16 +33,17 @@ impl Server {
 					let (sector_entity, (sector, subscribers)) = query.iter().next().expect("a sector");
 
 					subscribers.push(entity);
-					sector.sync(&mut connection);
+					sector.sync(sector_entity, &mut connection);
 
-					connection.send(Clientbound::ActiveSector { sector_id: 0 });
+					connection.send(Clientbound::ActiveSector {
+						entity_id: sector_entity.to_bits().get(),
+					});
 
 					self.world
 						.query::<&Object>()
 						.iter()
-						.map(|(_, object)| object)
-						.filter(|object| object.sector == sector_entity)
-						.for_each(|object| object.sync(&mut connection));
+						.filter(|(_, object)| object.sector == sector_entity)
+						.for_each(|(entity, object)| object.sync(entity, &mut connection));
 				}
 			}
 		}

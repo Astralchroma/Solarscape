@@ -38,11 +38,12 @@ impl Object {
 }
 
 impl Syncable for Object {
-	fn sync(&self, connection: &mut Connection) {
-		connection.send(Clientbound::AddObject { object_id: 0 });
+	fn sync(&self, entity: Entity, connection: &mut Connection) {
+		let object_id = entity.to_bits().get();
+		connection.send(Clientbound::AddObject { entity_id: object_id });
 		for chunk in self.chunks.values() {
 			connection.send(Clientbound::SyncChunk {
-				object_id: 0,
+				entity_id: object_id,
 				grid_position: chunk.grid_position,
 				data: chunk.data,
 			})

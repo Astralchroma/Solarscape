@@ -8,17 +8,18 @@ pub enum Clientbound {
 		reason: DisconnectReason,
 	},
 	SyncSector {
+		entity_id: u64,
 		name: Box<str>,
 		display_name: Box<str>,
 	},
 	ActiveSector {
-		sector_id: usize,
+		entity_id: u64,
 	},
 	AddObject {
-		object_id: u32,
+		entity_id: u64,
 	},
 	SyncChunk {
-		object_id: u32,
+		entity_id: u64,
 
 		#[bincode(with_serde)]
 		grid_position: Vector3<i32>,

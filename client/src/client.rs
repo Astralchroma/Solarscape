@@ -1,10 +1,11 @@
-use crate::{chunk::Chunk, object::Object, orbit_camera::OrbitCamera, sector::Sector, sector::SectorMeta};
+use crate::{chunk::Chunk, object::Object, orbit_camera::OrbitCamera, sector::Sector};
 use anyhow::Result;
+use hecs::{Entity, Without, World};
 use log::info;
 use solarscape_shared::io::{PacketRead, PacketWrite};
 use solarscape_shared::protocol::Clientbound::{self, ActiveSector, AddObject, Disconnected, SyncChunk, SyncSector};
 use solarscape_shared::protocol::{Serverbound, PROTOCOL_VERSION};
-use std::{convert::Infallible, iter, mem::size_of, sync::Arc};
+use std::{convert::Infallible, iter, mem::size_of};
 use tokio::sync::mpsc::{self, error::TryRecvError, UnboundedReceiver, UnboundedSender};
 use tokio::{net::TcpStream, runtime::Runtime};
 use wgpu::{
@@ -37,9 +38,10 @@ pub struct Client {
 	depth_texture: Texture,
 	depth_view: TextureView,
 
+	world: World,
+	current_sector: Option<Entity>,
+
 	camera: OrbitCamera,
-	sectors: Vec<Arc<SectorMeta>>,
-	current_sector: Option<Sector>,
 }
 
 impl Client {
@@ -192,8 +194,6 @@ impl Client {
 
 		let client = Self {
 			camera: OrbitCamera::new(&device, &camera_group_layout),
-			sectors: vec![],
-			current_sector: None,
 
 			window,
 			surface,
@@ -204,6 +204,9 @@ impl Client {
 			trans_pipeline,
 			depth_texture,
 			depth_view,
+
+			world: World::new(),
+			current_sector: None,
 		};
 
 		let (receive_send, receive_receive) = mpsc::unbounded_channel();
@@ -301,6 +304,8 @@ impl Client {
 
 		let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
 
+		let mut objects = self.world.query::<&Object>();
+
 		{
 			let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
 				label: Some("render_pass"),
@@ -328,13 +333,9 @@ impl Client {
 				.update_matrix(&self.queue, self.config.width, self.config.height);
 			self.camera.use_camera(&mut render_pass);
 
-			if let Some(ref sector) = self.current_sector {
-				for object in sector.objects.values() {
-					for chunk in object.chunks.values() {
-						chunk.render(&mut render_pass);
-					}
-				}
-			}
+			objects
+				.iter()
+				.for_each(|(_, object)| object.chunks.values().for_each(|chunk| chunk.render(&mut render_pass)));
 		}
 
 		self.queue.submit(iter::once(encoder.finish()));
@@ -344,32 +345,47 @@ impl Client {
 	fn process_packet(&mut self, packet: Clientbound) {
 		match packet {
 			Disconnected { .. } => {}
-			SyncSector { name, display_name } => self.sectors.push(SectorMeta::new(name, display_name)),
-			ActiveSector { sector_id } => {
-				self.current_sector = Some(Sector::new(
-					self.sectors
-						.get(sector_id)
-						.expect("active sector meta must already exist")
-						.clone(),
-				))
+			SyncSector {
+				entity_id,
+				name,
+				display_name,
+			} => {
+				let entity = Entity::from_bits(entity_id).expect("valid entity id");
+				self.world.spawn_at(entity, (Sector { name, display_name },));
 			}
-			AddObject { object_id } => {
-				if let Some(ref mut sector) = self.current_sector {
-					sector.objects.insert(object_id, Object::new(object_id));
+			ActiveSector { entity_id } => {
+				let entity = Entity::from_bits(entity_id).expect("valid entity id");
+				self.current_sector = Some(entity);
+
+				let to_remove = self
+					.world
+					.query::<Without<(), &Sector>>()
+					.into_iter()
+					.map(|(entity, _)| entity)
+					.collect::<Vec<_>>();
+
+				for entity in to_remove {
+					let _ = self.world.despawn(entity);
 				}
 			}
+			AddObject { entity_id } => {
+				let entity = Entity::from_bits(entity_id).expect("valid entity id");
+				self.world.spawn_at(entity, (Object::default(),))
+			}
 			SyncChunk {
-				object_id,
+				entity_id,
 				grid_position,
 				data,
 			} => {
-				if let Some(ref mut sector) = self.current_sector {
-					if let Some(ref mut object) = sector.objects.get_mut(&object_id) {
-						let mut chunk = Chunk::new(&self.device, grid_position, data);
-						chunk.build_mesh(&self.device);
-						object.chunks.insert(grid_position, chunk);
-					}
-				}
+				let mut chunk = Chunk::new(&self.device, grid_position, data);
+				chunk.build_mesh(&self.device);
+
+				let entity = Entity::from_bits(entity_id).expect("valid entity id");
+				self.world
+					.get::<&mut Object>(entity)
+					.expect("object")
+					.chunks
+					.insert(grid_position, chunk);
 			}
 		}
 	}
