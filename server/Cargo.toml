@@ -6,12 +6,12 @@ edition.workspace = true
 [dependencies]
 solarscape-shared = { path = "../shared" }
 
+serde = { version = "=1.0.188", features = [ "derive" ] }
 toml = { version = "=0.8.2", features = [ "parse" ] }
 
 anyhow.workspace = true
 hecs.workspace = true
 log.workspace = true
 nalgebra.workspace = true
-serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

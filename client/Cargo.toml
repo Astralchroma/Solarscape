@@ -6,11 +6,12 @@ edition.workspace = true
 [dependencies]
 solarscape-shared = { path = "../shared" }
 
+bytemuck = "=1.14.0"
+wgpu = "=0.17.1"
+winit = "=0.28.7"
+
 anyhow.workspace = true
-bytemuck.workspace = true
 hecs.workspace = true
 log.workspace = true
 nalgebra.workspace = true
 tokio.workspace = true
-wgpu.workspace = true
-winit.workspace = true
