@@ -2,7 +2,11 @@ use crate::sync::{Subscribers, Syncable};
 use crate::{chunk::Chunk, connection::Connection, object::Object, sector::Sector};
 use hecs::World;
 use solarscape_shared::protocol::Clientbound;
+use std::thread;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
+
+const TICKS_PER_SECOND: u32 = 30;
 
 #[derive(Default)]
 pub struct Server {
@@ -11,8 +15,16 @@ pub struct Server {
 
 impl Server {
 	pub fn run(mut self, mut incoming_connections: UnboundedReceiver<Connection>) -> ! {
+		let tick_time_target = Duration::from_secs(1) / TICKS_PER_SECOND;
+
 		loop {
+			let tick_start = Instant::now();
+
 			self.process_incoming_connections(&mut incoming_connections);
+
+			let tick_end = Instant::now();
+			let tick_time = tick_end - tick_start;
+			thread::sleep(tick_time_target - tick_time);
 		}
 	}
 
