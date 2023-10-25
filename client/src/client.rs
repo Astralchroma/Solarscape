@@ -22,9 +22,10 @@ use wgpu::{
 	VertexState, VertexStepMode,
 };
 use winit::dpi::PhysicalSize;
-use winit::event::Event::{DeviceEvent, LoopDestroyed, MainEventsCleared, RedrawRequested, WindowEvent};
-use winit::event::WindowEvent::{CloseRequested, Destroyed, MouseInput, MouseWheel, Resized, ScaleFactorChanged};
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::error::EventLoopError;
+use winit::event::Event::{AboutToWait, DeviceEvent, WindowEvent};
+use winit::event::WindowEvent::{CloseRequested, Destroyed, MouseInput, MouseWheel, RedrawRequested, Resized};
+use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
 pub struct Client {
@@ -46,7 +47,7 @@ pub struct Client {
 
 impl Client {
 	// TODO: A lot of this renderer initialization should be moved to it's own function so we can re-init the pipeline.
-	pub fn run(runtime: Runtime) -> Result<Infallible> {
+	pub fn run(runtime: Runtime) -> Result<()> {
 		let instance = Instance::new(InstanceDescriptor {
 			// Vulkan covers everything we care about.
 			// GL is for that one guy with a 2014 GPU, will be dropped if it becomes too inconvenient to support.
@@ -55,7 +56,7 @@ impl Client {
 			dx12_shader_compiler: Default::default(),
 		});
 
-		let event_loop = EventLoop::new();
+		let event_loop = EventLoop::new()?;
 
 		let window = WindowBuilder::new()
 			.with_inner_size(PhysicalSize::new(960, 540))
@@ -214,7 +215,7 @@ impl Client {
 		// At this point this thread becomes the event loop thread, we spin off a tokio task for networking.
 		runtime.spawn(async move { Self::receive_connection(receive_send).await });
 
-		client.event_loop(event_loop, receive_receive);
+		Ok(client.event_loop(event_loop, receive_receive)?)
 	}
 
 	fn create_depth_buffer(device: &Device, width: u32, height: u32) -> (Texture, TextureView) {
@@ -253,18 +254,22 @@ impl Client {
 	}
 
 	// TODO: This looks very messy, I hate it, clean it up if possible.
-	fn event_loop(mut self, event_loop: EventLoop<()>, mut receive: UnboundedReceiver<Clientbound>) -> ! {
-		event_loop.run(move |event, _, control_flow| match event {
+	fn event_loop(
+		mut self,
+		event_loop: EventLoop<()>,
+		mut receive: UnboundedReceiver<Clientbound>,
+	) -> Result<(), EventLoopError> {
+		event_loop.run(move |event, control_flow| match event {
 			WindowEvent { event, window_id } if window_id == self.window.id() => match event {
 				Resized(new_size) => self.resize(new_size),
-				CloseRequested | Destroyed => *control_flow = ControlFlow::Exit,
-				ScaleFactorChanged { new_inner_size, .. } => self.resize(*new_inner_size),
+				CloseRequested | Destroyed => control_flow.exit(),
 				MouseWheel { delta, .. } => self.camera.handle_mouse_wheel(delta),
 				MouseInput { state, button, .. } => self.camera.handle_mouse_input(state, button),
+				RedrawRequested if window_id == self.window.id() => self.render(),
 				_ => {}
 			},
 			DeviceEvent { event, .. } => self.camera.handle_device_event(event),
-			MainEventsCleared => {
+			AboutToWait => {
 				loop {
 					match receive.try_recv() {
 						Ok(packet) => self.process_packet(packet),
@@ -276,10 +281,8 @@ impl Client {
 				}
 				self.window.request_redraw();
 			}
-			LoopDestroyed => *control_flow = ControlFlow::Exit,
-			RedrawRequested(window_id) if window_id == self.window.id() => self.render(),
 			_ => {}
-		});
+		})
 	}
 
 	fn render(&mut self) {
