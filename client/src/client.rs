@@ -12,14 +12,14 @@ use wgpu::{
 	include_wgsl, Backends, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState,
 	BufferAddress, BufferBindingType::Uniform, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
 	CompareFunction::Greater, CompositeAlphaMode::Auto, DepthBiasState, DepthStencilState, Device, DeviceDescriptor,
-	Extent3d, Face::Back, Features, FragmentState, FrontFace::Ccw, Instance, InstanceDescriptor, LoadOp::Clear,
-	MultisampleState, Operations, PipelineLayoutDescriptor, PolygonMode::Fill, PowerPreference::HighPerformance,
-	PresentMode::AutoVsync, PrimitiveState, PrimitiveTopology::TriangleList, Queue, RenderPassColorAttachment,
-	RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
-	RequestAdapterOptions, ShaderStages, StencilState, Surface, SurfaceConfiguration, Texture, TextureAspect,
-	TextureDescriptor, TextureDimension, TextureFormat::Depth32Float, TextureUsages, TextureView,
-	TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat::Float32x3,
-	VertexState, VertexStepMode,
+	Extent3d, Face::Back, Features, FragmentState, FrontFace::Ccw, Gles3MinorVersion, Instance, InstanceDescriptor,
+	LoadOp::Clear, MultisampleState, Operations, PipelineLayoutDescriptor, PolygonMode::Fill,
+	PowerPreference::HighPerformance, PresentMode::AutoVsync, PrimitiveState, PrimitiveTopology::TriangleList, Queue,
+	RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline,
+	RenderPipelineDescriptor, RequestAdapterOptions, ShaderStages, StencilState, StoreOp::Store, Surface,
+	SurfaceConfiguration, Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat::Depth32Float,
+	TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout,
+	VertexFormat::Float32x3, VertexState, VertexStepMode,
 };
 use winit::dpi::PhysicalSize;
 use winit::error::EventLoopError;
@@ -52,8 +52,12 @@ impl Client {
 			// Vulkan covers everything we care about.
 			// GL is for that one guy with a 2014 GPU, will be dropped if it becomes too inconvenient to support.
 			backends: Backends::VULKAN | Backends::GL,
+			// Also as low as possible for that one guy with a 2014 GPU, same deal
+			gles_minor_version: Gles3MinorVersion::Version0,
 			// Don't care, we won't use it anyway :pineapplesquish:
 			dx12_shader_compiler: Default::default(),
+			// Will be debug if debug, good enough:tm:
+			flags: Default::default(),
 		});
 
 		let event_loop = EventLoop::new()?;
@@ -315,7 +319,7 @@ impl Client {
 				color_attachments: &[Some(RenderPassColorAttachment {
 					ops: Operations {
 						load: Clear(Color::BLACK),
-						store: true,
+						store: Store,
 					},
 					resolve_target: None,
 					view: &view,
@@ -324,10 +328,12 @@ impl Client {
 					view: &self.depth_view,
 					depth_ops: Some(Operations {
 						load: Clear(0.0),
-						store: true,
+						store: Store,
 					}),
 					stencil_ops: None,
 				}),
+				timestamp_writes: None,
+				occlusion_query_set: None,
 			});
 
 			render_pass.set_pipeline(&self.trans_pipeline);

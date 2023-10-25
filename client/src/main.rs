@@ -12,7 +12,7 @@ use client::Client;
 use solarscape_shared::shared_main;
 use std::convert::Infallible;
 
-fn main() -> Result<Infallible> {
+fn main() -> Result<()> {
 	let runtime = shared_main()?;
 
 	Client::run(runtime)
