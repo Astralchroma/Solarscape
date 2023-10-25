@@ -1,9 +1,8 @@
-use crate::sync::{Subscribers, Syncable};
-use crate::{chunk::Chunk, connection::Connection, object::Object, sector::Sector};
+use crate::{chunk::Chunk, connection::Connection, object::Object, sector::Sector, sync::Subscribers, sync::Syncable};
 use hecs::World;
+use log::info;
 use solarscape_shared::protocol::Clientbound;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::{thread, time::Duration, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
 
 const TICKS_PER_SECOND: u32 = 30;
@@ -21,6 +20,7 @@ impl Server {
 			let tick_start = Instant::now();
 
 			self.process_incoming_connections(&mut incoming_connections);
+			self.remove_dead_connections();
 
 			let tick_end = Instant::now();
 			let tick_time = tick_end - tick_start;
@@ -73,8 +73,22 @@ impl Server {
 									chunk.sync(chunk_entity, &mut connection);
 								});
 						});
+
+					info!("({}) Connected!", connection.address());
 				}
 			}
+		}
+	}
+
+	fn remove_dead_connections(&mut self) {
+		let mut dead_connections = vec![];
+		for (entity, connection) in self.world.query::<&Connection>().into_iter() {
+			if !connection.is_alive() {
+				dead_connections.push(entity);
+			}
+		}
+		for entity in dead_connections {
+			let _ = self.world.despawn(entity);
 		}
 	}
 }
