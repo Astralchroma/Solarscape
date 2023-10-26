@@ -7,7 +7,7 @@ edition.workspace = true
 solarscape-shared = { path = "../shared" }
 
 serde = { version = "=1.0.190", features = [ "derive" ] }
-toml = { version = "=0.8.4", features = [ "parse" ] }
+toml = { version = "=0.8.5", features = [ "parse" ] }
 
 anyhow.workspace = true
 bincode.workspace = true
