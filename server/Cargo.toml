@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 solarscape-shared = { path = "../shared" }
 
-serde = { version = "=1.0.189", features = [ "derive" ] }
+serde = { version = "=1.0.190", features = [ "derive" ] }
 toml = { version = "=0.8.4", features = [ "parse" ] }
 
 anyhow.workspace = true
