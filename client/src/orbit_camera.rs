@@ -1,6 +1,6 @@
 use bytemuck::cast_slice;
 use nalgebra::{dvector, Matrix4, Point3, Vector3};
-use std::ops::{Add, Mul};
+use std::ops::Mul;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
 	BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferUsages, Device, Queue, RenderPass,
@@ -35,7 +35,7 @@ impl OrbitCamera {
 
 		let bind = device.create_bind_group(&BindGroupDescriptor {
 			label: Some("camera_bind"),
-			layout: &bind_layout,
+			layout: bind_layout,
 			entries: &[BindGroupEntry {
 				binding: 0,
 				resource: buffer.as_entire_binding(),
