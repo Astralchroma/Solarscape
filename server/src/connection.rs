@@ -121,6 +121,7 @@ impl Connection {
 					let buffer = bincode::encode_to_vec(packet, standard())?;
 					stream.write_u16(buffer.len() as u16).await?;
 					stream.write_all(&buffer).await?;
+					stream.flush().await?;
 				},
 				length = stream.read_u16() => {
 					let length = match length {
