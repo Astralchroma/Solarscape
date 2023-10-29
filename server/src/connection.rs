@@ -146,8 +146,8 @@ impl Connection {
 			_ => return Err(ProtocolViolation),
 		};
 
-		if protocol_version != *PROTOCOL_VERSION {
-			return Err(VersionMismatch(*PROTOCOL_VERSION));
+		if protocol_version != PROTOCOL_VERSION {
+			return Err(VersionMismatch(PROTOCOL_VERSION));
 		}
 
 		Ok(())

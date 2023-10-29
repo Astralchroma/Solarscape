@@ -399,7 +399,7 @@ impl Client {
 
 		stream
 			.write_packet(&Serverbound::Hello {
-				major_version: *PROTOCOL_VERSION,
+				major_version: PROTOCOL_VERSION,
 			})
 			.await?;
 

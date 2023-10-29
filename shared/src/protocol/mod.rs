@@ -5,7 +5,7 @@ pub use clientbound::*;
 pub use serverbound::*;
 
 use bincode::{Decode, Encode};
-use once_cell::sync::Lazy;
+use solarscape_macros::protocol_version;
 
 #[derive(Debug, Decode, Encode)]
 pub enum DisconnectReason {
@@ -16,10 +16,6 @@ pub enum DisconnectReason {
 	VersionMismatch(u16),
 }
 
-pub static PROTOCOL_VERSION: Lazy<u16> = Lazy::new(|| {
-	env!("CARGO_PKG_VERSION_MAJOR")
-		.parse()
-		.expect("crate major version invalid")
-});
+pub const PROTOCOL_VERSION: u16 = protocol_version!();
 
 pub const PACKET_LENGTH_LIMIT: usize = 1 << 13;
