@@ -16,5 +16,5 @@ pub fn shared_main() -> Result<Runtime> {
 		.format_target(false)
 		.init();
 
-	tokio::runtime::Builder::new_multi_thread().enable_all().build()
+	tokio::runtime::Builder::new_multi_thread().enable_io().build()
 }
