@@ -1,6 +1,7 @@
 use crate::sync::{Subscribers, Syncable};
 use crate::{chunk::Chunk, connection::ServerConnection, object::Object, sector::Sector};
 use hecs::World;
+use log::warn;
 use solarscape_shared::protocol::{encode, Event, Message};
 use std::{thread, time::Duration, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
@@ -24,7 +25,10 @@ impl Server {
 
 			let tick_end = Instant::now();
 			let tick_time = tick_end - tick_start;
-			thread::sleep(tick_time_target - tick_time);
+			match tick_time_target.checked_sub(tick_time) {
+				Some(duration) => thread::sleep(duration),
+				None => warn!("tick took too long! {tick_time:#?}"),
+			}
 		}
 	}
 
