@@ -3,7 +3,7 @@ use hecs::{Entity, World};
 use nalgebra::Vector3;
 use solarscape_shared::protocol::{encode, Message, SyncEntity};
 
-pub const CHUNK_RADIUS: i32 = 1;
+pub const CHUNK_RADIUS: i32 = 3;
 pub const RADIUS: f64 = (CHUNK_RADIUS << 4) as f64 - 0.5;
 
 pub struct Object {

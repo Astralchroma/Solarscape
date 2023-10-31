@@ -74,7 +74,7 @@ impl OrbitCamera {
 		self.distance -= match event {
 			LineDelta(_, y) => y,
 			PixelDelta(PhysicalPosition { y, .. }) => y as f32,
-		};
+		} * 2.0;
 		if self.distance < 1.0 {
 			self.distance = 1.0
 		}
