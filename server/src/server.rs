@@ -1,7 +1,7 @@
-use crate::{chunk::Chunk, connection::Connection, object::Object, sector::Sector, sync::Subscribers, sync::Syncable};
+use crate::sync::{Subscribers, Syncable};
+use crate::{chunk::Chunk, connection::ServerConnection, object::Object, sector::Sector};
 use hecs::World;
-use log::info;
-use solarscape_shared::protocol::Clientbound;
+use solarscape_shared::protocol::{encode, Event, Message};
 use std::{thread, time::Duration, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
 
@@ -13,7 +13,7 @@ pub struct Server {
 }
 
 impl Server {
-	pub fn run(mut self, mut incoming_connections: UnboundedReceiver<Connection>) -> ! {
+	pub fn run(mut self, mut incoming_connections: UnboundedReceiver<ServerConnection>) -> ! {
 		let tick_time_target = Duration::from_secs(1) / TICKS_PER_SECOND;
 
 		loop {
@@ -28,7 +28,7 @@ impl Server {
 		}
 	}
 
-	fn process_incoming_connections(&mut self, incoming_connections: &mut UnboundedReceiver<Connection>) {
+	fn process_incoming_connections(&mut self, incoming_connections: &mut UnboundedReceiver<ServerConnection>) {
 		loop {
 			match incoming_connections.try_recv() {
 				Err(ref error) => match error {
@@ -39,7 +39,10 @@ impl Server {
 					// TODO: This seems like it could be a heck of a lot better
 					// TODO: We should be defining the initial sector in the server, instead of just picking the first
 					let entity = self.world.spawn((connection,));
-					let mut connection = self.world.get::<&mut Connection>(entity).expect("spawned connection");
+					let mut connection = self
+						.world
+						.get::<&mut ServerConnection>(entity)
+						.expect("spawned connection");
 
 					let mut query = self.world.query::<(&Sector, &mut Subscribers)>();
 					let (sector_entity, (sector, subscribers)) = query.iter().next().expect("a sector");
@@ -47,9 +50,7 @@ impl Server {
 					subscribers.push(entity);
 					sector.sync(sector_entity, &mut connection);
 
-					connection.send(Clientbound::ActiveSector {
-						entity_id: sector_entity.to_bits().get(),
-					});
+					connection.send(encode(Message::Event(Event::ActiveSector(sector_entity))));
 
 					self.world
 						.query::<(&Object, &mut Subscribers)>()
@@ -73,8 +74,6 @@ impl Server {
 									chunk.sync(chunk_entity, &mut connection);
 								});
 						});
-
-					info!("({}) Connected!", connection.address());
 				}
 			}
 		}
@@ -82,7 +81,7 @@ impl Server {
 
 	fn remove_dead_connections(&mut self) {
 		let mut dead_connections = vec![];
-		for (entity, connection) in self.world.query::<&Connection>().into_iter() {
+		for (entity, connection) in self.world.query::<&ServerConnection>().into_iter() {
 			if !connection.is_alive() {
 				dead_connections.push(entity);
 			}

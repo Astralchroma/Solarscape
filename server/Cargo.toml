@@ -10,7 +10,6 @@ serde = { version = "=1.0.190", features = [ "derive" ] }
 toml = { version = "=0.8.6", features = [ "parse" ] }
 
 anyhow.workspace = true
-bincode.workspace = true
 hecs.workspace = true
 log.workspace = true
 nalgebra.workspace = true

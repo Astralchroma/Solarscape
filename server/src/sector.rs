@@ -1,9 +1,8 @@
-use crate::connection::Connection;
-use crate::sync::{Subscribers, Syncable};
+use crate::{connection::ServerConnection, sync::Subscribers, sync::Syncable};
 use hecs::Entity;
 use log::{error, info};
 use serde::Deserialize;
-use solarscape_shared::protocol::Clientbound;
+use solarscape_shared::protocol::{encode, Message, SyncEntity};
 use std::{env, fs, fs::DirEntry, fs::File, io, io::Read};
 use thiserror::Error;
 
@@ -54,12 +53,14 @@ impl Sector {
 }
 
 impl Syncable for Sector {
-	fn sync(&self, entity: Entity, connection: &mut Connection) {
-		connection.send(Clientbound::SyncSector {
-			entity_id: entity.to_bits().get(),
-			name: self.name.clone(),
-			display_name: self.display_name.clone(),
-		})
+	fn sync(&self, entity: Entity, connection: &mut ServerConnection) {
+		connection.send(encode(Message::SyncEntity {
+			entity,
+			sync: SyncEntity::Sector {
+				name: self.name.clone(),
+				display_name: self.display_name.clone(),
+			},
+		}))
 	}
 }
 

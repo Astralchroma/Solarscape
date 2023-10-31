@@ -1,7 +1,7 @@
 use crate::triangulation_table::{CORNERS, EDGES, TRIANGULATION_TABLE};
 use bytemuck::cast_slice;
 use nalgebra::{convert, Vector3};
-use solarscape_shared::world::{chunk::index_of, object::CHUNK_VOLUME};
+use solarscape_shared::chunk::{index_of, CHUNK_VOLUME};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferUsages, Device, RenderPass};
 
@@ -17,7 +17,7 @@ pub struct Chunk {
 impl Chunk {
 	#[must_use]
 	pub fn new(device: &Device, grid_position: Vector3<i32>, data: [bool; CHUNK_VOLUME]) -> Self {
-		Self {
+		let mut chunk = Self {
 			instance_buffer: device.create_buffer_init(&BufferInitDescriptor {
 				label: None, // TODO
 				contents: cast_slice(convert::<_, Vector3<f32>>(grid_position * 16).as_slice()),
@@ -27,7 +27,9 @@ impl Chunk {
 			grid_position,
 			data,
 			vertex_count: 0,
-		}
+		};
+		chunk.build_mesh(device);
+		chunk
 	}
 
 	// TODO: Meshes are all blocking built on the main thread. Start here if there is a lot of lag when loading chunks.

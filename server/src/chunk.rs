@@ -1,8 +1,8 @@
-use crate::{connection::Connection, object::RADIUS, sync::Syncable};
+use crate::{connection::ServerConnection, object::RADIUS, sync::Syncable};
 use hecs::Entity;
 use nalgebra::Vector3;
-use solarscape_shared::protocol::Clientbound;
-use solarscape_shared::world::{chunk::index_of_vec, object::CHUNK_VOLUME};
+use solarscape_shared::chunk::{index_of_vec, CHUNK_VOLUME};
+use solarscape_shared::protocol::{encode, Message, SyncEntity};
 
 pub struct Chunk {
 	pub object: Entity,
@@ -55,11 +55,13 @@ impl Chunk {
 }
 
 impl Syncable for Chunk {
-	fn sync(&self, entity: Entity, connection: &mut Connection) {
-		connection.send(Clientbound::SyncChunk {
-			entity_id: entity.to_bits().get(),
-			grid_position: self.grid_position,
-			data: self.data,
-		})
+	fn sync(&self, entity: Entity, connection: &mut ServerConnection) {
+		connection.send(encode(Message::SyncEntity {
+			entity,
+			sync: SyncEntity::Chunk {
+				grid_position: self.grid_position,
+				data: self.data,
+			},
+		}))
 	}
 }

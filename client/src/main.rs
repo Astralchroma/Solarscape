@@ -2,6 +2,7 @@
 
 mod chunk;
 mod client;
+mod connection;
 mod object;
 mod orbit_camera;
 mod sector;

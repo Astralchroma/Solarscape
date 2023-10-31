@@ -9,8 +9,8 @@ solarscape-macros = { path = "../macros" }
 async-trait = "=0.1.74"
 env_logger = "=0.10.0"
 
-anyhow.workspace = true
 bincode.workspace = true
+hecs.workspace = true
 log.workspace = true
 nalgebra.workspace = true
 thiserror.workspace = true

@@ -4,9 +4,9 @@ use log::LevelFilter::Info;
 use std::io::Result;
 use tokio::runtime::Runtime;
 
-pub mod io;
+pub mod chunk;
+pub mod connection;
 pub mod protocol;
-pub mod world;
 
 /// Initializes the logger and returns the tokio runtime used for async / await and input / output.
 pub fn shared_main() -> Result<Runtime> {

@@ -1,49 +1,64 @@
-use crate::world::object::CHUNK_VOLUME;
-use bincode::{Decode, Encode};
+use crate::chunk::CHUNK_VOLUME;
+use bincode::{config::standard, Decode, Encode};
+use hecs::Entity;
 use nalgebra::Vector3;
 use solarscape_macros::protocol_version;
+use std::sync::Arc;
 
 pub const PROTOCOL_VERSION: u16 = protocol_version!();
 
 pub const PACKET_LENGTH_LIMIT: usize = 1 << 13;
 
-#[derive(Debug, Decode, Encode)]
+#[derive(Decode, Encode)]
+#[allow(clippy::large_enum_variant)] // Don't care
+pub(crate) enum Protocol {
+	Disconnected(DisconnectReason),
+	Message(Message),
+}
+
+#[derive(Decode, Encode)]
+#[allow(clippy::large_enum_variant)] // Don't care
+pub enum Message {
+	SyncEntity {
+		#[bincode(with_serde)]
+		entity: Entity,
+		sync: SyncEntity,
+	},
+	Event(Event),
+}
+
+#[derive(Clone, Copy, Debug, Decode, Encode)]
 pub enum DisconnectReason {
+	ProtocolViolation,
+	InternalError,
 	ConnectionLost,
 	Disconnected,
-	InternalError,
-	ProtocolViolation,
-	VersionMismatch(u16),
 }
 
-#[derive(Debug, Decode, Encode)]
-pub enum Serverbound {
-	Hello { major_version: u16 },
-	Disconnected { reason: DisconnectReason },
-}
-
-#[derive(Debug, Decode, Encode)]
-pub enum Clientbound {
-	Disconnected {
-		reason: DisconnectReason,
-	},
-	SyncSector {
-		entity_id: u64,
+#[derive(Decode, Encode)]
+#[allow(clippy::large_enum_variant)] // Don't care
+pub enum SyncEntity {
+	Sector {
 		name: Box<str>,
 		display_name: Box<str>,
 	},
-	ActiveSector {
-		entity_id: u64,
-	},
-	AddObject {
-		entity_id: u64,
-	},
-	SyncChunk {
-		entity_id: u64,
-
+	Object,
+	Chunk {
 		#[bincode(with_serde)]
 		grid_position: Vector3<i32>,
 
 		data: [bool; CHUNK_VOLUME],
 	},
+}
+
+#[derive(Decode, Encode)]
+pub enum Event {
+	ActiveSector(#[bincode(with_serde)] Entity),
+}
+
+#[must_use]
+pub fn encode(message: Message) -> Arc<[u8]> {
+	bincode::encode_to_vec(Protocol::Message(message), standard())
+		.expect("successful encode")
+		.into()
 }

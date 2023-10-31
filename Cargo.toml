@@ -13,11 +13,12 @@ edition = "2021"
 
 [workspace.dependencies]
 anyhow = "=1.0.75"
-bincode = { version = "=2.0.0-rc.3", features = [ "serde" ] }
-hecs = "=0.10.3"
 log = "=0.4.20"
-nalgebra = { version = "=0.32.3", features = [ "serde-serialize" ] }
 thiserror = "=1.0.50"
+
+bincode = { version = "=2.0.0-rc.3", features = [ "serde" ] }
+hecs = { version = "=0.10.3", features = ["serde"] }
+nalgebra = { version = "=0.32.3", features = [ "serde-serialize" ] }
 tokio = { version = "=1.33.0", features = [ "macros", "io-util", "net", "rt-multi-thread", "sync" ] }
 
 [profile.dev.package."*"]

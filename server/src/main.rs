@@ -7,7 +7,7 @@ mod sector;
 mod server;
 mod sync;
 
-use crate::{connection::Connection, object::Object, sector::Sector, server::Server, sync::Subscribers};
+use crate::{connection::ServerConnection, object::Object, sector::Sector, server::Server, sync::Subscribers};
 use anyhow::Result;
 use hecs::With;
 use solarscape_shared::shared_main;
@@ -44,7 +44,7 @@ fn main() -> Result<Infallible> {
 	}
 
 	let (incoming_in, incoming) = mpsc::unbounded_channel();
-	runtime.spawn(Connection::r#await(incoming_in));
+	runtime.spawn(ServerConnection::r#await(incoming_in));
 
 	server.run(incoming);
 }

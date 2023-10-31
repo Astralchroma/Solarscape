@@ -1,8 +1,7 @@
-use crate::sync::{Subscribers, Syncable};
-use crate::{chunk::Chunk, connection::Connection};
+use crate::{chunk::Chunk, connection::ServerConnection, sync::Subscribers, sync::Syncable};
 use hecs::{Entity, World};
 use nalgebra::Vector3;
-use solarscape_shared::protocol::Clientbound;
+use solarscape_shared::protocol::{encode, Message, SyncEntity};
 
 pub const CHUNK_RADIUS: i32 = 1;
 pub const RADIUS: f64 = (CHUNK_RADIUS << 4) as f64 - 0.5;
@@ -28,8 +27,10 @@ impl Object {
 }
 
 impl Syncable for Object {
-	fn sync(&self, entity: Entity, connection: &mut Connection) {
-		let object_id = entity.to_bits().get();
-		connection.send(Clientbound::AddObject { entity_id: object_id });
+	fn sync(&self, entity: Entity, connection: &mut ServerConnection) {
+		connection.send(encode(Message::SyncEntity {
+			entity,
+			sync: SyncEntity::Object,
+		}))
 	}
 }

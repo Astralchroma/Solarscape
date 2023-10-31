@@ -1,13 +1,9 @@
-use crate::{chunk::Chunk, object::Object, orbit_camera::OrbitCamera, sector::Sector};
+use crate::{chunk::Chunk, connection::ClientConnection, object::Object, orbit_camera::OrbitCamera, sector::Sector};
 use anyhow::Result;
 use hecs::{Entity, Without, World};
-use log::info;
-use solarscape_shared::io::{PacketRead, PacketWrite};
-use solarscape_shared::protocol::Clientbound::{self, ActiveSector, AddObject, Disconnected, SyncChunk, SyncSector};
-use solarscape_shared::protocol::{Serverbound, PROTOCOL_VERSION};
-use std::{convert::Infallible, iter, mem::size_of};
-use tokio::sync::mpsc::{self, error::TryRecvError, UnboundedReceiver, UnboundedSender};
-use tokio::{net::TcpStream, runtime::Runtime};
+use solarscape_shared::protocol::{Event, Message, SyncEntity};
+use std::{iter, mem::size_of};
+use tokio::{runtime::Runtime, sync::mpsc::error::TryRecvError};
 use wgpu::{
 	include_wgsl, Backends, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState,
 	BufferAddress, BufferBindingType::Uniform, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
@@ -21,12 +17,10 @@ use wgpu::{
 	TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout,
 	VertexFormat::Float32x3, VertexState, VertexStepMode,
 };
-use winit::dpi::PhysicalSize;
-use winit::error::EventLoopError;
 use winit::event::Event::{AboutToWait, DeviceEvent, WindowEvent};
 use winit::event::WindowEvent::{CloseRequested, Destroyed, MouseInput, MouseWheel, RedrawRequested, Resized};
-use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
+use winit::{dpi::PhysicalSize, error::EventLoopError, event_loop::EventLoop};
 
 pub struct Client {
 	window: Window,
@@ -48,6 +42,8 @@ pub struct Client {
 impl Client {
 	// TODO: A lot of this renderer initialization should be moved to it's own function so we can re-init the pipeline.
 	pub fn run(runtime: Runtime) -> Result<()> {
+		let connection = runtime.block_on(ClientConnection::connect("[::1]:23500"))?;
+
 		let instance = Instance::new(InstanceDescriptor {
 			// Vulkan covers everything we care about.
 			// GL is for that one guy with a 2014 GPU, will be dropped if it becomes too inconvenient to support.
@@ -214,12 +210,7 @@ impl Client {
 			current_sector: None,
 		};
 
-		let (receive_send, receive_receive) = mpsc::unbounded_channel();
-
-		// At this point this thread becomes the event loop thread, we spin off a tokio task for networking.
-		runtime.spawn(async move { Self::receive_connection(receive_send).await });
-
-		Ok(client.event_loop(event_loop, receive_receive)?)
+		Ok(client.event_loop(event_loop, connection)?)
 	}
 
 	fn create_depth_buffer(device: &Device, width: u32, height: u32) -> (Texture, TextureView) {
@@ -258,11 +249,7 @@ impl Client {
 	}
 
 	// TODO: This looks very messy, I hate it, clean it up if possible.
-	fn event_loop(
-		mut self,
-		event_loop: EventLoop<()>,
-		mut receive: UnboundedReceiver<Clientbound>,
-	) -> Result<(), EventLoopError> {
+	fn event_loop(mut self, event_loop: EventLoop<()>, mut receive: ClientConnection) -> Result<(), EventLoopError> {
 		event_loop.run(move |event, control_flow| match event {
 			WindowEvent { event, window_id } if window_id == self.window.id() => match event {
 				Resized(new_size) => self.resize(new_size),
@@ -275,8 +262,8 @@ impl Client {
 			DeviceEvent { event, .. } => self.camera.handle_device_event(event),
 			AboutToWait => {
 				loop {
-					match receive.try_recv() {
-						Ok(packet) => self.process_packet(packet),
+					match receive.receive().try_recv() {
+						Ok(packet) => self.process_message(packet),
 						Err(error) => match error {
 							TryRecvError::Empty => break,
 							TryRecvError::Disconnected => panic!("Disconnected from Server!"),
@@ -349,67 +336,29 @@ impl Client {
 		output.present();
 	}
 
-	fn process_packet(&mut self, packet: Clientbound) {
-		match packet {
-			Disconnected { .. } => {}
-			SyncSector {
-				entity_id,
-				name,
-				display_name,
-			} => {
-				let entity = Entity::from_bits(entity_id).expect("valid entity id");
-				self.world.spawn_at(entity, (Sector { name, display_name },));
-			}
-			ActiveSector { entity_id } => {
-				let entity = Entity::from_bits(entity_id).expect("valid entity id");
-				self.current_sector = Some(entity);
-
-				let to_remove = self
-					.world
-					.query::<Without<(), &Sector>>()
-					.into_iter()
-					.map(|(entity, _)| entity)
-					.collect::<Vec<_>>();
-
-				for entity in to_remove {
-					let _ = self.world.despawn(entity);
+	fn process_message(&mut self, message: Message) {
+		match message {
+			Message::SyncEntity { entity, sync } => match sync {
+				SyncEntity::Sector { name, display_name } => {
+					self.world.spawn_at(entity, (Sector { name, display_name },))
 				}
-			}
-			AddObject { entity_id } => {
-				let entity = Entity::from_bits(entity_id).expect("valid entity id");
-				self.world.spawn_at(entity, (Object,))
-			}
-			SyncChunk {
-				entity_id,
-				grid_position,
-				data,
-			} => {
-				let mut chunk = Chunk::new(&self.device, grid_position, data);
-				chunk.build_mesh(&self.device);
-
-				let entity = Entity::from_bits(entity_id).expect("valid entity id");
-				self.world.spawn_at(entity, (chunk,));
-			}
-		}
-	}
-
-	pub async fn receive_connection(receive: UnboundedSender<Clientbound>) -> Result<Infallible> {
-		let mut stream = TcpStream::connect("[::1]:23500").await?;
-		info!("Connecting to [::1]:23500");
-
-		stream
-			.write_packet(&Serverbound::Hello {
-				major_version: PROTOCOL_VERSION,
-			})
-			.await?;
-
-		loop {
-			let packet = stream.read_packet().await?;
-
-			match packet {
-				Disconnected { reason } => panic!("Disconnected: {reason:?}"),
-				_ => receive.send(packet)?,
-			}
+				SyncEntity::Object => self.world.spawn_at(entity, (Object,)),
+				SyncEntity::Chunk { grid_position, data } => self
+					.world
+					.spawn_at(entity, (Chunk::new(&self.device, grid_position, data),)),
+			},
+			Message::Event(event) => match event {
+				Event::ActiveSector(entity) => {
+					self.current_sector = Some(entity);
+					let mut to_remove = vec![];
+					for (entity, _) in self.world.query::<Without<(), &Sector>>().into_iter() {
+						to_remove.push(entity);
+					}
+					for entity in to_remove {
+						let _ = self.world.despawn(entity);
+					}
+				}
+			},
 		}
 	}
 }
