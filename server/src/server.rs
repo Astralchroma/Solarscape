@@ -2,11 +2,9 @@ use crate::sync::{Subscribers, Syncable};
 use crate::{chunk::Chunk, connection::ServerConnection, object::Object, sector::Sector};
 use hecs::World;
 use log::warn;
-use solarscape_shared::protocol::{encode, Event, Message};
-use std::{thread, time::Duration, time::Instant};
+use solarscape_shared::{protocol::encode, protocol::Event, protocol::Message, TICK_DURATION};
+use std::{thread, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
-
-const TICKS_PER_SECOND: u32 = 30;
 
 #[derive(Default)]
 pub struct Server {
@@ -15,8 +13,6 @@ pub struct Server {
 
 impl Server {
 	pub fn run(mut self, mut incoming_connections: UnboundedReceiver<ServerConnection>) -> ! {
-		let tick_time_target = Duration::from_secs(1) / TICKS_PER_SECOND;
-
 		loop {
 			let tick_start = Instant::now();
 
@@ -25,7 +21,7 @@ impl Server {
 
 			let tick_end = Instant::now();
 			let tick_time = tick_end - tick_start;
-			match tick_time_target.checked_sub(tick_time) {
+			match TICK_DURATION.checked_sub(tick_time) {
 				Some(duration) => thread::sleep(duration),
 				None => warn!("tick took too long! {tick_time:#?}"),
 			}
