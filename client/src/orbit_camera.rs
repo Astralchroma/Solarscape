@@ -29,7 +29,7 @@ impl OrbitCamera {
 	pub fn new(device: &Device, bind_layout: &BindGroupLayout) -> Self {
 		let buffer = device.create_buffer_init(&BufferInitDescriptor {
 			label: Some("camera_buffer"),
-			contents: &[0; 64],
+			contents: &[0; 80],
 			usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
 		});
 
@@ -64,10 +64,14 @@ impl OrbitCamera {
 			.mul(dvector![0.0, 0.0, self.distance, 0.0])
 			.xyz();
 
-		let view = Matrix4::look_at_rh(&Point3::from(translation), &Point3::new(0.0, 0.0, 0.0), &UP_VECTOR);
+		let view = Matrix4::look_at_rh(&Point3::origin(), &Point3::from(translation), &UP_VECTOR);
 		let matrix = projection * view;
 
-		queue.write_buffer(&self.buffer, 0, cast_slice(matrix.as_slice()))
+		let mut buffer = vec![];
+		buffer.extend_from_slice(cast_slice(matrix.as_slice()));
+		buffer.extend_from_slice(cast_slice(translation.as_slice()));
+
+		queue.write_buffer(&self.buffer, 0, &buffer)
 	}
 
 	pub fn handle_mouse_wheel(&mut self, event: MouseScrollDelta) {
