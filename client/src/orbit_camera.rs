@@ -21,6 +21,9 @@ pub struct OrbitCamera {
 
 	is_moving: ElementState,
 
+	pub position: Vector3<f32>,
+	pub position_changed: bool,
+
 	buffer: Buffer,
 	bind: BindGroup,
 }
@@ -47,6 +50,8 @@ impl OrbitCamera {
 			rotation_y: 0.0,
 			distance: 64.0,
 			is_moving: ElementState::Released,
+			position: Vector3::new(0.0, 0.0, 0.0),
+			position_changed: true,
 			buffer,
 			bind,
 		}
@@ -60,18 +65,21 @@ impl OrbitCamera {
 		let aspect = width as f32 / height as f32;
 		let projection = Matrix4::new_perspective(aspect, f32::to_radians(45.0), 0.0, f32::MAX);
 
-		let translation = Matrix4::from_euler_angles(self.rotation_y, self.rotation_x, 0.0)
-			.mul(dvector![0.0, 0.0, self.distance, 0.0])
-			.xyz();
-
-		let view = Matrix4::look_at_rh(&Point3::origin(), &Point3::from(translation), &UP_VECTOR);
+		let view = Matrix4::look_at_rh(&Point3::origin(), &self.position.into(), &UP_VECTOR);
 		let matrix = projection * view;
 
 		let mut buffer = vec![];
 		buffer.extend_from_slice(cast_slice(matrix.as_slice()));
-		buffer.extend_from_slice(cast_slice(translation.as_slice()));
+		buffer.extend_from_slice(cast_slice(self.position.as_slice()));
 
 		queue.write_buffer(&self.buffer, 0, &buffer)
+	}
+
+	pub fn update_position(&mut self) {
+		self.position = Matrix4::from_euler_angles(self.rotation_y, self.rotation_x, 0.0)
+			.mul(dvector![0.0, 0.0, self.distance, 0.0])
+			.xyz();
+		self.position_changed = true;
 	}
 
 	pub fn handle_mouse_wheel(&mut self, event: MouseScrollDelta) {
@@ -79,9 +87,12 @@ impl OrbitCamera {
 			LineDelta(_, y) => y,
 			PixelDelta(PhysicalPosition { y, .. }) => y as f32,
 		} * 2.0;
+
 		if self.distance < 1.0 {
 			self.distance = 1.0
 		}
+
+		self.update_position();
 	}
 
 	pub fn handle_mouse_input(&mut self, state: ElementState, button: MouseButton) {
@@ -89,7 +100,10 @@ impl OrbitCamera {
 			MouseButton::Left => {}
 			_ => return,
 		};
+
 		self.is_moving = state;
+
+		self.update_position();
 	}
 
 	pub fn handle_device_event(&mut self, event: DeviceEvent) {
@@ -113,6 +127,8 @@ impl OrbitCamera {
 				while self.rotation_x < f32::to_radians(0.0) {
 					self.rotation_x += f32::to_radians(360.0);
 				}
+
+				self.update_position();
 			}
 			_ => {}
 		}

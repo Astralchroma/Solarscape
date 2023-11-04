@@ -1,8 +1,8 @@
 use crate::{chunk::Chunk, connection::ClientConnection, object::Object, orbit_camera::OrbitCamera, sector::Sector};
 use anyhow::Result;
 use hecs::{Entity, Without, World};
-use solarscape_shared::protocol::{Event, Message, SyncEntity};
-use std::{iter, mem::size_of};
+use solarscape_shared::protocol::{encode, DisconnectReason, Event, Message, SyncEntity};
+use std::{iter, mem, mem::size_of};
 use tokio::{runtime::Runtime, sync::mpsc::error::TryRecvError};
 use wgpu::{
 	include_wgsl, Backends, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState,
@@ -249,7 +249,7 @@ impl Client {
 	}
 
 	// TODO: This looks very messy, I hate it, clean it up if possible.
-	fn event_loop(mut self, event_loop: EventLoop<()>, mut receive: ClientConnection) -> Result<(), EventLoopError> {
+	fn event_loop(mut self, event_loop: EventLoop<()>, mut connection: ClientConnection) -> Result<(), EventLoopError> {
 		event_loop.run(move |event, control_flow| match event {
 			WindowEvent { event, window_id } if window_id == self.window.id() => match event {
 				Resized(new_size) => self.resize(new_size),
@@ -261,15 +261,30 @@ impl Client {
 			},
 			DeviceEvent { event, .. } => self.camera.handle_device_event(event),
 			AboutToWait => {
+				if self.camera.position_changed {
+					self.camera.position_changed = false;
+
+					connection.send(encode(Message::Event(Event::PositionUpdated(self.camera.position))));
+				}
+
 				loop {
-					match receive.receive().try_recv() {
-						Ok(packet) => self.process_message(packet),
+					match connection.receive().try_recv() {
+						Ok(packet) => match self.process_message(packet) {
+							Ok(_) => {}
+							Err(disconnect_reason) => {
+								// Cursed hack to steal the connection so we can disconnect it
+								let stolen_connection = mem::replace(&mut connection, unsafe { mem::zeroed() });
+								stolen_connection.disconnect(disconnect_reason);
+								panic!("Disconnecting from server, reason: {disconnect_reason:?}");
+							}
+						},
 						Err(error) => match error {
 							TryRecvError::Empty => break,
 							TryRecvError::Disconnected => panic!("Disconnected from Server!"),
 						},
 					}
 				}
+
 				self.window.request_redraw();
 			}
 			_ => {}
@@ -336,7 +351,7 @@ impl Client {
 		output.present();
 	}
 
-	fn process_message(&mut self, message: Message) {
+	fn process_message(&mut self, message: Message) -> Result<(), DisconnectReason> {
 		match message {
 			Message::SyncEntity { entity, sync } => match sync {
 				SyncEntity::Sector { name, display_name } => {
@@ -358,7 +373,10 @@ impl Client {
 						let _ = self.world.despawn(entity);
 					}
 				}
+				_ => return Err(DisconnectReason::ProtocolViolation),
 			},
 		}
+
+		Ok(())
 	}
 }
