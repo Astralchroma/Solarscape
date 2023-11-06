@@ -8,7 +8,9 @@ mod sector;
 mod server;
 mod sync;
 
-use crate::{connection::ServerConnection, object::Object, sector::Sector, server::Server, sync::Subscribers};
+use crate::connection::ServerConnection;
+use crate::object::{Object, CHUNK_RADIUS};
+use crate::{generator::SphereGenerator, sector::Sector, server::Server, sync::Subscribers};
 use anyhow::Result;
 use hecs::With;
 use solarscape_shared::shared_main;
@@ -35,13 +37,24 @@ fn main() -> Result<Infallible> {
 		.world
 		.query::<With<(), &Sector>>()
 		.into_iter()
-		.map(|(sector, _)| (Object { sector }, Subscribers::new()))
+		.map(|(sector, _)| {
+			(
+				Object {
+					sector,
+					generator: Box::new(SphereGenerator {
+						radius: (CHUNK_RADIUS << 4) as f32 - 0.5,
+					}),
+				},
+				Subscribers::new(),
+			)
+		})
 		.collect::<Vec<_>>();
 
 	let objects = server.world.spawn_batch(objects).collect::<Vec<_>>();
 
 	for object in objects {
-		Object::generate_sphere(&mut server.world, object)
+		let chunks = server.world.get::<&Object>(object)?.generate_sphere(object);
+		server.world.spawn_batch(chunks.into_iter());
 	}
 
 	let (incoming_in, incoming) = mpsc::unbounded_channel();
