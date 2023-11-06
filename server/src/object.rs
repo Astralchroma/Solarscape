@@ -5,6 +5,9 @@ use solarscape_shared::protocol::{encode, Message, SyncEntity};
 
 pub const CHUNK_RADIUS: i32 = 3;
 
+// TODO: anything higher than 8 causes overflow, look into this later
+pub const OCTREE_LEVELS: u8 = 8;
+
 pub struct Object {
 	pub sector: Entity,
 
@@ -16,13 +19,15 @@ impl Object {
 	pub fn generate_sphere(&self, object: Entity) -> Vec<(Chunk, Vec<Entity>)> {
 		let mut chunks = vec![];
 
-		for x in -CHUNK_RADIUS..CHUNK_RADIUS {
-			for y in -CHUNK_RADIUS..CHUNK_RADIUS {
-				for z in -CHUNK_RADIUS..CHUNK_RADIUS {
-					chunks.push((
-						self.generator.generate_chunk(object, 0, Vector3::new(x, y, z)),
-						Subscribers::new(),
-					));
+		for level in 0..OCTREE_LEVELS {
+			for x in -CHUNK_RADIUS..CHUNK_RADIUS {
+				for y in -CHUNK_RADIUS..CHUNK_RADIUS {
+					for z in -CHUNK_RADIUS..CHUNK_RADIUS {
+						chunks.push((
+							self.generator.generate_chunk(object, level, Vector3::new(x, y, z)),
+							Subscribers::new(),
+						));
+					}
 				}
 			}
 		}

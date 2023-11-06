@@ -12,7 +12,7 @@ pub struct SphereGenerator {
 
 impl Generator for SphereGenerator {
 	fn generate_chunk(&self, object: Entity, scale: u8, grid_position: Vector3<i32>) -> Chunk {
-		let mut chunk = Chunk::empty(object, grid_position);
+		let mut chunk = Chunk::empty(object, scale, grid_position);
 		let chunk_position = (grid_position * (16 << scale)).cast();
 
 		for x in (0..16 << scale).step_by(scale as usize + 1) {

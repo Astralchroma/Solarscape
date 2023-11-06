@@ -3,18 +3,29 @@ use hecs::Entity;
 use nalgebra::Vector3;
 use solarscape_shared::chunk::{index_of_vec, CHUNK_VOLUME};
 use solarscape_shared::protocol::{encode, Message, SyncEntity};
+use std::num::NonZeroU8;
 
 pub struct Chunk {
 	pub object: Entity,
+
 	pub grid_position: Vector3<i32>,
+	pub chunk_type: ChunkType,
+
 	pub data: [bool; CHUNK_VOLUME],
 }
 
 impl Chunk {
-	pub fn empty(object: Entity, grid_position: Vector3<i32>) -> Self {
+	pub fn empty(object: Entity, scale: u8, grid_position: Vector3<i32>) -> Self {
 		Self {
 			object,
 			grid_position,
+			chunk_type: match scale {
+				0 => ChunkType::Real,
+				scale => ChunkType::Node {
+					scale: NonZeroU8::new(scale).expect("not 0, we just checked"),
+					children: None,
+				},
+			},
 			data: [false; CHUNK_VOLUME],
 		}
 	}
@@ -37,5 +48,22 @@ impl Syncable for Chunk {
 				data: self.data,
 			},
 		}))
+	}
+}
+
+pub enum ChunkType {
+	Real,
+	Node {
+		scale: NonZeroU8,
+		children: Option<[Entity; 8]>,
+	},
+}
+
+impl ChunkType {
+	pub const fn scale(&self) -> u8 {
+		match self {
+			ChunkType::Real => 0,
+			ChunkType::Node { scale, .. } => scale.get(),
+		}
 	}
 }
