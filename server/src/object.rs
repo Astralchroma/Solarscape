@@ -20,7 +20,7 @@ impl Object {
 			for y in -CHUNK_RADIUS..CHUNK_RADIUS {
 				for z in -CHUNK_RADIUS..CHUNK_RADIUS {
 					chunks.push((
-						self.generator.generate_chunk(object, Vector3::new(x, y, z)),
+						self.generator.generate_chunk(object, 2, Vector3::new(x, y, z)),
 						Subscribers::new(),
 					));
 				}
