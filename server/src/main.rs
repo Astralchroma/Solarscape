@@ -2,6 +2,7 @@
 
 mod chunk;
 mod connection;
+mod generator;
 mod object;
 mod sector;
 mod server;

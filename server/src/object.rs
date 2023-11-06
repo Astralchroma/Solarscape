@@ -1,10 +1,10 @@
-use crate::{chunk::Chunk, connection::ServerConnection, sync::Subscribers, sync::Syncable};
+use crate::generator::{Generator, SphereGenerator};
+use crate::{connection::ServerConnection, sync::Subscribers, sync::Syncable};
 use hecs::{Entity, World};
 use nalgebra::Vector3;
 use solarscape_shared::protocol::{encode, Message, SyncEntity};
 
 pub const CHUNK_RADIUS: i32 = 3;
-pub const RADIUS: f64 = (CHUNK_RADIUS << 4) as f64 - 0.5;
 
 pub struct Object {
 	pub sector: Entity,
@@ -13,13 +13,17 @@ pub struct Object {
 impl Object {
 	/// TODO: Temporary
 	pub fn generate_sphere(world: &mut World, object: Entity) {
+		let generator = SphereGenerator {
+			radius: (CHUNK_RADIUS << 4) as f32 - 0.5,
+		};
+
 		for x in -CHUNK_RADIUS..CHUNK_RADIUS {
 			for y in -CHUNK_RADIUS..CHUNK_RADIUS {
 				for z in -CHUNK_RADIUS..CHUNK_RADIUS {
-					let chunk_grid_position = Vector3::new(x, y, z);
-					let mut chunk = Chunk::new(object, chunk_grid_position);
-					chunk.generate_sphere_section();
-					world.spawn((chunk, Subscribers::new()));
+					world.spawn((
+						generator.generate_chunk(object, Vector3::new(x, y, z)),
+						Subscribers::new(),
+					));
 				}
 			}
 		}
