@@ -10,10 +10,13 @@ struct CameraData {
 struct ChunkData {
     @location(0)
     grid_position: vec3<f32>,
+
+    @location(1)
+    scale: f32,
 }
 
 struct VertexData {
-    @location(1)
+    @location(2)
     position: vec3<f32>,
 }
 
@@ -29,7 +32,7 @@ struct FragmentData {
 fn vertex(chunk: ChunkData, vertex: VertexData) -> FragmentData {
     var fragment_data: FragmentData;
 
-    let position = chunk.grid_position + vertex.position + camera.position;
+    let position = chunk.grid_position + (vertex.position * chunk.scale) + camera.position;
 
     fragment_data.position = camera.projection * vec4<f32>(position, 1.0);
     fragment_data.distance = distance(position, vec3<f32>(0.0));

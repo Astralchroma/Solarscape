@@ -3,6 +3,7 @@ use bincode::{config::standard, Decode, Encode};
 use hecs::Entity;
 use nalgebra::Vector3;
 use solarscape_macros::protocol_version;
+use std::num::NonZeroU8;
 use std::sync::Arc;
 
 pub const PROTOCOL_VERSION: u16 = protocol_version!();
@@ -46,6 +47,7 @@ pub enum SyncEntity {
 	Chunk {
 		#[bincode(with_serde)]
 		grid_position: Vector3<i32>,
+		chunk_type: ChunkType,
 
 		data: [bool; CHUNK_VOLUME],
 	},
@@ -62,4 +64,24 @@ pub fn encode(message: Message) -> Arc<[u8]> {
 	bincode::encode_to_vec(Protocol::Message(message), standard())
 		.expect("successful encode")
 		.into()
+}
+
+#[derive(Clone, Copy, Decode, Encode)]
+pub enum ChunkType {
+	Real,
+	Node {
+		scale: NonZeroU8,
+
+		#[bincode(with_serde)]
+		children: Option<[Entity; 8]>,
+	},
+}
+
+impl ChunkType {
+	pub const fn scale(&self) -> u8 {
+		match self {
+			ChunkType::Real => 0,
+			ChunkType::Node { scale, .. } => scale.get(),
+		}
+	}
 }

@@ -4,6 +4,7 @@ use hecs::{Entity, Without, World};
 use solarscape_shared::protocol::{encode, DisconnectReason, Event, Message, SyncEntity};
 use std::{iter, mem, mem::size_of};
 use tokio::{runtime::Runtime, sync::mpsc::error::TryRecvError};
+use wgpu::VertexFormat::{Float32, Uint32};
 use wgpu::{
 	include_wgsl, Backends, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState,
 	BufferAddress, BufferBindingType::Uniform, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
@@ -138,13 +139,20 @@ impl Client {
 				entry_point: "vertex",
 				buffers: &[
 					VertexBufferLayout {
-						array_stride: size_of::<f32>() as BufferAddress * 3,
+						array_stride: size_of::<f32>() as BufferAddress * 4,
 						step_mode: VertexStepMode::Instance,
-						attributes: &[VertexAttribute {
-							format: Float32x3,
-							offset: 0,
-							shader_location: 0,
-						}],
+						attributes: &[
+							VertexAttribute {
+								format: Float32x3,
+								offset: 0,
+								shader_location: 0,
+							},
+							VertexAttribute {
+								format: Float32,
+								offset: 12,
+								shader_location: 1,
+							},
+						],
 					},
 					VertexBufferLayout {
 						array_stride: size_of::<f32>() as BufferAddress * 3,
@@ -152,7 +160,7 @@ impl Client {
 						attributes: &[VertexAttribute {
 							format: Float32x3,
 							offset: 0,
-							shader_location: 1,
+							shader_location: 2,
 						}],
 					},
 				],
@@ -358,9 +366,13 @@ impl Client {
 					self.world.spawn_at(entity, (Sector { name, display_name },))
 				}
 				SyncEntity::Object => self.world.spawn_at(entity, (Object,)),
-				SyncEntity::Chunk { grid_position, data } => self
+				SyncEntity::Chunk {
+					grid_position,
+					chunk_type,
+					data,
+				} => self
 					.world
-					.spawn_at(entity, (Chunk::new(&self.device, grid_position, data),)),
+					.spawn_at(entity, (Chunk::new(&self.device, grid_position, chunk_type, data),)),
 			},
 			Message::Event(event) => match event {
 				Event::ActiveSector(entity) => {

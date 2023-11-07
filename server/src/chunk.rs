@@ -2,7 +2,7 @@ use crate::{connection::ServerConnection, sync::Syncable};
 use hecs::Entity;
 use nalgebra::Vector3;
 use solarscape_shared::chunk::{index_of_vec, CHUNK_VOLUME};
-use solarscape_shared::protocol::{encode, Message, SyncEntity};
+use solarscape_shared::protocol::{encode, ChunkType, Message, SyncEntity};
 use std::num::NonZeroU8;
 
 pub struct Chunk {
@@ -45,25 +45,10 @@ impl Syncable for Chunk {
 			entity,
 			sync: SyncEntity::Chunk {
 				grid_position: self.grid_position,
+				chunk_type: self.chunk_type,
+				
 				data: self.data,
 			},
 		}))
-	}
-}
-
-pub enum ChunkType {
-	Real,
-	Node {
-		scale: NonZeroU8,
-		children: Option<[Entity; 8]>,
-	},
-}
-
-impl ChunkType {
-	pub const fn scale(&self) -> u8 {
-		match self {
-			ChunkType::Real => 0,
-			ChunkType::Node { scale, .. } => scale.get(),
-		}
 	}
 }
