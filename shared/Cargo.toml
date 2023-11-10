@@ -7,7 +7,7 @@ edition.workspace = true
 solarscape-macros = { path = "../macros" }
 
 async-trait = "=0.1.74"
-env_logger = "=0.10.0"
+env_logger = "=0.10.1"
 
 bincode.workspace = true
 hecs.workspace = true
