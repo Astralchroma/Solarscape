@@ -46,7 +46,7 @@ impl Syncable for Chunk {
 			sync: SyncEntity::Chunk {
 				grid_position: self.grid_position,
 				chunk_type: self.chunk_type,
-				
+
 				data: self.data,
 			},
 		}))
