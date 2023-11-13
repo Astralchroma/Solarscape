@@ -1,5 +1,6 @@
-use crate::{chunk::Chunk, connection::ServerConnection, generator::Generator, sync::Subscribers, sync::Syncable};
-use hecs::Entity;
+use crate::{connection::ServerConnection, generator::Generator, sync::Subscribers, sync::Syncable};
+use hecs::QueryOneError::NoSuchEntity;
+use hecs::{Entity, QueryOneError, World};
 use nalgebra::Vector3;
 use solarscape_shared::protocol::{encode, Message, SyncEntity};
 
@@ -16,7 +17,10 @@ pub struct Object {
 
 impl Object {
 	/// TODO: Temporary
-	pub fn generate_sphere(&self, object: Entity) -> Vec<(Chunk, Vec<Entity>)> {
+	pub fn generate_sphere(world: &mut World, object_entity: Entity) -> Result<(), QueryOneError> {
+		let mut query = world.query_one::<&Object>(object_entity)?;
+		let object = query.get().ok_or(NoSuchEntity)?;
+
 		let mut chunks = vec![];
 
 		for level in 0..OCTREE_LEVELS {
@@ -24,7 +28,9 @@ impl Object {
 				for y in -CHUNK_RADIUS..CHUNK_RADIUS {
 					for z in -CHUNK_RADIUS..CHUNK_RADIUS {
 						chunks.push((
-							self.generator.generate_chunk(object, level, Vector3::new(x, y, z)),
+							object
+								.generator
+								.generate_chunk(object_entity, level, Vector3::new(x, y, z)),
 							Subscribers::new(),
 						));
 					}
@@ -32,7 +38,11 @@ impl Object {
 			}
 		}
 
-		chunks
+		drop(query);
+
+		world.spawn_batch(chunks);
+
+		Ok(())
 	}
 }
 

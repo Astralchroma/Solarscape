@@ -1,6 +1,7 @@
 #![deny(clippy::unwrap_used)]
 
 mod chunk;
+mod configuration;
 mod connection;
 mod generator;
 mod object;
@@ -8,11 +9,11 @@ mod sector;
 mod server;
 mod sync;
 
-use crate::connection::ServerConnection;
-use crate::object::{Object, CHUNK_RADIUS};
-use crate::{generator::SphereGenerator, sector::Sector, server::Server, sync::Subscribers};
+use crate::{
+	configuration::Configuration, connection::ServerConnection, generator::SphereGenerator, object::Object,
+	sector::Sector, server::Server, sync::Subscribers,
+};
 use anyhow::Result;
-use hecs::With;
 use solarscape_shared::shared_main;
 use std::{convert::Infallible, env, fs};
 use tokio::sync::mpsc;
@@ -29,32 +30,29 @@ fn main() -> Result<Infallible> {
 		env::set_current_dir(working_directory)?;
 	}
 
+	let configuration = Configuration::load()?;
 	let mut server = Server::default();
 
-	server.world.spawn_batch(Sector::load_all()?);
+	for (sector_id, sector_configuration) in configuration.sectors {
+		let sector = Sector {
+			name: sector_id,
+			display_name: sector_configuration.display_name,
+		};
 
-	let objects = server
-		.world
-		.query::<With<(), &Sector>>()
-		.into_iter()
-		.map(|(sector, _)| {
-			(
-				Object {
-					sector,
-					generator: Box::new(SphereGenerator {
-						radius: (CHUNK_RADIUS << 4) as f32 - 0.5,
-					}),
-				},
-				Subscribers::new(),
-			)
-		})
-		.collect::<Vec<_>>();
+		let sector_entity = server.world.spawn((sector, Subscribers::new()));
 
-	let objects = server.world.spawn_batch(objects).collect::<Vec<_>>();
+		for object_configuration in sector_configuration.objects {
+			let object = Object {
+				sector: sector_entity,
+				generator: Box::new(SphereGenerator {
+					radius: object_configuration.radius,
+				}),
+			};
 
-	for object in objects {
-		let chunks = server.world.get::<&Object>(object)?.generate_sphere(object);
-		server.world.spawn_batch(chunks.into_iter());
+			let object_entity = server.world.spawn((object, Subscribers::new()));
+
+			Object::generate_sphere(&mut server.world, object_entity)?;
+		}
 	}
 
 	let (incoming_in, incoming) = mpsc::unbounded_channel();

@@ -1,10 +1,7 @@
-use crate::{connection::ServerConnection, sync::Subscribers, sync::Syncable};
+use crate::{connection::ServerConnection, sync::Syncable};
 use hecs::Entity;
-use log::{error, info};
 use serde::Deserialize;
 use solarscape_shared::protocol::{encode, Message, SyncEntity};
-use std::{env, fs, fs::DirEntry, fs::File, io, io::Read};
-use thiserror::Error;
 
 pub struct Sector {
 	pub name: Box<str>,
@@ -14,42 +11,6 @@ pub struct Sector {
 #[derive(Deserialize)]
 struct SectorConfig {
 	pub display_name: Box<str>,
-}
-
-impl Sector {
-	pub fn load_all() -> Result<Vec<(Sector, Subscribers)>, SectorLoadError> {
-		let mut sector_path = env::current_dir()?;
-		sector_path.push("sectors");
-
-		fs::read_dir(sector_path)?
-			.filter_map(Result::ok)
-			.filter(|path| path.metadata().is_ok_and(|path| path.is_dir()))
-			.map(Sector::load)
-			.collect()
-	}
-
-	fn load(path: DirEntry) -> Result<(Sector, Subscribers), SectorLoadError> {
-		let file_name = path.file_name();
-		let name = file_name.to_string_lossy();
-
-		let mut config_path = path.path();
-		config_path.push("sector.toml");
-
-		let mut file = File::open(config_path)?;
-		let mut string = String::new();
-		file.read_to_string(&mut string)?;
-
-		let configuration: SectorConfig = toml::from_str(&string)?;
-
-		let sector = Sector {
-			name: name.into(),
-			display_name: configuration.display_name,
-		};
-
-		info!("[{}] Sector Loaded", sector.display_name);
-
-		Ok((sector, Subscribers::new()))
-	}
 }
 
 impl Syncable for Sector {
@@ -62,13 +23,4 @@ impl Syncable for Sector {
 			},
 		}))
 	}
-}
-
-#[derive(Debug, Error)]
-pub enum SectorLoadError {
-	#[error(transparent)]
-	IoError(#[from] io::Error),
-
-	#[error(transparent)]
-	ParseError(#[from] toml::de::Error),
 }
