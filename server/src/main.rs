@@ -14,6 +14,7 @@ use crate::{
 	sector::Sector, server::Server, sync::Subscribers,
 };
 use anyhow::Result;
+use hecs::World;
 use solarscape_shared::shared_main;
 use std::{convert::Infallible, env, fs};
 use tokio::sync::mpsc;
@@ -31,15 +32,21 @@ fn main() -> Result<Infallible> {
 	}
 
 	let configuration = Configuration::load()?;
-	let mut server = Server::default();
+
+	let mut world = World::new();
+	let mut default_sector = None;
 
 	for (sector_id, sector_configuration) in configuration.sectors {
 		let sector = Sector {
-			name: sector_id,
+			name: sector_id.clone(),
 			display_name: sector_configuration.display_name,
 		};
 
-		let sector_entity = server.world.spawn((sector, Subscribers::new()));
+		let sector_entity = world.spawn((sector, Subscribers::new()));
+
+		if sector_id == configuration.default_sector {
+			default_sector = Some(sector_entity);
+		}
 
 		for object_configuration in sector_configuration.objects {
 			let object = Object {
@@ -49,11 +56,17 @@ fn main() -> Result<Infallible> {
 				}),
 			};
 
-			let object_entity = server.world.spawn((object, Subscribers::new()));
+			let object_entity = world.spawn((object, Subscribers::new()));
 
-			Object::generate_sphere(&mut server.world, object_entity)?;
+			Object::generate_sphere(&mut world, object_entity)?;
 		}
 	}
+
+	let server = Server {
+		default_sector: default_sector.expect("a default sector is required"),
+
+		world,
+	};
 
 	let (incoming_in, incoming) = mpsc::unbounded_channel();
 	runtime.spawn(ServerConnection::r#await(incoming_in));

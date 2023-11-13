@@ -1,13 +1,14 @@
 use crate::sync::{Subscribers, Syncable};
 use crate::{chunk::Chunk, connection::ServerConnection, object::Object, sector::Sector};
-use hecs::World;
+use hecs::{Entity, World};
 use log::warn;
 use solarscape_shared::{protocol::encode, protocol::Event, protocol::Message, TICK_DURATION};
 use std::{thread, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
 
-#[derive(Default)]
 pub struct Server {
+	pub default_sector: Entity,
+
 	pub world: World,
 }
 
@@ -44,18 +45,21 @@ impl Server {
 						.get::<&mut ServerConnection>(entity)
 						.expect("spawned connection");
 
-					let mut query = self.world.query::<(&Sector, &mut Subscribers)>();
-					let (sector_entity, (sector, subscribers)) = query.iter().next().expect("a sector");
+					let mut query = self
+						.world
+						.query_one::<(&Sector, &mut Subscribers)>(self.default_sector)
+						.expect("default sector");
+					let (sector, sector_subscribers) = query.get().expect("default sector");
 
-					subscribers.push(entity);
-					sector.sync(sector_entity, &mut connection);
+					sector_subscribers.push(entity);
+					sector.sync(self.default_sector, &mut connection);
 
-					connection.send(encode(Message::Event(Event::ActiveSector(sector_entity))));
+					connection.send(encode(Message::Event(Event::ActiveSector(self.default_sector))));
 
 					self.world
 						.query::<(&Object, &mut Subscribers)>()
 						.into_iter()
-						.filter(|(_, (object, _))| object.sector == sector_entity)
+						.filter(|(_, (object, _))| object.sector == self.default_sector)
 						.map(|(object_entity, (object, subscribers))| {
 							subscribers.push(entity);
 							object.sync(object_entity, &mut connection);
