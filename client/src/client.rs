@@ -4,7 +4,6 @@ use hecs::{Entity, Without, World};
 use solarscape_shared::protocol::{encode, DisconnectReason, Event, Message, SyncEntity};
 use std::{iter, mem, mem::size_of};
 use tokio::{runtime::Runtime, sync::mpsc::error::TryRecvError};
-use wgpu::VertexFormat::{Float32, Uint32};
 use wgpu::{
 	include_wgsl, Backends, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState,
 	BufferAddress, BufferBindingType::Uniform, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
@@ -16,7 +15,7 @@ use wgpu::{
 	RenderPipelineDescriptor, RequestAdapterOptions, ShaderStages, StencilState, StoreOp::Store, Surface,
 	SurfaceConfiguration, Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat::Depth32Float,
 	TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout,
-	VertexFormat::Float32x3, VertexState, VertexStepMode,
+	VertexFormat::Float32, VertexFormat::Float32x3, VertexState, VertexStepMode,
 };
 use winit::event::Event::{AboutToWait, DeviceEvent, WindowEvent};
 use winit::event::WindowEvent::{CloseRequested, Destroyed, MouseInput, MouseWheel, RedrawRequested, Resized};
