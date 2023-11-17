@@ -16,7 +16,7 @@ pub(crate) enum Protocol {
 	Message(Message),
 }
 
-#[derive(Decode, Encode)]
+#[derive(Debug, Decode, Encode)]
 #[allow(clippy::large_enum_variant)] // Don't care
 pub enum Message {
 	SyncEntity {
@@ -35,7 +35,7 @@ pub enum DisconnectReason {
 	Disconnected,
 }
 
-#[derive(Decode, Encode)]
+#[derive(Debug, Decode, Encode)]
 #[allow(clippy::large_enum_variant)] // Don't care
 pub enum SyncEntity {
 	Sector(Sector),
@@ -49,7 +49,7 @@ pub enum SyncEntity {
 	},
 }
 
-#[derive(Decode, Encode)]
+#[derive(Debug, Decode, Encode)]
 pub enum Event {
 	ActiveSector(#[bincode(with_serde)] Entity),
 	PositionUpdated(#[bincode(with_serde)] Vector3<f32>),
@@ -62,7 +62,7 @@ pub fn encode(message: Message) -> Arc<[u8]> {
 		.into()
 }
 
-#[derive(Clone, Copy, Decode, Encode)]
+#[derive(Debug, Clone, Copy, Decode, Encode)]
 pub enum ChunkType {
 	Real,
 	Node {

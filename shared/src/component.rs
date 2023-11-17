@@ -1,7 +1,7 @@
 use bincode::{Decode, Encode};
 use hecs::Entity;
 
-#[derive(Clone, Decode, Encode)]
+#[derive(Clone, Debug, Decode, Encode)]
 pub struct Sector {
 	/// The name as presented to the user
 	pub name: Box<str>,
@@ -10,7 +10,7 @@ pub struct Sector {
 	pub display_name: Box<str>,
 }
 
-#[derive(Clone, Copy, Decode, Encode)]
+#[derive(Clone, Copy, Debug, Decode, Encode)]
 pub struct Object {
 	/// The Sector the Object belongs to
 	#[bincode(with_serde)]
