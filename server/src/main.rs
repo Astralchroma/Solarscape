@@ -8,9 +8,9 @@ mod object;
 mod server;
 mod sync;
 
-use crate::object::generate_sphere;
+use crate::generator::{BoxedGenerator, SphereGenerator};
 use crate::{
-	configuration::Configuration, connection::ServerConnection, generator::SphereGenerator, server::Server,
+	configuration::Configuration, connection::ServerConnection, object::generate_sphere, server::Server,
 	sync::Subscribers,
 };
 use anyhow::Result;
@@ -52,7 +52,7 @@ fn main() -> Result<Infallible> {
 		for object_configuration in sector_configuration.objects {
 			let object_entity = world.spawn((
 				Object { sector: sector_entity },
-				Box::new(SphereGenerator {
+				BoxedGenerator::new(SphereGenerator {
 					radius: object_configuration.radius,
 				}),
 				Subscribers::new(),

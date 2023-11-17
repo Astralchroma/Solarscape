@@ -1,8 +1,23 @@
 use crate::chunk::Chunk;
 use hecs::Entity;
 use nalgebra::Vector3;
+use std::ops::Deref;
 
-pub type BoxedGenerator = Box<dyn Generator + Send + Sync>;
+pub struct BoxedGenerator(Box<dyn Generator + Send + Sync>);
+
+impl BoxedGenerator {
+	pub fn new(generator: impl Generator + Send + Sync + 'static) -> Self {
+		BoxedGenerator(Box::new(generator))
+	}
+}
+
+impl Deref for BoxedGenerator {
+	type Target = dyn Generator + Send + Sync;
+
+	fn deref(&self) -> &Self::Target {
+		&*self.0
+	}
+}
 
 pub trait Generator {
 	fn generate_chunk(&self, object: Entity, scale: u8, grid_position: Vector3<i32>) -> Chunk;
