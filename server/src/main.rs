@@ -5,16 +5,17 @@ mod configuration;
 mod connection;
 mod generator;
 mod object;
-mod sector;
 mod server;
 mod sync;
 
+use crate::object::generate_sphere;
 use crate::{
-	configuration::Configuration, connection::ServerConnection, generator::SphereGenerator, object::Object,
-	sector::Sector, server::Server, sync::Subscribers,
+	configuration::Configuration, connection::ServerConnection, generator::SphereGenerator, server::Server,
+	sync::Subscribers,
 };
 use anyhow::Result;
 use hecs::World;
+use solarscape_shared::component::{Object, Sector};
 use solarscape_shared::shared_main;
 use std::{convert::Infallible, env, fs};
 use tokio::sync::mpsc;
@@ -49,16 +50,15 @@ fn main() -> Result<Infallible> {
 		}
 
 		for object_configuration in sector_configuration.objects {
-			let object = Object {
-				sector: sector_entity,
-				generator: Box::new(SphereGenerator {
+			let object_entity = world.spawn((
+				Object { sector: sector_entity },
+				Box::new(SphereGenerator {
 					radius: object_configuration.radius,
 				}),
-			};
+				Subscribers::new(),
+			));
 
-			let object_entity = world.spawn((object, Subscribers::new()));
-
-			Object::generate_sphere(&mut world, object_entity)?;
+			generate_sphere(&mut world, object_entity)?;
 		}
 	}
 
@@ -71,5 +71,5 @@ fn main() -> Result<Infallible> {
 	let (incoming_in, incoming) = mpsc::unbounded_channel();
 	runtime.spawn(ServerConnection::r#await(incoming_in));
 
-	server.run(incoming);
+	server.run(incoming)
 }

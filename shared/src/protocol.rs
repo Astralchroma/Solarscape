@@ -1,10 +1,9 @@
-use crate::chunk::CHUNK_VOLUME;
+use crate::{chunk::CHUNK_VOLUME, component::Object, component::Sector};
 use bincode::{config::standard, Decode, Encode};
 use hecs::Entity;
 use nalgebra::Vector3;
 use solarscape_macros::protocol_version;
-use std::num::NonZeroU8;
-use std::sync::Arc;
+use std::{num::NonZeroU8, sync::Arc};
 
 pub const PROTOCOL_VERSION: u16 = protocol_version!();
 
@@ -39,11 +38,8 @@ pub enum DisconnectReason {
 #[derive(Decode, Encode)]
 #[allow(clippy::large_enum_variant)] // Don't care
 pub enum SyncEntity {
-	Sector {
-		name: Box<str>,
-		display_name: Box<str>,
-	},
-	Object,
+	Sector(Sector),
+	Object(Object),
 	Chunk {
 		#[bincode(with_serde)]
 		grid_position: Vector3<i32>,

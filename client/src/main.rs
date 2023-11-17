@@ -3,9 +3,7 @@
 mod chunk;
 mod client;
 mod connection;
-mod object;
 mod orbit_camera;
-mod sector;
 mod triangulation_table;
 
 use anyhow::Result;

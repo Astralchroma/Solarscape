@@ -2,6 +2,8 @@ use crate::chunk::Chunk;
 use hecs::Entity;
 use nalgebra::Vector3;
 
+pub type BoxedGenerator = Box<dyn Generator + Send + Sync>;
+
 pub trait Generator {
 	fn generate_chunk(&self, object: Entity, scale: u8, grid_position: Vector3<i32>) -> Chunk;
 }

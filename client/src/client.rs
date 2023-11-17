@@ -1,6 +1,7 @@
-use crate::{chunk::Chunk, connection::ClientConnection, object::Object, orbit_camera::OrbitCamera, sector::Sector};
+use crate::{chunk::Chunk, connection::ClientConnection, orbit_camera::OrbitCamera};
 use anyhow::Result;
 use hecs::{Entity, Without, World};
+use solarscape_shared::component::Sector;
 use solarscape_shared::protocol::{encode, DisconnectReason, Event, Message, SyncEntity};
 use std::{iter, mem, mem::size_of};
 use tokio::{runtime::Runtime, sync::mpsc::error::TryRecvError};
@@ -280,6 +281,7 @@ impl Client {
 							Ok(_) => {}
 							Err(disconnect_reason) => {
 								// Cursed hack to steal the connection so we can disconnect it
+								#[allow(invalid_value)] // I know, we don't use it, so just pretend it is valid
 								let stolen_connection = mem::replace(&mut connection, unsafe { mem::zeroed() });
 								stolen_connection.disconnect(disconnect_reason);
 								panic!("Disconnecting from server, reason: {disconnect_reason:?}");
@@ -361,10 +363,8 @@ impl Client {
 	fn process_message(&mut self, message: Message) -> Result<(), DisconnectReason> {
 		match message {
 			Message::SyncEntity { entity, sync } => match sync {
-				SyncEntity::Sector { name, display_name } => {
-					self.world.spawn_at(entity, (Sector { name, display_name },))
-				}
-				SyncEntity::Object => self.world.spawn_at(entity, (Object,)),
+				SyncEntity::Sector(sector) => self.world.spawn_at(entity, (sector,)),
+				SyncEntity::Object(object) => self.world.spawn_at(entity, (object,)),
 				SyncEntity::Chunk {
 					grid_position,
 					chunk_type,

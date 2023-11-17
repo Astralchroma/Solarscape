@@ -1,7 +1,8 @@
 use crate::sync::{Subscribers, Syncable};
-use crate::{chunk::Chunk, connection::ServerConnection, object::Object, sector::Sector};
+use crate::{chunk::Chunk, connection::ServerConnection};
 use hecs::{Entity, World};
 use log::warn;
+use solarscape_shared::component::{Object, Sector};
 use solarscape_shared::{protocol::encode, protocol::Event, protocol::Message, TICK_DURATION};
 use std::{thread, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
