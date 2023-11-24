@@ -15,8 +15,7 @@ use crate::{
 };
 use anyhow::Result;
 use hecs::World;
-use solarscape_shared::component::{Object, Sector};
-use solarscape_shared::shared_main;
+use solarscape_shared::{component::Location, component::Object, component::Sector, shared_main};
 use std::{convert::Infallible, env, fs};
 use tokio::sync::mpsc;
 
@@ -52,6 +51,11 @@ fn main() -> Result<Infallible> {
 		for object_configuration in sector_configuration.objects {
 			let object_entity = world.spawn((
 				Object { sector: sector_entity },
+				Location {
+					position: object_configuration.position.into(),
+					rotation: object_configuration.rotation.into(),
+					scale: 1.0,
+				},
 				BoxedGenerator::new(SphereGenerator {
 					radius: object_configuration.radius,
 				}),

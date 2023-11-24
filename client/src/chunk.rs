@@ -1,10 +1,8 @@
 use crate::triangulation_table::{CORNERS, EDGES, TRIANGULATION_TABLE};
 use bytemuck::cast_slice;
-use nalgebra::{convert, Vector3};
-use solarscape_shared::chunk::{index_of, CHUNK_VOLUME};
-use solarscape_shared::protocol::ChunkType;
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{Buffer, BufferUsages, Device, RenderPass};
+use nalgebra::Vector3;
+use solarscape_shared::{chunk::index_of, chunk::CHUNK_VOLUME, protocol::ChunkType};
+use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device, RenderPass};
 
 pub struct Chunk {
 	pub grid_position: Vector3<i32>,
@@ -12,7 +10,6 @@ pub struct Chunk {
 
 	pub data: [bool; CHUNK_VOLUME],
 
-	pub instance_buffer: Buffer,
 	pub vertex_buffer: Option<Buffer>,
 	pub vertex_count: u32,
 }
@@ -25,23 +22,10 @@ impl Chunk {
 		chunk_type: ChunkType,
 		data: [bool; CHUNK_VOLUME],
 	) -> Self {
-		let mut buffer = vec![];
-		buffer.extend_from_slice(cast_slice(
-			convert::<_, Vector3<f32>>(grid_position * (16 << chunk_type.scale())).as_slice(),
-		));
-		buffer.extend_from_slice(cast_slice(&[(1 << chunk_type.scale()) as f32]));
-
 		let mut chunk = Self {
 			grid_position,
 			chunk_type,
-
 			data,
-
-			instance_buffer: device.create_buffer_init(&BufferInitDescriptor {
-				label: None, // TODO
-				contents: &buffer,
-				usage: BufferUsages::VERTEX,
-			}),
 			vertex_buffer: None,
 			vertex_count: 0,
 		};
@@ -110,7 +94,6 @@ impl Chunk {
 
 	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
 		if let Some(ref vertex_buffer) = self.vertex_buffer {
-			render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
 			render_pass.set_vertex_buffer(1, vertex_buffer.slice(..));
 			render_pass.draw(0..self.vertex_count, 0..1)
 		};

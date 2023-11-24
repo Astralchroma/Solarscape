@@ -2,8 +2,8 @@ use crate::sync::{Subscribers, Syncable};
 use crate::{chunk::Chunk, connection::ServerConnection};
 use hecs::{Entity, World};
 use log::warn;
-use solarscape_shared::component::{Object, Sector};
-use solarscape_shared::{protocol::encode, protocol::Event, protocol::Message, TICK_DURATION};
+use solarscape_shared::component::{Location, Object, Sector};
+use solarscape_shared::{protocol::encode, protocol::Event, protocol::Message, protocol::SyncEntity, TICK_DURATION};
 use std::{thread, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
 
@@ -46,39 +46,52 @@ impl Server {
 						.get::<&mut ServerConnection>(entity)
 						.expect("spawned connection");
 
-					let mut query = self
-						.world
-						.query_one::<(&Sector, &mut Subscribers)>(self.default_sector)
-						.expect("default sector");
-					let (sector, sector_subscribers) = query.get().expect("default sector");
+					{
+						let mut query = self
+							.world
+							.query_one::<(&Sector, &mut Subscribers)>(self.default_sector)
+							.expect("default sector");
+						let (sector, sector_subscribers) = query.get().expect("default sector");
 
-					sector_subscribers.push(entity);
-					sector.sync(self.default_sector, &mut connection);
+						sector_subscribers.push(entity);
+						sector.sync(self.default_sector, &mut connection);
 
-					connection.send(encode(Message::Event(Event::ActiveSector(self.default_sector))));
+						connection.send(encode(Message::Event(Event::ActiveSector(self.default_sector))));
+					}
 
-					self.world
-						.query::<(&Object, &mut Subscribers)>()
-						.into_iter()
-						.filter(|(_, (object, _))| object.sector == self.default_sector)
-						.map(|(object_entity, (object, subscribers))| {
-							subscribers.push(entity);
-							object.sync(object_entity, &mut connection);
+					let mut object_entities = vec![];
 
-							object_entity
-						})
-						.collect::<Vec<_>>()
-						.into_iter()
-						.for_each(|object_entity| {
-							self.world
-								.query::<(&Chunk, &mut Subscribers)>()
-								.into_iter()
-								.filter(|(_, (chunk, _))| chunk.object == object_entity)
-								.for_each(|(chunk_entity, (chunk, subscribers))| {
-									subscribers.push(entity);
-									chunk.sync(chunk_entity, &mut connection);
-								});
-						});
+					for (object_entity, (object, location, subscribers)) in
+						self.world.query::<(&Object, &Location, &mut Subscribers)>().into_iter()
+					{
+						if object.sector != self.default_sector {
+							continue;
+						}
+
+						subscribers.push(entity);
+						object.sync(object_entity, &mut connection);
+						connection.send(encode(Message::SyncEntity {
+							entity: object_entity,
+							sync: SyncEntity::Location(*location),
+						}));
+
+						object_entities.push(object_entity);
+					}
+
+					for (chunk_entity, (chunk, location, subscribers)) in
+						self.world.query::<(&Chunk, &Location, &mut Subscribers)>().into_iter()
+					{
+						if !object_entities.contains(&chunk.object) {
+							continue;
+						}
+
+						subscribers.push(entity);
+						chunk.sync(chunk_entity, &mut connection);
+						connection.send(encode(Message::SyncEntity {
+							entity: chunk_entity,
+							sync: SyncEntity::Location(*location),
+						}));
+					}
 				}
 			}
 		}

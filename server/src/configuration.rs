@@ -20,6 +20,9 @@ pub struct SectorConfiguration {
 
 #[derive(Deserialize)]
 pub struct ObjectConfiguration {
+	pub position: [f64; 3],
+	pub rotation: [f32; 3],
+
 	pub radius: f32,
 }
 

@@ -2,6 +2,7 @@
 
 mod chunk;
 mod client;
+mod component;
 mod connection;
 mod orbit_camera;
 mod triangulation_table;

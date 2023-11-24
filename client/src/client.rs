@@ -1,6 +1,6 @@
-use crate::{chunk::Chunk, connection::ClientConnection, orbit_camera::OrbitCamera};
+use crate::{chunk::Chunk, component::LocationBuffer, connection::ClientConnection, orbit_camera::OrbitCamera};
 use anyhow::Result;
-use hecs::{Entity, Without, World};
+use hecs::{Component, Entity, Without, World};
 use solarscape_shared::component::Sector;
 use solarscape_shared::protocol::{encode, DisconnectReason, Event, Message, SyncEntity};
 use std::{iter, mem, mem::size_of};
@@ -79,7 +79,7 @@ impl Client {
 		let (device, queue) = runtime.block_on(adapter.request_device(
 			&DeviceDescriptor {
 				label: None,
-				features: Features::empty(),
+				features: Features::SHADER_F64,
 				limits: adapter.limits(),
 			},
 			None,
@@ -139,7 +139,7 @@ impl Client {
 				entry_point: "vertex",
 				buffers: &[
 					VertexBufferLayout {
-						array_stride: size_of::<f32>() as BufferAddress * 4,
+						array_stride: (4 * 6) + 4,
 						step_mode: VertexStepMode::Instance,
 						attributes: &[
 							VertexAttribute {
@@ -148,9 +148,14 @@ impl Client {
 								shader_location: 0,
 							},
 							VertexAttribute {
-								format: Float32,
-								offset: 12,
+								format: Float32x3,
+								offset: 4 * 3,
 								shader_location: 1,
+							},
+							VertexAttribute {
+								format: Float32,
+								offset: 4 * 6,
+								shader_location: 2,
 							},
 						],
 					},
@@ -160,7 +165,7 @@ impl Client {
 						attributes: &[VertexAttribute {
 							format: Float32x3,
 							offset: 0,
-							shader_location: 2,
+							shader_location: 3,
 						}],
 					},
 				],
@@ -322,7 +327,7 @@ impl Client {
 
 		let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
 
-		let mut chunks = self.world.query::<&Chunk>();
+		let render_query = self.world.query_mut::<(&Chunk, &LocationBuffer)>();
 
 		{
 			let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -353,7 +358,10 @@ impl Client {
 				.update_matrix(&self.queue, self.config.width, self.config.height);
 			self.camera.use_camera(&mut render_pass);
 
-			chunks.iter().for_each(|(_, chunk)| chunk.render(&mut render_pass));
+			for (_, (chunk, location_buffer)) in render_query {
+				render_pass.set_vertex_buffer(0, location_buffer.slice(..));
+				chunk.render(&mut render_pass);
+			}
 		}
 
 		self.queue.submit(iter::once(encoder.finish()));
@@ -361,17 +369,32 @@ impl Client {
 	}
 
 	fn process_message(&mut self, message: Message) -> Result<(), DisconnectReason> {
+		// Unfortunately impl Trait isn't allowed on closures (yet at least), so this has to be a function.
+		fn insert_or_spawn_at(world: &mut World, entity: Entity, component: impl Component) {
+			match world.contains(entity) {
+				true => world
+					.insert_one(entity, component)
+					.expect("entity will exist, we explicitly check that it does"),
+				false => world.spawn_at(entity, (component,)),
+			}
+		}
+
 		match message {
 			Message::SyncEntity { entity, sync } => match sync {
-				SyncEntity::Sector(sector) => self.world.spawn_at(entity, (sector,)),
-				SyncEntity::Object(object) => self.world.spawn_at(entity, (object,)),
+				SyncEntity::Sector(sector) => insert_or_spawn_at(&mut self.world, entity, sector),
+				SyncEntity::Object(object) => insert_or_spawn_at(&mut self.world, entity, object),
 				SyncEntity::Chunk {
 					grid_position,
 					chunk_type,
 					data,
-				} => self
-					.world
-					.spawn_at(entity, (Chunk::new(&self.device, grid_position, chunk_type, data),)),
+				} => {
+					let chunk = Chunk::new(&self.device, grid_position, chunk_type, data);
+					insert_or_spawn_at(&mut self.world, entity, chunk);
+				}
+				SyncEntity::Location(location) => {
+					insert_or_spawn_at(&mut self.world, entity, LocationBuffer::new(&self.device, &location));
+					insert_or_spawn_at(&mut self.world, entity, location);
+				}
 			},
 			Message::Event(event) => match event {
 				Event::ActiveSector(entity) => {

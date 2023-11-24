@@ -1,4 +1,4 @@
-use crate::{chunk::CHUNK_VOLUME, component::Object, component::Sector};
+use crate::{chunk::CHUNK_VOLUME, component::Location, component::Object, component::Sector};
 use bincode::{config::standard, Decode, Encode};
 use hecs::Entity;
 use nalgebra::Vector3;
@@ -44,9 +44,9 @@ pub enum SyncEntity {
 		#[bincode(with_serde)]
 		grid_position: Vector3<i32>,
 		chunk_type: ChunkType,
-
 		data: [bool; CHUNK_VOLUME],
 	},
+	Location(Location),
 }
 
 #[derive(Debug, Decode, Encode)]
