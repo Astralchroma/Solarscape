@@ -7,7 +7,7 @@ use std::{num::NonZeroU8, sync::Arc};
 
 pub const PROTOCOL_VERSION: u16 = protocol_version!();
 
-pub const PACKET_LENGTH_LIMIT: usize = 1 << 13;
+pub const PACKET_LENGTH_LIMIT: usize = 1 << 15;
 
 #[derive(Decode, Encode)]
 #[allow(clippy::large_enum_variant)] // Don't care
