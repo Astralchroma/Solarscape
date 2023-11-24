@@ -79,7 +79,7 @@ impl Client {
 		let (device, queue) = runtime.block_on(adapter.request_device(
 			&DeviceDescriptor {
 				label: None,
-				features: Features::SHADER_F64,
+				features: Features::empty(),
 				limits: adapter.limits(),
 			},
 			None,
