@@ -382,7 +382,7 @@ impl Client {
 		match message {
 			Message::SyncEntity { entity, sync } => match sync {
 				SyncEntity::Sector(sector) => insert_or_spawn_at(&mut self.world, entity, sector),
-				SyncEntity::Object(object) => insert_or_spawn_at(&mut self.world, entity, object),
+				SyncEntity::VoxelObject(voxel_object) => insert_or_spawn_at(&mut self.world, entity, voxel_object),
 				SyncEntity::Chunk {
 					grid_position,
 					chunk_type,

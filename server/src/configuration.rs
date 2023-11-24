@@ -15,11 +15,11 @@ pub struct Configuration {
 pub struct SectorConfiguration {
 	pub display_name: Box<str>,
 
-	pub objects: Vec<ObjectConfiguration>,
+	pub voxel_objects: Vec<VoxelObjectConfiguration>,
 }
 
 #[derive(Deserialize)]
-pub struct ObjectConfiguration {
+pub struct VoxelObjectConfiguration {
 	pub position: [f64; 3],
 	pub rotation: [f32; 3],
 

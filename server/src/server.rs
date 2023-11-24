@@ -2,7 +2,7 @@ use crate::sync::{Subscribers, Syncable};
 use crate::{chunk::Chunk, connection::ServerConnection};
 use hecs::{Entity, World};
 use log::warn;
-use solarscape_shared::component::{Location, Object, Sector};
+use solarscape_shared::component::{Location, Sector, VoxelObject};
 use solarscape_shared::{protocol::encode, protocol::Event, protocol::Message, protocol::SyncEntity, TICK_DURATION};
 use std::{thread, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
@@ -59,29 +59,31 @@ impl Server {
 						connection.send(encode(Message::Event(Event::ActiveSector(self.default_sector))));
 					}
 
-					let mut object_entities = vec![];
+					let mut voxel_object_entities = vec![];
 
-					for (object_entity, (object, location, subscribers)) in
-						self.world.query::<(&Object, &Location, &mut Subscribers)>().into_iter()
+					for (voxel_object_entity, (voxel_object, location, subscribers)) in self
+						.world
+						.query::<(&VoxelObject, &Location, &mut Subscribers)>()
+						.into_iter()
 					{
-						if object.sector != self.default_sector {
+						if voxel_object.sector != self.default_sector {
 							continue;
 						}
 
 						subscribers.push(entity);
-						object.sync(object_entity, &mut connection);
+						voxel_object.sync(voxel_object_entity, &mut connection);
 						connection.send(encode(Message::SyncEntity {
-							entity: object_entity,
+							entity: voxel_object_entity,
 							sync: SyncEntity::Location(*location),
 						}));
 
-						object_entities.push(object_entity);
+						voxel_object_entities.push(voxel_object_entity);
 					}
 
 					for (chunk_entity, (chunk, location, subscribers)) in
 						self.world.query::<(&Chunk, &Location, &mut Subscribers)>().into_iter()
 					{
-						if !object_entities.contains(&chunk.object) {
+						if !voxel_object_entities.contains(&chunk.voxel_object) {
 							continue;
 						}
 

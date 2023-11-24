@@ -12,8 +12,8 @@ pub struct Sector {
 }
 
 #[derive(Clone, Copy, Debug, Decode, Encode)]
-pub struct Object {
-	/// The Sector the Object belongs to
+pub struct VoxelObject {
+	/// The Sector the VoxelObject belongs to
 	#[bincode(with_serde)]
 	pub sector: Entity,
 }

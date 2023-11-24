@@ -10,9 +10,9 @@ pub const OCTREE_LEVELS: u8 = 8;
 pub const CHUNK_RADIUS: i32 = 3;
 
 // Temporary
-pub fn generate_sphere(world: &mut World, object_entity: Entity) -> Result<(), QueryOneError> {
-	let mut query = world.query_one::<(&Location, &BoxedGenerator)>(object_entity)?;
-	let (object_location, generator) = query.get().ok_or(NoSuchEntity)?;
+pub fn generate_sphere(world: &mut World, voxel_object_entity: Entity) -> Result<(), QueryOneError> {
+	let mut query = world.query_one::<(&Location, &BoxedGenerator)>(voxel_object_entity)?;
+	let (voxel_object_location, generator) = query.get().ok_or(NoSuchEntity)?;
 
 	let mut chunks = vec![];
 
@@ -20,10 +20,10 @@ pub fn generate_sphere(world: &mut World, object_entity: Entity) -> Result<(), Q
 		for x in -CHUNK_RADIUS..CHUNK_RADIUS {
 			for y in -CHUNK_RADIUS..CHUNK_RADIUS {
 				for z in -CHUNK_RADIUS..CHUNK_RADIUS {
-					let chunk = generator.generate_chunk(object_entity, level, Vector3::new(x, y, z));
+					let chunk = generator.generate_chunk(voxel_object_entity, level, Vector3::new(x, y, z));
 
 					chunks.push((
-						calculate_chunk_location(object_location, &chunk),
+						calculate_chunk_location(voxel_object_location, &chunk),
 						chunk,
 						Subscribers::new(),
 					));
@@ -49,14 +49,15 @@ pub fn calculate_chunk_location(object_location: &Location, chunk: &Chunk) -> Lo
 }
 
 // POV: You wrote an entire function only to realise you don't actually need it yet.
-/// Updates the locations of all chunks belonging to an Object. Typically used when the position of the object changes.
-pub fn update_chunk_locations(world: &mut World, object_entity: Entity) -> Result<(), QueryOneError> {
-	let mut object_location_query = world.query_one::<&Location>(object_entity)?;
-	let object_location = object_location_query.get().ok_or(NoSuchEntity)?;
+/// Updates the locations of all chunks belonging to a VoxelObject. Typically used when the position of the VoxelObject
+/// changes.
+pub fn update_chunk_locations(world: &mut World, voxel_object_entity: Entity) -> Result<(), QueryOneError> {
+	let mut voxel_object_location_query = world.query_one::<&Location>(voxel_object_entity)?;
+	let object_location = voxel_object_location_query.get().ok_or(NoSuchEntity)?;
 
 	for (chunk_entity, (chunk, location, subscribers)) in world.query::<(&Chunk, &mut Location, &Subscribers)>().iter()
 	{
-		if chunk.object != object_entity {
+		if chunk.voxel_object != voxel_object_entity {
 			continue;
 		}
 

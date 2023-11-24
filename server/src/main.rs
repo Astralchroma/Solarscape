@@ -4,18 +4,18 @@ mod chunk;
 mod configuration;
 mod connection;
 mod generator;
-mod object;
 mod server;
 mod sync;
+mod voxel_object;
 
 use crate::generator::{BoxedGenerator, SphereGenerator};
 use crate::{
-	configuration::Configuration, connection::ServerConnection, object::generate_sphere, server::Server,
-	sync::Subscribers,
+	configuration::Configuration, connection::ServerConnection, server::Server, sync::Subscribers,
+	voxel_object::generate_sphere,
 };
 use anyhow::Result;
 use hecs::World;
-use solarscape_shared::{component::Location, component::Object, component::Sector, shared_main};
+use solarscape_shared::{component::Location, component::Sector, component::VoxelObject, shared_main};
 use std::{convert::Infallible, env, fs};
 use tokio::sync::mpsc;
 
@@ -48,21 +48,21 @@ fn main() -> Result<Infallible> {
 			default_sector = Some(sector_entity);
 		}
 
-		for object_configuration in sector_configuration.objects {
-			let object_entity = world.spawn((
-				Object { sector: sector_entity },
+		for voxel_object_configuration in sector_configuration.voxel_objects {
+			let voxel_object_entity = world.spawn((
+				VoxelObject { sector: sector_entity },
 				Location {
-					position: object_configuration.position.into(),
-					rotation: object_configuration.rotation.into(),
+					position: voxel_object_configuration.position.into(),
+					rotation: voxel_object_configuration.rotation.into(),
 					scale: 1.0,
 				},
 				BoxedGenerator::new(SphereGenerator {
-					radius: object_configuration.radius,
+					radius: voxel_object_configuration.radius,
 				}),
 				Subscribers::new(),
 			));
 
-			generate_sphere(&mut world, object_entity)?;
+			generate_sphere(&mut world, voxel_object_entity)?;
 		}
 	}
 

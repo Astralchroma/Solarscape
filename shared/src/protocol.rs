@@ -1,4 +1,4 @@
-use crate::{chunk::CHUNK_VOLUME, component::Location, component::Object, component::Sector};
+use crate::{chunk::CHUNK_VOLUME, component::Location, component::Sector, component::VoxelObject};
 use bincode::{config::standard, Decode, Encode};
 use hecs::Entity;
 use nalgebra::Vector3;
@@ -39,7 +39,7 @@ pub enum DisconnectReason {
 #[allow(clippy::large_enum_variant)] // Don't care
 pub enum SyncEntity {
 	Sector(Sector),
-	Object(Object),
+	VoxelObject(VoxelObject),
 	Chunk {
 		#[bincode(with_serde)]
 		grid_position: Vector3<i32>,

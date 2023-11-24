@@ -6,7 +6,7 @@ use solarscape_shared::protocol::{encode, Message, OctreeNode, SyncEntity};
 use std::num::NonZeroU8;
 
 pub struct Chunk {
-	pub object: Entity,
+	pub voxel_object: Entity,
 
 	pub grid_position: Vector3<i32>,
 	pub octree_node: OctreeNode,
@@ -15,9 +15,9 @@ pub struct Chunk {
 }
 
 impl Chunk {
-	pub fn empty(object: Entity, scale: u8, grid_position: Vector3<i32>) -> Self {
+	pub fn empty(voxel_object: Entity, scale: u8, grid_position: Vector3<i32>) -> Self {
 		Self {
-			object,
+			voxel_object,
 			grid_position,
 			octree_node: match scale {
 				0 => OctreeNode::Real,
