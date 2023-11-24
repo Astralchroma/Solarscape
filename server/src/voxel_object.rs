@@ -5,7 +5,7 @@ use solarscape_shared::protocol::{encode, Message, SyncEntity};
 use solarscape_shared::{chunk::Chunk, components::Location};
 
 // TODO: anything higher than 8 causes overflow, look into this later
-pub const OCTREE_LEVELS: u8 = 8;
+pub const OCTREE_LEVELS: u8 = 1;
 
 // Temporary
 pub const CHUNK_RADIUS: i32 = 3;
