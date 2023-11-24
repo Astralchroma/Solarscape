@@ -11,7 +11,7 @@ pub struct Chunk {
 	pub grid_position: Vector3<i32>,
 	pub chunk_type: ChunkType,
 
-	pub data: [bool; CHUNK_VOLUME],
+	pub density: [f32; CHUNK_VOLUME],
 }
 
 impl Chunk {
@@ -26,16 +26,16 @@ impl Chunk {
 					children: None,
 				},
 			},
-			data: [false; CHUNK_VOLUME],
+			density: [0.0; CHUNK_VOLUME],
 		}
 	}
 
-	pub fn get(&self, cell_position: &Vector3<u8>) -> bool {
-		self.data[index_of_vec(cell_position)]
+	pub fn get(&self, cell_position: &Vector3<u8>) -> f32 {
+		self.density[index_of_vec(cell_position)]
 	}
 
-	pub fn set(&mut self, cell_position: &Vector3<u8>, value: bool) {
-		self.data[index_of_vec(cell_position)] = value;
+	pub fn set(&mut self, cell_position: &Vector3<u8>, value: f32) {
+		self.density[index_of_vec(cell_position)] = value;
 	}
 }
 
@@ -47,7 +47,7 @@ impl Syncable for Chunk {
 				grid_position: self.grid_position,
 				chunk_type: self.chunk_type,
 
-				data: self.data,
+				data: self.density,
 			},
 		}))
 	}

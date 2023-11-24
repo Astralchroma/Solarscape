@@ -44,7 +44,7 @@ pub enum SyncEntity {
 		#[bincode(with_serde)]
 		grid_position: Vector3<i32>,
 		chunk_type: ChunkType,
-		data: [bool; CHUNK_VOLUME],
+		data: [f32; CHUNK_VOLUME],
 	},
 	Location(Location),
 }

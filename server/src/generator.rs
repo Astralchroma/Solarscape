@@ -38,10 +38,7 @@ impl Generator for SphereGenerator {
 					let cell_position = Vector3::new(x as f32, y as f32, z as f32) + chunk_position;
 					let distance = cell_position.metric_distance(&Vector3::new(0.0, 0.0, 0.0));
 
-					chunk.set(
-						&Vector3::new(x >> scale, y >> scale, z >> scale),
-						distance < self.radius,
-					);
+					chunk.set(&Vector3::new(x >> scale, y >> scale, z >> scale), distance);
 				}
 			}
 		}

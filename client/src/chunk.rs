@@ -8,7 +8,7 @@ pub struct Chunk {
 	pub grid_position: Vector3<i32>,
 	pub chunk_type: ChunkType,
 
-	pub data: [bool; CHUNK_VOLUME],
+	pub density: [f32; CHUNK_VOLUME],
 
 	pub vertex_buffer: Option<Buffer>,
 	pub vertex_count: u32,
@@ -16,16 +16,11 @@ pub struct Chunk {
 
 impl Chunk {
 	#[must_use]
-	pub fn new(
-		device: &Device,
-		grid_position: Vector3<i32>,
-		chunk_type: ChunkType,
-		data: [bool; CHUNK_VOLUME],
-	) -> Self {
+	pub fn new(device: &Device, grid_position: Vector3<i32>, chunk_type: ChunkType, data: [f32; CHUNK_VOLUME]) -> Self {
 		let mut chunk = Self {
 			grid_position,
 			chunk_type,
-			data,
+			density: data,
 			vertex_buffer: None,
 			vertex_count: 0,
 		};
@@ -46,14 +41,14 @@ impl Chunk {
 					let cube_index = {
 						let mut result = 0u8;
 
-						if self.data[index_of(x + 0, y + 0, z + 1)] { result |=   1 };
-						if self.data[index_of(x + 1, y + 0, z + 1)] { result |=   2 };
-						if self.data[index_of(x + 1, y + 0, z + 0)] { result |=   4 };
-						if self.data[index_of(x + 0, y + 0, z + 0)] { result |=   8 };
-						if self.data[index_of(x + 0, y + 1, z + 1)] { result |=  16 };
-						if self.data[index_of(x + 1, y + 1, z + 1)] { result |=  32 };
-						if self.data[index_of(x + 1, y + 1, z + 0)] { result |=  64 };
-						if self.data[index_of(x + 0, y + 1, z + 0)] { result |= 128 };
+						if self.density[index_of(x + 0, y + 0, z + 1)] > 0.0 { result |=   1 };
+						if self.density[index_of(x + 1, y + 0, z + 1)] > 0.0 { result |=   2 };
+						if self.density[index_of(x + 1, y + 0, z + 0)] > 0.0 { result |=   4 };
+						if self.density[index_of(x + 0, y + 0, z + 0)] > 0.0 { result |=   8 };
+						if self.density[index_of(x + 0, y + 1, z + 1)] > 0.0 { result |=  16 };
+						if self.density[index_of(x + 1, y + 1, z + 1)] > 0.0 { result |=  32 };
+						if self.density[index_of(x + 1, y + 1, z + 0)] > 0.0 { result |=  64 };
+						if self.density[index_of(x + 0, y + 1, z + 0)] > 0.0 { result |= 128 };
 
 						result
 					};
