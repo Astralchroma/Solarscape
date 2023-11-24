@@ -1,9 +1,9 @@
-use crate::sync::{Subscribers, Syncable};
-use crate::{chunk::Chunk, connection::ServerConnection};
+use crate::{connection::ServerConnection, sync::Subscribers, sync::Syncable};
 use hecs::{Entity, World};
 use log::warn;
-use solarscape_shared::component::{Location, Sector, VoxelObject};
-use solarscape_shared::{protocol::encode, protocol::Event, protocol::Message, protocol::SyncEntity, TICK_DURATION};
+use solarscape_shared::components::{Location, Sector, VoxelObject};
+use solarscape_shared::protocol::{encode, Event, Message, SyncEntity};
+use solarscape_shared::{chunk::Chunk, TICK_DURATION};
 use std::{thread, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
 

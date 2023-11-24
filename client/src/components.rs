@@ -1,5 +1,5 @@
 use bytemuck::cast_slice;
-use solarscape_shared::component::Location;
+use solarscape_shared::components::Location;
 use std::ops::Deref;
 use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device};
 

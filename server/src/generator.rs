@@ -1,6 +1,6 @@
-use crate::chunk::Chunk;
 use hecs::Entity;
 use nalgebra::Vector3;
+use solarscape_shared::chunk::Chunk;
 use std::ops::Deref;
 
 pub struct BoxedGenerator(Box<dyn Generator + Send + Sync>);

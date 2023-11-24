@@ -1,6 +1,5 @@
 #![deny(clippy::unwrap_used)]
 
-mod chunk;
 mod configuration;
 mod connection;
 mod generator;
@@ -15,7 +14,7 @@ use crate::{
 };
 use anyhow::Result;
 use hecs::World;
-use solarscape_shared::{component::Location, component::Sector, component::VoxelObject, shared_main};
+use solarscape_shared::{components::Location, components::Sector, components::VoxelObject, shared_main};
 use std::{convert::Infallible, env, fs};
 use tokio::sync::mpsc;
 

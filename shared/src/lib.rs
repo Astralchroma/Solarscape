@@ -4,7 +4,7 @@ use std::{io::Result, time::Duration};
 use tokio::runtime::Runtime;
 
 pub mod chunk;
-pub mod component;
+pub mod components;
 pub mod connection;
 pub mod protocol;
 

@@ -1,40 +1,17 @@
 use crate::triangulation_table::{CORNERS, EDGES, TRIANGULATION_TABLE};
 use bytemuck::cast_slice;
 use nalgebra::Vector3;
-use solarscape_shared::{chunk::index_of, chunk::CHUNK_VOLUME, protocol::OctreeNode};
+use solarscape_shared::chunk::Chunk;
 use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device, RenderPass};
 
-pub struct Chunk {
-	pub grid_position: Vector3<i32>,
-	pub octree_node: OctreeNode,
-
-	pub density: [f32; CHUNK_VOLUME],
-
-	pub vertex_buffer: Option<Buffer>,
+pub struct ChunkMesh {
+	pub vertex_buffer: Buffer,
 	pub vertex_count: u32,
 }
 
-impl Chunk {
-	#[must_use]
-	pub fn new(
-		device: &Device,
-		grid_position: Vector3<i32>,
-		chunk_type: OctreeNode,
-		data: [f32; CHUNK_VOLUME],
-	) -> Self {
-		let mut chunk = Self {
-			grid_position,
-			octree_node: chunk_type,
-			density: data,
-			vertex_buffer: None,
-			vertex_count: 0,
-		};
-		chunk.build_mesh(device);
-		chunk
-	}
-
+impl ChunkMesh {
 	// TODO: Meshes are all blocking built on the main thread. Start here if there is a lot of lag when loading chunks.
-	pub fn build_mesh(&mut self, device: &Device) {
+	pub fn new(chunk: &Chunk, device: &Device) -> Option<Self> {
 		// TODO: Not using indexes, this is also wasteful. Start here if there are rendering performance problems.
 		let mut vertices = vec![];
 
@@ -46,14 +23,14 @@ impl Chunk {
 					let cube_index = {
 						let mut result = 0u8;
 
-						if self.density[index_of(x + 0, y + 0, z + 1)] > 0.0 { result |=   1 };
-						if self.density[index_of(x + 1, y + 0, z + 1)] > 0.0 { result |=   2 };
-						if self.density[index_of(x + 1, y + 0, z + 0)] > 0.0 { result |=   4 };
-						if self.density[index_of(x + 0, y + 0, z + 0)] > 0.0 { result |=   8 };
-						if self.density[index_of(x + 0, y + 1, z + 1)] > 0.0 { result |=  16 };
-						if self.density[index_of(x + 1, y + 1, z + 1)] > 0.0 { result |=  32 };
-						if self.density[index_of(x + 1, y + 1, z + 0)] > 0.0 { result |=  64 };
-						if self.density[index_of(x + 0, y + 1, z + 0)] > 0.0 { result |= 128 };
+						if chunk.get(x + 0, y + 0, z + 1) > 0.0 { result |=   1 };
+						if chunk.get(x + 1, y + 0, z + 1) > 0.0 { result |=   2 };
+						if chunk.get(x + 1, y + 0, z + 0) > 0.0 { result |=   4 };
+						if chunk.get(x + 0, y + 0, z + 0) > 0.0 { result |=   8 };
+						if chunk.get(x + 0, y + 1, z + 1) > 0.0 { result |=  16 };
+						if chunk.get(x + 1, y + 1, z + 1) > 0.0 { result |=  32 };
+						if chunk.get(x + 1, y + 1, z + 0) > 0.0 { result |=  64 };
+						if chunk.get(x + 0, y + 1, z + 0) > 0.0 { result |= 128 };
 
 						result
 					};
@@ -80,23 +57,23 @@ impl Chunk {
 			}
 		}
 
-		self.vertex_count = vertices.len() as u32 / 3;
-		if self.vertex_count == 0 {
-			return;
+		if vertices.is_empty() {
+			return None;
 		}
 
-		self.vertex_buffer = Some(device.create_buffer_init(&BufferInitDescriptor {
-			label: None, // TODO
-			contents: cast_slice(&vertices),
-			usage: BufferUsages::VERTEX,
-		}));
+		Some(ChunkMesh {
+			vertex_count: vertices.len() as u32 / 3,
+			vertex_buffer: device.create_buffer_init(&BufferInitDescriptor {
+				label: None, // TODO
+				contents: cast_slice(&vertices),
+				usage: BufferUsages::VERTEX,
+			}),
+		})
 	}
 
 	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
-		if let Some(ref vertex_buffer) = self.vertex_buffer {
-			render_pass.set_vertex_buffer(1, vertex_buffer.slice(..));
-			render_pass.draw(0..self.vertex_count, 0..1)
-		};
+		render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
+		render_pass.draw(0..self.vertex_count, 0..1)
 	}
 }
 

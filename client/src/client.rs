@@ -1,7 +1,7 @@
-use crate::{chunk::Chunk, component::LocationBuffer, connection::ClientConnection, orbit_camera::OrbitCamera};
+use crate::{chunk::ChunkMesh, components::LocationBuffer, connection::ClientConnection, orbit_camera::OrbitCamera};
 use anyhow::Result;
 use hecs::{Component, Entity, Without, World};
-use solarscape_shared::component::Sector;
+use solarscape_shared::components::Sector;
 use solarscape_shared::protocol::{encode, DisconnectReason, Event, Message, SyncEntity};
 use std::{iter, mem, mem::size_of};
 use tokio::{runtime::Runtime, sync::mpsc::error::TryRecvError};
@@ -327,7 +327,7 @@ impl Client {
 
 		let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
 
-		let render_query = self.world.query_mut::<(&Chunk, &LocationBuffer)>();
+		let render_query = self.world.query_mut::<(&ChunkMesh, &LocationBuffer)>();
 
 		{
 			let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -383,13 +383,11 @@ impl Client {
 			Message::SyncEntity { entity, sync } => match sync {
 				SyncEntity::Sector(sector) => insert_or_spawn_at(&mut self.world, entity, sector),
 				SyncEntity::VoxelObject(voxel_object) => insert_or_spawn_at(&mut self.world, entity, voxel_object),
-				SyncEntity::Chunk {
-					grid_position,
-					chunk_type,
-					data,
-				} => {
-					let chunk = Chunk::new(&self.device, grid_position, chunk_type, data);
-					insert_or_spawn_at(&mut self.world, entity, chunk);
+				SyncEntity::Chunk(chunk) => {
+					if let Some(chunk_mesh) = ChunkMesh::new(&chunk, &self.device) {
+						insert_or_spawn_at(&mut self.world, entity, chunk_mesh)
+					}
+					insert_or_spawn_at(&mut self.world, entity, chunk)
 				}
 				SyncEntity::Location(location) => {
 					insert_or_spawn_at(&mut self.world, entity, LocationBuffer::new(&self.device, &location));

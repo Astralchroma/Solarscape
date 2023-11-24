@@ -1,7 +1,8 @@
-use crate::{chunk::Chunk, connection::ServerConnection, generator::BoxedGenerator, sync::Subscribers};
+use crate::{connection::ServerConnection, generator::BoxedGenerator, sync::Subscribers};
 use hecs::{Entity, NoSuchEntity, QueryOneError, World};
 use nalgebra::Vector3;
-use solarscape_shared::{component::Location, protocol::encode, protocol::Message, protocol::SyncEntity};
+use solarscape_shared::protocol::{encode, Message, SyncEntity};
+use solarscape_shared::{chunk::Chunk, components::Location};
 
 // TODO: anything higher than 8 causes overflow, look into this later
 pub const OCTREE_LEVELS: u8 = 8;

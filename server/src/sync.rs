@@ -1,7 +1,7 @@
 use crate::connection::ServerConnection;
 use hecs::{Component, Entity};
-use solarscape_shared::component::{Sector, VoxelObject};
 use solarscape_shared::protocol::{encode, Message, SyncEntity};
+use solarscape_shared::{chunk::Chunk, components::Sector, components::VoxelObject};
 
 pub type Subscribers = Vec<Entity>;
 
@@ -27,6 +27,15 @@ impl Syncable for VoxelObject {
 		connection.send(encode(Message::SyncEntity {
 			entity,
 			sync: SyncEntity::VoxelObject(*self),
+		}))
+	}
+}
+
+impl Syncable for Chunk {
+	fn sync(&self, entity: Entity, connection: &mut ServerConnection) {
+		connection.send(encode(Message::SyncEntity {
+			entity,
+			sync: SyncEntity::Chunk(*self),
 		}))
 	}
 }
