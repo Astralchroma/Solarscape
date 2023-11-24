@@ -42,9 +42,9 @@ pub fn generate_sphere(world: &mut World, object_entity: Entity) -> Result<(), Q
 #[must_use]
 pub fn calculate_chunk_location(object_location: &Location, chunk: &Chunk) -> Location {
 	Location {
-		position: object_location.position + (chunk.grid_position * (16 * chunk.chunk_type.scale() as i32)).cast(),
+		position: object_location.position + (chunk.grid_position * (16 * chunk.octree_node.scale() as i32)).cast(),
 		rotation: object_location.rotation,
-		scale: chunk.chunk_type.scale() as f32,
+		scale: chunk.octree_node.scale() as f32,
 	}
 }
 

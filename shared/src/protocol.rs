@@ -43,7 +43,7 @@ pub enum SyncEntity {
 	Chunk {
 		#[bincode(with_serde)]
 		grid_position: Vector3<i32>,
-		chunk_type: ChunkType,
+		chunk_type: OctreeNode,
 		data: [f32; CHUNK_VOLUME],
 	},
 	Location(Location),
@@ -63,7 +63,7 @@ pub fn encode(message: Message) -> Arc<[u8]> {
 }
 
 #[derive(Debug, Clone, Copy, Decode, Encode)]
-pub enum ChunkType {
+pub enum OctreeNode {
 	Real,
 	Node {
 		scale: NonZeroU8,
@@ -73,11 +73,11 @@ pub enum ChunkType {
 	},
 }
 
-impl ChunkType {
+impl OctreeNode {
 	pub const fn scale(&self) -> u8 {
 		match self {
-			ChunkType::Real => 0,
-			ChunkType::Node { scale, .. } => scale.get(),
+			OctreeNode::Real => 0,
+			OctreeNode::Node { scale, .. } => scale.get(),
 		}
 	}
 }

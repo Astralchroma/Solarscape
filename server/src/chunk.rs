@@ -2,14 +2,14 @@ use crate::{connection::ServerConnection, sync::Syncable};
 use hecs::Entity;
 use nalgebra::Vector3;
 use solarscape_shared::chunk::{index_of_vec, CHUNK_VOLUME};
-use solarscape_shared::protocol::{encode, ChunkType, Message, SyncEntity};
+use solarscape_shared::protocol::{encode, Message, OctreeNode, SyncEntity};
 use std::num::NonZeroU8;
 
 pub struct Chunk {
 	pub object: Entity,
 
 	pub grid_position: Vector3<i32>,
-	pub chunk_type: ChunkType,
+	pub octree_node: OctreeNode,
 
 	pub density: [f32; CHUNK_VOLUME],
 }
@@ -19,9 +19,9 @@ impl Chunk {
 		Self {
 			object,
 			grid_position,
-			chunk_type: match scale {
-				0 => ChunkType::Real,
-				scale => ChunkType::Node {
+			octree_node: match scale {
+				0 => OctreeNode::Real,
+				scale => OctreeNode::Node {
 					scale: NonZeroU8::new(scale).expect("not 0, we just checked"),
 					children: None,
 				},
@@ -45,7 +45,7 @@ impl Syncable for Chunk {
 			entity,
 			sync: SyncEntity::Chunk {
 				grid_position: self.grid_position,
-				chunk_type: self.chunk_type,
+				chunk_type: self.octree_node,
 
 				data: self.density,
 			},

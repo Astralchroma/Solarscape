@@ -1,12 +1,12 @@
 use crate::triangulation_table::{CORNERS, EDGES, TRIANGULATION_TABLE};
 use bytemuck::cast_slice;
 use nalgebra::Vector3;
-use solarscape_shared::{chunk::index_of, chunk::CHUNK_VOLUME, protocol::ChunkType};
+use solarscape_shared::{chunk::index_of, chunk::CHUNK_VOLUME, protocol::OctreeNode};
 use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device, RenderPass};
 
 pub struct Chunk {
 	pub grid_position: Vector3<i32>,
-	pub chunk_type: ChunkType,
+	pub octree_node: OctreeNode,
 
 	pub density: [f32; CHUNK_VOLUME],
 
@@ -16,10 +16,15 @@ pub struct Chunk {
 
 impl Chunk {
 	#[must_use]
-	pub fn new(device: &Device, grid_position: Vector3<i32>, chunk_type: ChunkType, data: [f32; CHUNK_VOLUME]) -> Self {
+	pub fn new(
+		device: &Device,
+		grid_position: Vector3<i32>,
+		chunk_type: OctreeNode,
+		data: [f32; CHUNK_VOLUME],
+	) -> Self {
 		let mut chunk = Self {
 			grid_position,
-			chunk_type,
+			octree_node: chunk_type,
 			density: data,
 			vertex_buffer: None,
 			vertex_count: 0,
