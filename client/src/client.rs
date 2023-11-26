@@ -1,11 +1,12 @@
 use crate::{chunk::ChunkMesh, components::LocationBuffer, connection::ClientConnection, orbit_camera::OrbitCamera};
 use anyhow::Result;
 use hecs::{Component, Entity, Without, World};
+use log::{error, info};
 use nalgebra::Vector3;
 use solarscape_shared::chunk::Chunk;
 use solarscape_shared::components::Sector;
 use solarscape_shared::protocol::{encode, DisconnectReason, Event, Message, SyncEntity};
-use std::{iter, mem, mem::size_of};
+use std::{iter, mem, mem::size_of, time::SystemTime};
 use tokio::{runtime::Runtime, sync::mpsc::error::TryRecvError};
 use wgpu::{
 	include_wgsl, Backends, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType::Buffer, BlendState,
@@ -40,6 +41,8 @@ pub struct Client {
 	current_sector: Option<Entity>,
 
 	camera: OrbitCamera,
+
+	discord_rpc: discord_rpc_client::Client,
 }
 
 impl Client {
@@ -208,6 +211,21 @@ impl Client {
 
 		let (depth_texture, depth_view) = Self::create_depth_buffer(&device, size.width, size.height);
 
+		let mut discord_rpc = discord_rpc_client::Client::new(1178300453872746516);
+		discord_rpc.on_ready(|_| info!("RPC Started"));
+		discord_rpc.on_error(|e| error!("RPC Error: {e:?}"));
+		discord_rpc.start();
+		let _ = discord_rpc.set_activity(|a| {
+			a.state("Loading").timestamps(|t| {
+				t.start(
+					SystemTime::now()
+						.duration_since(SystemTime::UNIX_EPOCH)
+						.expect("time since epoch")
+						.as_secs(),
+				)
+			})
+		});
+
 		let client = Self {
 			camera: OrbitCamera::new(&device, &camera_group_layout),
 
@@ -220,6 +238,7 @@ impl Client {
 			trans_pipeline,
 			depth_texture,
 			depth_view,
+			discord_rpc,
 
 			world: World::new(),
 			current_sector: None,
@@ -448,6 +467,17 @@ impl Client {
 					for entity in to_remove {
 						let _ = self.world.despawn(entity);
 					}
+					let sector = self.world.query_one_mut::<&Sector>(entity).expect("sector must exist");
+					let _ = self.discord_rpc.set_activity(|a| {
+						a.details(format!("Exploring {}", sector.display_name)).timestamps(|t| {
+							t.start(
+								SystemTime::now()
+									.duration_since(SystemTime::UNIX_EPOCH)
+									.expect("time since epoch")
+									.as_secs(),
+							)
+						})
+					});
 				}
 				_ => return Err(DisconnectReason::ProtocolViolation),
 			},
