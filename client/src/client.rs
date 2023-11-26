@@ -1,6 +1,8 @@
 use crate::{chunk::ChunkMesh, components::LocationBuffer, connection::ClientConnection, orbit_camera::OrbitCamera};
 use anyhow::Result;
 use hecs::{Component, Entity, Without, World};
+use nalgebra::Vector3;
+use solarscape_shared::chunk::Chunk;
 use solarscape_shared::components::Sector;
 use solarscape_shared::protocol::{encode, DisconnectReason, Event, Message, SyncEntity};
 use std::{iter, mem, mem::size_of};
@@ -384,10 +386,52 @@ impl Client {
 				SyncEntity::Sector(sector) => insert_or_spawn_at(&mut self.world, entity, sector),
 				SyncEntity::VoxelObject(voxel_object) => insert_or_spawn_at(&mut self.world, entity, voxel_object),
 				SyncEntity::Chunk(chunk) => {
-					if let Some(chunk_mesh) = ChunkMesh::new(&chunk, &self.device) {
+					if let Some(chunk_mesh) = ChunkMesh::new(&self.world, &chunk, &self.device) {
 						insert_or_spawn_at(&mut self.world, entity, chunk_mesh)
 					}
-					insert_or_spawn_at(&mut self.world, entity, chunk)
+					insert_or_spawn_at(&mut self.world, entity, chunk);
+
+					// Rebuild dependent chunks
+					// This is probably really bad for performance as we are likely double building a lot of chunks
+					let positions: [Vector3<i32>; 7] = [
+						chunk.grid_position + Vector3::new(0, 0, -1),
+						chunk.grid_position + Vector3::new(0, -1, 0),
+						chunk.grid_position + Vector3::new(0, -1, -1),
+						chunk.grid_position + Vector3::new(-1, 0, 0),
+						chunk.grid_position + Vector3::new(-1, 0, -1),
+						chunk.grid_position + Vector3::new(-1, -1, 0),
+						chunk.grid_position + Vector3::new(-1, -1, -1),
+					];
+
+					let mut chunks_to_rebuild = vec![];
+
+					for (other_entity, other) in self.world.query_mut::<&Chunk>() {
+						if other.voxel_object != chunk.voxel_object {
+							continue;
+						}
+
+						for position in positions {
+							if other.grid_position == position {
+								chunks_to_rebuild.push(other_entity);
+								break;
+							}
+						}
+					}
+
+					let mut chunks_to_insert = vec![];
+
+					for chunk_entity in chunks_to_rebuild {
+						let mut chunk_query = self.world.query_one::<&Chunk>(chunk_entity).expect("chunk we just got");
+						let chunk = chunk_query.get().expect("chunk we just got");
+
+						if let Some(chunk_mesh) = ChunkMesh::new(&self.world, chunk, &self.device) {
+							chunks_to_insert.push((chunk_entity, chunk_mesh));
+						}
+					}
+
+					for (chunk_entity, chunk_mesh) in chunks_to_insert {
+						insert_or_spawn_at(&mut self.world, chunk_entity, chunk_mesh);
+					}
 				}
 				SyncEntity::Location(location) => {
 					insert_or_spawn_at(&mut self.world, entity, LocationBuffer::new(&self.device, &location));
