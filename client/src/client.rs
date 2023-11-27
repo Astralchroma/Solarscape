@@ -1,6 +1,6 @@
 use crate::{
-	chunk::ChunkMesh, components::LocationBuffer, connection::ClientConnection, connection::ConnectionError,
-	orbit_camera::OrbitCamera, renderer::Renderer, renderer::RendererInitializationError, Arguments,
+	camera::Camera, camera::OrbitCamera, chunk::ChunkMesh, components::LocationBuffer, connection::ClientConnection,
+	connection::ConnectionError, renderer::Renderer, renderer::RendererInitializationError, Arguments,
 };
 use hecs::{Component, Entity, Without, World};
 use log::{error, info, warn};
@@ -18,7 +18,8 @@ pub struct Client {
 	pub renderer: Renderer,
 	discord_rpc: discord_rpc_client::Client,
 
-	pub camera: OrbitCamera,
+	pub camera: Camera,
+	pub camera_controller: OrbitCamera,
 	current_sector: Option<Entity>,
 
 	pub world: World,
@@ -36,7 +37,8 @@ impl Client {
 		let connection = runtime.block_on(ClientConnection::connect("[::1]:23500"))?;
 
 		let mut client = Self {
-			camera: OrbitCamera::new(&renderer.device, &renderer.camera_bind_group_layout),
+			camera: Camera::new(&renderer),
+			camera_controller: OrbitCamera::default(),
 
 			renderer,
 			discord_rpc,
@@ -74,43 +76,30 @@ impl Client {
 		event_loop.run(move |event, control_flow| match event {
 			WindowEvent { event, .. } => match event {
 				Resized(new_size) => {
-					self.camera
-						.update_matrix(&self.renderer.queue, new_size.width, new_size.height);
 					self.renderer.resize(new_size);
+					self.camera.update(&self.renderer, &self.camera_controller);
 				}
 				CloseRequested | Destroyed => control_flow.exit(),
 				MouseWheel { delta, .. } => {
-					self.camera.handle_mouse_wheel(delta);
-					self.camera.update_matrix(
-						&self.renderer.queue,
-						self.renderer.size.width,
-						self.renderer.size.height,
-					);
+					self.camera_controller.handle_mouse_wheel(delta);
+					self.camera.update(&self.renderer, &self.camera_controller);
 				}
 				MouseInput { state, button, .. } => {
-					self.camera.handle_mouse_input(state, button);
-					self.camera.update_matrix(
-						&self.renderer.queue,
-						self.renderer.size.width,
-						self.renderer.size.height,
-					);
+					self.camera_controller.handle_mouse_input(state, button);
+					self.camera.update(&self.renderer, &self.camera_controller);
 				}
 				RedrawRequested => Renderer::render(&mut self).expect("aaaaaaaaaa"),
 				_ => {}
 			},
 			DeviceEvent { event, .. } => {
-				self.camera.handle_device_event(event);
-				self.camera.update_matrix(
-					&self.renderer.queue,
-					self.renderer.size.width,
-					self.renderer.size.height,
-				);
+				self.camera_controller.handle_device_event(event);
+				self.camera.update(&self.renderer, &self.camera_controller);
 			}
 			AboutToWait => {
-				if self.camera.position_changed {
-					self.camera.position_changed = false;
-
-					connection.send(encode(Message::Event(Event::PositionUpdated(self.camera.position))));
+				if self.camera.use_position_changed() {
+					connection.send(encode(Message::Event(Event::PositionUpdated(
+						*self.camera.get_position(),
+					))));
 				}
 
 				loop {

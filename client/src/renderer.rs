@@ -334,7 +334,7 @@ impl Renderer {
 				..Default::default()
 			});
 
-			render_pass.set_bind_group(0, &client.camera.bind, &[]);
+			render_pass.set_bind_group(0, &client.camera.bind_group, &[]);
 
 			render_pass.set_pipeline(&client.renderer.trans_pipeline);
 

@@ -1,10 +1,10 @@
 #![deny(clippy::unwrap_used)]
 
+mod camera;
 mod chunk;
 mod client;
 mod components;
 mod connection;
-mod orbit_camera;
 mod renderer;
 mod triangulation_table;
 
