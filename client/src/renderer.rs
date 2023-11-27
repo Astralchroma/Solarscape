@@ -223,36 +223,6 @@ impl Renderer {
 
 		renderer.resize(renderer.window.inner_size());
 
-		// Sometimes the client can crash if it is moved between windows before it renders a frame.
-		// This is known to happen on Vulkan on Hyprland (wayland).
-		// A dumb hacky solution is just to render a blank frame.
-		let output = renderer.surface.get_current_texture()?;
-
-		let view = output.texture.create_view(&TextureViewDescriptor {
-			label: Some("Renderer::init()#view"),
-			..Default::default()
-		});
-
-		let mut encoder = renderer.device.create_command_encoder(&CommandEncoderDescriptor {
-			label: Some("Renderer::init()#encoder"),
-		});
-
-		encoder.begin_render_pass(&RenderPassDescriptor {
-			label: Some("Renderer::init()#_render_pass"),
-			color_attachments: &[Some(RenderPassColorAttachment {
-				ops: Operations {
-					load: Clear(Color::BLACK),
-					store: Store,
-				},
-				resolve_target: None,
-				view: &view,
-			})],
-			..Default::default()
-		});
-
-		renderer.queue.submit(iter::once(encoder.finish()));
-		output.present();
-
 		Ok(renderer)
 	}
 
