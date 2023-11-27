@@ -2,14 +2,10 @@ use bytemuck::cast_slice;
 use nalgebra::{dvector, Matrix4, Point3, Vector3};
 use std::ops::Mul;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{
-	BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferUsages, Device, Queue, RenderPass,
-};
+use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferUsages, Device, Queue};
 use winit::dpi::PhysicalPosition;
 use winit::event::MouseScrollDelta::{self, LineDelta, PixelDelta};
-use winit::event::{DeviceEvent, ElementState, MouseButton};
-use DeviceEvent::MouseMotion;
-use ElementState::Pressed;
+use winit::event::{DeviceEvent, DeviceEvent::MouseMotion, ElementState, ElementState::Pressed, MouseButton};
 
 const UP_VECTOR: Vector3<f32> = Vector3::new(0.0, 1.0, 0.0);
 
@@ -25,7 +21,7 @@ pub struct OrbitCamera {
 	pub position_changed: bool,
 
 	buffer: Buffer,
-	bind: BindGroup,
+	pub bind: BindGroup,
 }
 
 impl OrbitCamera {
@@ -55,10 +51,6 @@ impl OrbitCamera {
 			buffer,
 			bind,
 		}
-	}
-
-	pub fn use_camera<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
-		render_pass.set_bind_group(0, &self.bind, &[]);
 	}
 
 	pub fn update_matrix(&self, queue: &Queue, width: u32, height: u32) {
