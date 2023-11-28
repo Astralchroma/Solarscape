@@ -62,7 +62,7 @@ impl ChunkMesh {
 		let get = |x: u8, y: u8, z: u8| -> f32 {
 			let chunk_index = ((((x == 16) as u8) << 2) + (((y == 16) as u8) << 1) + ((z == 16) as u8)) as usize;
 			match chunks[chunk_index] {
-				Some(chunk) => chunk.get(
+				Some(chunk) => chunk.get_density(
 					match x {
 						16 => 0,
 						x => x,
