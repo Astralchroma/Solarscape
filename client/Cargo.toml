@@ -11,7 +11,7 @@ discord-rpc-client = "=0.4.0"
 native-dialog = "=0.7.0"
 wgpu = "=0.18.0"
 
-clap = { version = "=4.4.9", features = [ "derive" ] }
+clap = { version = "=4.4.10", features = [ "derive" ] }
 winit = { version = "=0.29.4", features = [ "rwh_05" ] }
 
 anyhow.workspace = true
