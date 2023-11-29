@@ -79,21 +79,6 @@ impl Server {
 
 						voxel_object_entities.push(voxel_object_entity);
 					}
-
-					for (chunk_entity, (chunk, location, subscribers)) in
-						self.world.query::<(&Chunk, &Location, &mut Subscribers)>().into_iter()
-					{
-						if !voxel_object_entities.contains(&chunk.voxel_object) {
-							continue;
-						}
-
-						subscribers.push(entity);
-						chunk.sync(chunk_entity, &mut connection);
-						connection.send(encode(Message::SyncEntity {
-							entity: chunk_entity,
-							sync: SyncEntity::Location(*location),
-						}));
-					}
 				}
 			}
 		}
