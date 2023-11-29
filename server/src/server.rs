@@ -3,7 +3,7 @@ use hecs::{Entity, World};
 use log::warn;
 use solarscape_shared::components::{Location, Sector, VoxelObject};
 use solarscape_shared::protocol::{encode, Event, Message, SyncEntity};
-use solarscape_shared::{chunk::Chunk, TICK_DURATION};
+use solarscape_shared::TICK_DURATION;
 use std::{thread, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
 
