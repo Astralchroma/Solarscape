@@ -8,10 +8,7 @@ mod sync;
 mod voxel_object;
 
 use crate::generator::{BoxedGenerator, SphereGenerator};
-use crate::{
-	configuration::Configuration, connection::ServerConnection, server::Server, sync::Subscribers,
-	voxel_object::generate_sphere,
-};
+use crate::{configuration::Configuration, connection::ServerConnection, server::Server, sync::Subscribers};
 use anyhow::Result;
 use hecs::World;
 use solarscape_shared::{components::Location, components::Sector, components::VoxelObject, shared_main};
@@ -48,7 +45,7 @@ fn main() -> Result<Infallible> {
 		}
 
 		for voxel_object_configuration in sector_configuration.voxel_objects {
-			let voxel_object_entity = world.spawn((
+			world.spawn((
 				VoxelObject { sector: sector_entity },
 				Location {
 					position: voxel_object_configuration.position.into(),
@@ -60,8 +57,6 @@ fn main() -> Result<Infallible> {
 				}),
 				Subscribers::new(),
 			));
-
-			generate_sphere(&mut world, voxel_object_entity)?;
 		}
 	}
 

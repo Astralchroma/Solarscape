@@ -1,44 +1,7 @@
-use crate::{connection::ServerConnection, generator::BoxedGenerator, sync::Subscribers};
+use crate::{connection::ServerConnection, sync::Subscribers};
 use hecs::{Entity, NoSuchEntity, QueryOneError, World};
-use nalgebra::Vector3;
 use solarscape_shared::protocol::{encode, Message, SyncEntity};
 use solarscape_shared::{chunk::Chunk, components::Location};
-
-// TODO: anything higher than 8 causes overflow, look into this later
-pub const OCTREE_LEVELS: u8 = 1;
-
-// Temporary
-pub const CHUNK_RADIUS: i32 = 3;
-
-// Temporary
-pub fn generate_sphere(world: &mut World, voxel_object_entity: Entity) -> Result<(), QueryOneError> {
-	let mut query = world.query_one::<(&Location, &BoxedGenerator)>(voxel_object_entity)?;
-	let (voxel_object_location, generator) = query.get().ok_or(NoSuchEntity)?;
-
-	let mut chunks = vec![];
-
-	for level in 0..OCTREE_LEVELS {
-		for x in -CHUNK_RADIUS..CHUNK_RADIUS {
-			for y in -CHUNK_RADIUS..CHUNK_RADIUS {
-				for z in -CHUNK_RADIUS..CHUNK_RADIUS {
-					let chunk = generator.generate_chunk(voxel_object_entity, level, Vector3::new(x, y, z));
-
-					chunks.push((
-						calculate_chunk_location(voxel_object_location, &chunk),
-						chunk,
-						Subscribers::new(),
-					));
-				}
-			}
-		}
-	}
-
-	drop(query);
-
-	world.spawn_batch(chunks);
-
-	Ok(())
-}
 
 #[must_use]
 pub fn calculate_chunk_location(object_location: &Location, chunk: &Chunk) -> Location {
