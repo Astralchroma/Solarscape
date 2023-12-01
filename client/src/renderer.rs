@@ -8,12 +8,12 @@ use wgpu::{
 	CompareFunction::Greater, CompositeAlphaMode::Opaque, CreateSurfaceError, DepthBiasState, DepthStencilState,
 	Device, DeviceDescriptor, Extent3d, Face::Back, Features, FragmentState, Gles3MinorVersion::Version0, Instance,
 	InstanceDescriptor, InstanceFlags, LoadOp::Clear, MultisampleState, Operations, PipelineLayoutDescriptor,
-	PowerPreference::HighPerformance, PresentMode::AutoVsync, PrimitiveState, Queue, RenderPassColorAttachment,
-	RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
-	RequestAdapterOptions, RequestDeviceError, ShaderStages, StencilState, StoreOp::Store, Surface,
-	SurfaceConfiguration, SurfaceError, Texture, TextureDescriptor, TextureDimension, TextureFormat::Depth32Float,
-	TextureUsages, TextureView, TextureViewDescriptor, VertexAttribute, VertexBufferLayout, VertexFormat::Float32,
-	VertexFormat::Float32x3, VertexState, VertexStepMode,
+	PowerPreference::HighPerformance, PresentMode::AutoNoVsync, PresentMode::AutoVsync, PrimitiveState, Queue,
+	RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline,
+	RenderPipelineDescriptor, RequestAdapterOptions, RequestDeviceError, ShaderStages, StencilState, StoreOp::Store,
+	Surface, SurfaceConfiguration, SurfaceError, Texture, TextureDescriptor, TextureDimension,
+	TextureFormat::Depth32Float, TextureUsages, TextureView, TextureViewDescriptor, VertexAttribute,
+	VertexBufferLayout, VertexFormat::Float32, VertexFormat::Float32x3, VertexState, VertexStepMode,
 };
 use winit::{dpi::PhysicalSize, error::OsError, event_loop::EventLoop, window::Window, window::WindowBuilder};
 use RendererInitializationError::{RequestAdapterError, SurfaceFormatError};
@@ -113,8 +113,10 @@ impl Renderer {
 			// We set width and height to 0 for now, this is fine as we will immediately call resize and update this.
 			width: 0,
 			height: 0,
-			// TODO: Vsync Configuration
-			present_mode: AutoVsync,
+			present_mode: match arguments.disable_vsync {
+				true => AutoNoVsync,
+				false => AutoVsync,
+			},
 			alpha_mode: Opaque,
 			view_formats: vec![],
 		};

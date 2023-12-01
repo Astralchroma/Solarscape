@@ -27,6 +27,10 @@ pub struct Arguments {
 	/// Enables wgpu's tracing and outputs it to the specified location
 	#[arg(long)]
 	tracing: Option<PathBuf>,
+
+	/// Disables vsync
+	#[arg(long)]
+	disable_vsync: bool,
 }
 
 #[derive(Clone, Copy, Args)]
