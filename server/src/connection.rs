@@ -8,18 +8,18 @@ use tokio::{io::AsyncReadExt, io::AsyncWriteExt, net::TcpListener, net::TcpStrea
 use DisconnectReason::InternalError;
 
 pub struct ServerConnection {
-	disconnect: oneshot::Sender<DisconnectReason>,
+	disconnect: Option<oneshot::Sender<DisconnectReason>>,
 	send: mpsc::UnboundedSender<Arc<[u8]>>,
 	receive: mpsc::UnboundedReceiver<Message>,
 }
 
 impl ServerConnection {
-	pub fn disconnect(self, reason: DisconnectReason) {
-		let _ = self.disconnect.send(reason);
+	pub fn disconnect(&mut self, reason: DisconnectReason) {
+		self.disconnect.take().and_then(|sender| sender.send(reason).ok());
 	}
 
 	pub fn is_alive(&self) -> bool {
-		!self.disconnect.is_closed()
+		self.disconnect.as_ref().map_or(true, |sender| !sender.is_closed())
 	}
 
 	pub fn send(&self, packet: Arc<[u8]>) {
@@ -64,14 +64,14 @@ impl ServerConnection {
 		tokio::spawn(Self::process(address, stream, disconnect_out, send_out, receive_in));
 
 		let connection = ServerConnection {
-			disconnect: disconnect_in,
+			disconnect: Some(disconnect_in),
 			send: send_in,
 			receive: receive_out,
 		};
 
 		match incoming.send(connection) {
 			Ok(_) => {}
-			Err(SendError(connection)) => connection.disconnect(InternalError),
+			Err(SendError(mut connection)) => connection.disconnect(InternalError),
 		}
 	}
 

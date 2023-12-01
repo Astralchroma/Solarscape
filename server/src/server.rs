@@ -1,6 +1,7 @@
 use crate::{connection::ServerConnection, sync::subscribe};
 use hecs::{Entity, World};
 use log::warn;
+use solarscape_shared::protocol::{DisconnectReason, Event, Message};
 use solarscape_shared::{components::VoxelObject, TICK_DURATION};
 use std::{thread, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
@@ -17,6 +18,7 @@ impl Server {
 			let tick_start = Instant::now();
 
 			self.process_incoming_connections(&mut incoming_connections);
+			self.handle_incoming_messages();
 			self.remove_dead_connections();
 
 			let tick_end = Instant::now();
@@ -63,6 +65,20 @@ impl Server {
 		}
 		for entity in dead_connections {
 			let _ = self.world.despawn(entity);
+		}
+	}
+
+	fn handle_incoming_messages(&mut self) {
+		for (_, player_con) in &mut self.world.query::<&mut ServerConnection>() {
+			while let Ok(message) = player_con.receive().try_recv() {
+				match message {
+					Message::SyncEntity { .. } => player_con.disconnect(DisconnectReason::ProtocolViolation),
+					Message::Event(event) => match event {
+						Event::PositionUpdated(_) => {}
+						_ => player_con.disconnect(DisconnectReason::ProtocolViolation),
+					},
+				}
+			}
 		}
 	}
 }
