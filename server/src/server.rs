@@ -1,9 +1,7 @@
-use crate::{connection::ServerConnection, sync::Subscribers, sync::Syncable};
+use crate::{connection::ServerConnection, sync::subscribe};
 use hecs::{Entity, World};
 use log::warn;
-use solarscape_shared::components::{Location, Sector, VoxelObject};
-use solarscape_shared::protocol::{encode, Event, Message, SyncEntity};
-use solarscape_shared::TICK_DURATION;
+use solarscape_shared::{components::VoxelObject, TICK_DURATION};
 use std::{thread, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
 
@@ -41,43 +39,15 @@ impl Server {
 					// TODO: This seems like it could be a heck of a lot better
 					// TODO: We should be defining the initial sector in the server, instead of just picking the first
 					let entity = self.world.spawn((connection,));
-					let mut connection = self
-						.world
-						.get::<&mut ServerConnection>(entity)
-						.expect("spawned connection");
 
-					{
-						let mut query = self
-							.world
-							.query_one::<(&Sector, &mut Subscribers)>(self.default_sector)
-							.expect("default sector");
-						let (sector, sector_subscribers) = query.get().expect("default sector");
+					subscribe(self, &self.default_sector, &entity).expect("TODO: Error Handling");
 
-						sector_subscribers.push(entity);
-						sector.sync(self.default_sector, &mut connection);
-
-						connection.send(encode(Message::Event(Event::ActiveSector(self.default_sector))));
-					}
-
-					let mut voxel_object_entities = vec![];
-
-					for (voxel_object_entity, (voxel_object, location, subscribers)) in self
-						.world
-						.query::<(&VoxelObject, &Location, &mut Subscribers)>()
-						.into_iter()
-					{
+					for (voxel_object_entity, voxel_object) in &mut self.world.query::<&VoxelObject>() {
 						if voxel_object.sector != self.default_sector {
 							continue;
 						}
 
-						subscribers.push(entity);
-						voxel_object.sync(voxel_object_entity, &mut connection);
-						connection.send(encode(Message::SyncEntity {
-							entity: voxel_object_entity,
-							sync: SyncEntity::Location(*location),
-						}));
-
-						voxel_object_entities.push(voxel_object_entity);
+						subscribe(self, &voxel_object_entity, &entity).expect("TODO: Error Handling");
 					}
 				}
 			}

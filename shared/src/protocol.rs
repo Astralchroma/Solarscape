@@ -48,6 +48,7 @@ pub enum SyncEntity {
 pub enum Event {
 	ActiveSector(#[bincode(with_serde)] Entity),
 	PositionUpdated(#[bincode(with_serde)] Vector3<f64>),
+	DespawnEntity(#[bincode(with_serde)] Entity),
 }
 
 #[must_use]
