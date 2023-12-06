@@ -3,13 +3,16 @@ use hecs::{Entity, World};
 use log::warn;
 use solarscape_shared::protocol::{DisconnectReason, Event, Message};
 use solarscape_shared::{components::VoxelObject, TICK_DURATION};
-use std::{thread, time::Instant};
+use std::{collections::HashMap, thread, time::Instant};
 use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
 
 pub struct Server {
 	pub default_sector: Entity,
 
 	pub world: World,
+
+	pub next_connection_id: usize,
+	pub connections: HashMap<usize, ServerConnection>,
 }
 
 impl Server {
@@ -38,18 +41,22 @@ impl Server {
 					TryRecvError::Disconnected => todo!("handle loss of listener"),
 				},
 				Ok(connection) => {
-					// TODO: This seems like it could be a heck of a lot better
-					// TODO: We should be defining the initial sector in the server, instead of just picking the first
-					let entity = self.world.spawn((connection,));
+					let connection_id = self.next_connection_id;
+					self.next_connection_id += 1;
+					self.connections.insert(connection_id, connection);
+					let connection = self
+						.connections
+						.get(&connection_id)
+						.expect("connection should not be removed right after we added it");
 
-					subscribe(self, &self.default_sector, &entity).expect("TODO: Error Handling");
+					subscribe(self, &self.default_sector, connection_id, connection).expect("TODO: Error Handling");
 
 					for (voxel_object_entity, voxel_object) in &mut self.world.query::<&VoxelObject>() {
 						if voxel_object.sector != self.default_sector {
 							continue;
 						}
 
-						subscribe(self, &voxel_object_entity, &entity).expect("TODO: Error Handling");
+						subscribe(self, &voxel_object_entity, connection_id, connection).expect("TODO: Error Handling");
 					}
 				}
 			}
@@ -57,25 +64,18 @@ impl Server {
 	}
 
 	fn remove_dead_connections(&mut self) {
-		let mut dead_connections = vec![];
-		for (entity, connection) in self.world.query::<&ServerConnection>().into_iter() {
-			if !connection.is_alive() {
-				dead_connections.push(entity);
-			}
-		}
-		for entity in dead_connections {
-			let _ = self.world.despawn(entity);
-		}
+		// TODO: Unsubscribe from everything
+		self.connections.retain(|_, connection| connection.is_alive());
 	}
 
 	fn handle_incoming_messages(&mut self) {
-		for (_, player_con) in &mut self.world.query::<&mut ServerConnection>() {
-			while let Ok(message) = player_con.receive().try_recv() {
+		for connection in self.connections.values_mut() {
+			while let Ok(message) = connection.receive().try_recv() {
 				match message {
-					Message::SyncEntity { .. } => player_con.disconnect(DisconnectReason::ProtocolViolation),
+					Message::SyncEntity { .. } => connection.disconnect(DisconnectReason::ProtocolViolation),
 					Message::Event(event) => match event {
 						Event::PositionUpdated(_) => {}
-						_ => player_con.disconnect(DisconnectReason::ProtocolViolation),
+						_ => connection.disconnect(DisconnectReason::ProtocolViolation),
 					},
 				}
 			}

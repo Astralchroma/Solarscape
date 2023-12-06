@@ -6,7 +6,7 @@ use solarscape_shared::protocol::{encode, Event, Message, SyncEntity};
 use solarscape_shared::{chunk::Chunk, components::Location, components::Sector, components::VoxelObject};
 use std::{any::TypeId, collections::HashMap};
 
-pub type Subscribers = Vec<Entity>;
+pub type Subscribers = Vec<usize>;
 
 trait Syncer {
 	fn sync(&self, entity_ref: &EntityRef) -> Result<SyncEntity, NoSuchEntity>;
@@ -44,19 +44,21 @@ static SYNCERS: Lazy<HashMap<TypeId, Box<dyn Syncer + Send + Sync>>> = Lazy::new
 	hashmap
 });
 
-pub fn subscribe(server: &Server, target: &Entity, player: &Entity) -> Result<(), NoSuchEntity> {
+pub fn subscribe(
+	server: &Server,
+	target: &Entity,
+	connection_id: usize,
+	connection: &ServerConnection,
+) -> Result<(), NoSuchEntity> {
 	let target_ref = server.world.entity(*target)?;
 
 	let mut target_sub = target_ref.get::<&mut Subscribers>().ok_or(NoSuchEntity)?;
 
 	{
-		let mut player_con_query = server.world.query_one::<&ServerConnection>(*player)?;
-		let player_con = player_con_query.get().ok_or(NoSuchEntity)?;
-
 		for component in target_ref.component_types() {
 			match SYNCERS.get(&component) {
 				None => {}
-				Some(syncer) => player_con.send(encode(Message::SyncEntity {
+				Some(syncer) => connection.send(encode(Message::SyncEntity {
 					entity: *target,
 					sync: syncer.sync(&target_ref)?,
 				})),
@@ -64,24 +66,26 @@ pub fn subscribe(server: &Server, target: &Entity, player: &Entity) -> Result<()
 		}
 	}
 
-	target_sub.push(*player);
+	target_sub.push(connection_id);
 
 	Ok(())
 }
 
-pub fn unsubscribe(server: &Server, target: &Entity, player: &Entity) -> Result<(), NoSuchEntity> {
+pub fn unsubscribe(
+	server: &Server,
+	target: &Entity,
+	connection_id: usize,
+	connection: &ServerConnection,
+) -> Result<(), NoSuchEntity> {
 	{
 		let mut target_sub_query = server.world.query_one::<&mut Subscribers>(*target)?;
 		let target_sub = target_sub_query.get().ok_or(NoSuchEntity)?;
 
-		target_sub.retain(|entity| entity != player);
+		target_sub.retain(|other| other != &connection_id);
 	}
 
 	{
-		let mut player_con_query = server.world.query_one::<&ServerConnection>(*player)?;
-		let player_con = player_con_query.get().ok_or(NoSuchEntity)?;
-
-		player_con.send(encode(Message::Event(Event::DespawnEntity(*target))));
+		connection.send(encode(Message::Event(Event::DespawnEntity(*target))));
 	}
 
 	Ok(())

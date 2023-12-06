@@ -1,5 +1,5 @@
-use crate::{connection::ServerConnection, sync::Subscribers};
-use hecs::{Entity, NoSuchEntity, QueryOneError, World};
+use crate::{server::Server, sync::Subscribers};
+use hecs::{Entity, NoSuchEntity, QueryOneError};
 use solarscape_shared::protocol::{encode, Message, SyncEntity};
 use solarscape_shared::{chunk::Chunk, components::Location};
 
@@ -15,11 +15,12 @@ pub fn calculate_chunk_location(object_location: &Location, chunk: &Chunk) -> Lo
 // POV: You wrote an entire function only to realise you don't actually need it yet.
 /// Updates the locations of all chunks belonging to a VoxelObject. Typically used when the position of the VoxelObject
 /// changes.
-pub fn update_chunk_locations(world: &mut World, voxel_object_entity: Entity) -> Result<(), QueryOneError> {
-	let mut voxel_object_location_query = world.query_one::<&Location>(voxel_object_entity)?;
+pub fn update_chunk_locations(server: &mut Server, voxel_object_entity: Entity) -> Result<(), QueryOneError> {
+	let mut voxel_object_location_query = server.world.query_one::<&Location>(voxel_object_entity)?;
 	let object_location = voxel_object_location_query.get().ok_or(NoSuchEntity)?;
 
-	for (chunk_entity, (chunk, location, subscribers)) in world.query::<(&Chunk, &mut Location, &Subscribers)>().iter()
+	for (chunk_entity, (chunk, location, subscribers)) in
+		server.world.query::<(&Chunk, &mut Location, &Subscribers)>().iter()
 	{
 		if chunk.voxel_object != voxel_object_entity {
 			continue;
@@ -32,12 +33,10 @@ pub fn update_chunk_locations(world: &mut World, voxel_object_entity: Entity) ->
 			sync: SyncEntity::Location(*location),
 		});
 
-		for connection in subscribers {
-			world
-				.query_one::<&ServerConnection>(*connection)?
-				.get()
-				.ok_or(NoSuchEntity)?
-				.send(packet.clone());
+		for connection_id in subscribers {
+			if let Some(connection) = server.connections.get(connection_id) {
+				connection.send(packet.clone());
+			}
 		}
 	}
 

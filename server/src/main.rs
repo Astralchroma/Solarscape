@@ -12,7 +12,7 @@ use crate::{configuration::Configuration, connection::ServerConnection, server::
 use anyhow::Result;
 use hecs::World;
 use solarscape_shared::{components::Location, components::Sector, components::VoxelObject, shared_main};
-use std::{convert::Infallible, env, fs};
+use std::{collections::HashMap, convert::Infallible, env, fs};
 use tokio::sync::mpsc;
 
 fn main() -> Result<Infallible> {
@@ -64,6 +64,9 @@ fn main() -> Result<Infallible> {
 		default_sector: default_sector.expect("a default sector is required"),
 
 		world,
+
+		next_connection_id: 0,
+		connections: HashMap::new(),
 	};
 
 	let (incoming_in, incoming) = mpsc::unbounded_channel();
