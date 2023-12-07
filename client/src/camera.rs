@@ -44,8 +44,11 @@ impl Camera {
 	}
 
 	pub fn update(&mut self, renderer: &Renderer, camera_controller: &OrbitCamera) {
-		self.position = camera_controller.get_position();
-		self.position_changed = true;
+		let new_position = camera_controller.get_position();
+		if self.position != new_position {
+			self.position = new_position;
+			self.position_changed = true;
+		}
 
 		let aspect = renderer.size.width as f32 / renderer.size.height as f32;
 		let projection = Matrix4::new_perspective(aspect, f32::to_radians(45.0), 0.0, f32::MAX);
