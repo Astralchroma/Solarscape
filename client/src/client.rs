@@ -54,9 +54,6 @@ impl Client {
 	}
 
 	pub fn update_discord_rpc(&mut self, state: Option<&str>, details: Option<&str>) {
-		// We always restart the RPC here in case was (re)started since the last call.
-		self.discord_rpc.start();
-
 		let _ = self.discord_rpc.set_activity(|a| {
 			a.state(state.unwrap_or(""))
 				.details(details.unwrap_or(""))
