@@ -33,6 +33,7 @@ impl Client {
 		let mut discord_rpc = discord_rpc_client::Client::new(1178300453872746516);
 		discord_rpc.on_ready(|_| info!("Discord RPC Ready!"));
 		discord_rpc.on_error(|error| warn!("Discord RPC Error! {error:?}"));
+		discord_rpc.start();
 
 		let connection = runtime.block_on(ClientConnection::connect("[::1]:23500"))?;
 
