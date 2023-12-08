@@ -141,6 +141,8 @@ impl Client {
 				SyncEntity::Sector(sector) => insert_or_spawn_at(&mut self.world, entity, sector),
 				SyncEntity::VoxelObject(voxel_object) => insert_or_spawn_at(&mut self.world, entity, voxel_object),
 				SyncEntity::Chunk(chunk) => {
+					info!("update or load chunk at {:?}", chunk.grid_position);
+
 					if let Some(chunk_mesh) = ChunkMesh::new(&self.world, &chunk, &self.renderer.device) {
 						insert_or_spawn_at(&mut self.world, entity, chunk_mesh)
 					}

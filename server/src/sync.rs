@@ -1,5 +1,5 @@
-use crate::{connection::ServerConnection, server::Server};
-use hecs::{Entity, EntityRef, NoSuchEntity};
+use crate::connection::ServerConnection;
+use hecs::{Entity, EntityRef, NoSuchEntity, World};
 use once_cell::sync::Lazy;
 use paste::paste;
 use solarscape_shared::protocol::{encode, Event, Message, SyncEntity};
@@ -45,12 +45,12 @@ static SYNCERS: Lazy<HashMap<TypeId, Box<dyn Syncer + Send + Sync>>> = Lazy::new
 });
 
 pub fn subscribe(
-	server: &Server,
+	world: &World,
 	target: &Entity,
 	connection_id: usize,
 	connection: &ServerConnection,
 ) -> Result<(), NoSuchEntity> {
-	let target_ref = server.world.entity(*target)?;
+	let target_ref = world.entity(*target)?;
 
 	let mut target_sub = target_ref.get::<&mut Subscribers>().ok_or(NoSuchEntity)?;
 
@@ -72,13 +72,13 @@ pub fn subscribe(
 }
 
 pub fn unsubscribe(
-	server: &Server,
+	world: &World,
 	target: &Entity,
 	connection_id: usize,
 	connection: &ServerConnection,
 ) -> Result<(), NoSuchEntity> {
 	{
-		let mut target_sub_query = server.world.query_one::<&mut Subscribers>(*target)?;
+		let mut target_sub_query = world.query_one::<&mut Subscribers>(*target)?;
 		let target_sub = target_sub_query.get().ok_or(NoSuchEntity)?;
 
 		target_sub.retain(|other| other != &connection_id);

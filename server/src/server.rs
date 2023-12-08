@@ -1,4 +1,4 @@
-use crate::{connection::ServerConnection, sync::subscribe};
+use crate::{connection::ServerConnection, player, sync::subscribe};
 use hecs::{Entity, World};
 use log::warn;
 use solarscape_shared::protocol::{DisconnectReason, Event, Message};
@@ -49,14 +49,16 @@ impl Server {
 						.get(&connection_id)
 						.expect("connection should not be removed right after we added it");
 
-					subscribe(self, &self.default_sector, connection_id, connection).expect("TODO: Error Handling");
+					subscribe(&self.world, &self.default_sector, connection_id, connection)
+						.expect("TODO: Error Handling");
 
 					for (voxel_object_entity, voxel_object) in &mut self.world.query::<&VoxelObject>() {
 						if voxel_object.sector != self.default_sector {
 							continue;
 						}
 
-						subscribe(self, &voxel_object_entity, connection_id, connection).expect("TODO: Error Handling");
+						subscribe(&self.world, &voxel_object_entity, connection_id, connection)
+							.expect("TODO: Error Handling");
 					}
 				}
 			}
@@ -69,12 +71,14 @@ impl Server {
 	}
 
 	fn handle_incoming_messages(&mut self) {
-		for connection in self.connections.values_mut() {
+		for (connection_id, connection) in &mut self.connections {
 			while let Ok(message) = connection.receive().try_recv() {
 				match message {
 					Message::SyncEntity { .. } => connection.disconnect(DisconnectReason::ProtocolViolation),
 					Message::Event(event) => match event {
-						Event::PositionUpdated(_) => {}
+						Event::PositionUpdated(player_pos) => {
+							player::update_position(&mut self.world, *connection_id, connection, &player_pos)
+						}
 						_ => connection.disconnect(DisconnectReason::ProtocolViolation),
 					},
 				}

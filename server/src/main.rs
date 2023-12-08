@@ -3,6 +3,7 @@
 mod configuration;
 mod connection;
 mod generator;
+mod player;
 mod server;
 mod sync;
 mod voxel_object;
