@@ -7,7 +7,7 @@ use log::{error, info, warn};
 use nalgebra::Vector3;
 use solarscape_shared::protocol::{encode, DisconnectReason, Event, Message, SyncEntity};
 use solarscape_shared::{chunk::Chunk, components::Sector};
-use std::{mem, time::SystemTime};
+use std::time::SystemTime;
 use thiserror::Error;
 use tokio::{runtime::Runtime, sync::mpsc::error::TryRecvError};
 use winit::event::Event::{AboutToWait, DeviceEvent, WindowEvent};
@@ -105,10 +105,7 @@ impl Client {
 						Ok(packet) => match self.process_message(packet) {
 							Ok(_) => {}
 							Err(disconnect_reason) => {
-								// Cursed hack to steal the connection so we can disconnect it
-								#[allow(invalid_value)] // I know, we don't use it, so just pretend it is valid
-								let stolen_connection = mem::replace(&mut connection, unsafe { mem::zeroed() });
-								stolen_connection.disconnect(disconnect_reason);
+								connection.disconnect(disconnect_reason);
 								panic!("Disconnecting from server, reason: {disconnect_reason:?}");
 							}
 						},
