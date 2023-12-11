@@ -51,7 +51,7 @@ fn handle_fatal_error(message: String) {
 	eprintln!("{message}");
 
 	let _ = MessageDialog::new()
-		.set_text("Solarscape")
+		.set_title("Solarscape")
 		.set_type(MessageType::Error)
 		.set_text(&message)
 		.show_alert();
