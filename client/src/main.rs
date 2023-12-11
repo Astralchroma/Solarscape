@@ -31,6 +31,10 @@ pub struct Arguments {
 	/// Disables vsync
 	#[arg(long)]
 	disable_vsync: bool,
+
+	/// Specify an unofficial server to connect to
+	#[arg(short, long)]
+	server: Option<String>,
 }
 
 #[derive(Clone, Copy, Args)]

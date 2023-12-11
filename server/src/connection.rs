@@ -32,8 +32,8 @@ impl ServerConnection {
 
 	pub async fn r#await(incoming: mpsc::UnboundedSender<Self>) -> Result<Infallible, io::Error> {
 		// TODO: config or a cli option or something idk
-		let socket = TcpListener::bind("[::]:23500").await?;
-		info!("Listening on [::]:23500");
+		let socket = TcpListener::bind("[::]:12490").await?;
+		info!("Listening on [::]:12490");
 
 		loop {
 			let (stream, address) = socket.accept().await?;

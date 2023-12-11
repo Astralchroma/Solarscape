@@ -35,7 +35,11 @@ impl Client {
 		discord_rpc.on_error(|error| warn!("Discord RPC Error! {error:?}"));
 		discord_rpc.start();
 
-		let connection = runtime.block_on(ClientConnection::connect("[::1]:23500"))?;
+		let connection = runtime.block_on(ClientConnection::connect(
+			arguments
+				.server
+				.unwrap_or_else(|| "solarscape.astralchroma.dev:12490".into()),
+		))?;
 
 		let mut client = Self {
 			camera: Camera::new(&renderer),
