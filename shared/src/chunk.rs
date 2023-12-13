@@ -1,11 +1,12 @@
 use bincode::{Decode, Encode};
 use hecs::Entity;
 use nalgebra::Vector3;
+use std::ops::{Deref, DerefMut};
 
 pub const CHUNK_VOLUME: usize = usize::pow(16, 3);
 
-#[derive(Clone, Copy, Debug, Decode, Encode)]
-pub struct Chunk {
+#[derive(Clone, Copy, Debug, Decode, Encode, Eq, PartialEq)]
+pub struct ChunkGridPosition {
 	#[bincode(with_serde)]
 	pub voxel_object: Entity,
 
@@ -13,6 +14,11 @@ pub struct Chunk {
 
 	#[bincode(with_serde)]
 	pub grid_position: Vector3<i32>,
+}
+
+#[derive(Clone, Copy, Debug, Decode, Encode)]
+pub struct Chunk {
+	pub chunk_grid_position: ChunkGridPosition,
 
 	pub density: [f32; CHUNK_VOLUME],
 }
@@ -30,6 +36,20 @@ impl Chunk {
 
 	pub fn set_density(&mut self, x: u8, y: u8, z: u8, value: f32) {
 		self.density[index_of_u8(x, y, z)] = value;
+	}
+}
+
+impl Deref for Chunk {
+	type Target = ChunkGridPosition;
+
+	fn deref(&self) -> &Self::Target {
+		&self.chunk_grid_position
+	}
+}
+
+impl DerefMut for Chunk {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.chunk_grid_position
 	}
 }
 

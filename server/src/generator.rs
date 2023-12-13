@@ -1,6 +1,6 @@
 use hecs::Entity;
 use nalgebra::Vector3;
-use solarscape_shared::chunk::{Chunk, CHUNK_VOLUME};
+use solarscape_shared::chunk::{Chunk, ChunkGridPosition, CHUNK_VOLUME};
 use std::ops::Deref;
 
 pub struct BoxedGenerator(Box<dyn Generator + Send + Sync>);
@@ -30,9 +30,11 @@ pub struct SphereGenerator {
 impl Generator for SphereGenerator {
 	fn generate_chunk(&self, voxel_object: Entity, level: u8, grid_position: Vector3<i32>) -> Chunk {
 		let mut chunk = Chunk {
-			voxel_object,
-			level,
-			grid_position,
+			chunk_grid_position: ChunkGridPosition {
+				voxel_object,
+				level,
+				grid_position,
+			},
 			density: [0.0; CHUNK_VOLUME],
 		};
 		let chunk_position = chunk.voxel_object_relative_position().cast();
