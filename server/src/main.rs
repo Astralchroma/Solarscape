@@ -61,7 +61,11 @@ fn main() -> Result<Infallible> {
 		}
 	}
 
+	let (incoming_in, incoming) = mpsc::unbounded_channel();
+	runtime.spawn(ServerConnection::r#await(incoming_in));
+
 	let server = Server {
+		runtime,
 		default_sector: default_sector.expect("a default sector is required"),
 
 		world,
@@ -69,9 +73,6 @@ fn main() -> Result<Infallible> {
 		next_connection_id: 0,
 		connections: HashMap::new(),
 	};
-
-	let (incoming_in, incoming) = mpsc::unbounded_channel();
-	runtime.spawn(ServerConnection::r#await(incoming_in));
 
 	server.run(incoming)
 }

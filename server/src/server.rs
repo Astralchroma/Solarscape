@@ -4,9 +4,10 @@ use log::warn;
 use solarscape_shared::protocol::{DisconnectReason, Event, Message};
 use solarscape_shared::{components::VoxelObject, TICK_DURATION};
 use std::{collections::HashMap, thread, time::Instant};
-use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver};
+use tokio::{runtime::Runtime, sync::mpsc::error::TryRecvError, sync::mpsc::UnboundedReceiver};
 
 pub struct Server {
+	pub runtime: Runtime,
 	pub default_sector: Entity,
 
 	pub world: World,
