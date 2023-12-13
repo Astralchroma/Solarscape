@@ -54,6 +54,11 @@ pub fn subscribe(
 
 	let mut target_sub = target_ref.get::<&mut Subscribers>().ok_or(NoSuchEntity)?;
 
+	if target_sub.contains(&connection_id) {
+		// Already subscribed, don't bother
+		return Ok(());
+	}
+
 	{
 		for component in target_ref.component_types() {
 			match SYNCERS.get(&component) {
