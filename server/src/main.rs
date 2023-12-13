@@ -8,7 +8,7 @@ mod server;
 mod sync;
 mod voxel_object;
 
-use crate::generator::{BoxedGenerator, SphereGenerator};
+use crate::generator::{ArcGenerator, SphereGenerator};
 use crate::{configuration::Configuration, connection::ServerConnection, server::Server, sync::Subscribers};
 use anyhow::Result;
 use hecs::World;
@@ -53,7 +53,7 @@ fn main() -> Result<Infallible> {
 					rotation: voxel_object_configuration.rotation.into(),
 					scale: 1.0,
 				},
-				BoxedGenerator::new(SphereGenerator {
+				ArcGenerator::new(SphereGenerator {
 					radius: voxel_object_configuration.radius,
 				}),
 				Subscribers::new(),

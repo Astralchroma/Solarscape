@@ -1,18 +1,18 @@
 use hecs::Entity;
 use nalgebra::Vector3;
 use solarscape_shared::chunk::{Chunk, ChunkGridPosition, CHUNK_VOLUME};
-use std::ops::Deref;
+use std::{ops::Deref, sync::Arc};
 
-pub struct BoxedGenerator(Box<dyn Generator + Send + Sync>);
+pub struct ArcGenerator(Arc<dyn Generator + Send + Sync + 'static>);
 
-impl BoxedGenerator {
+impl ArcGenerator {
 	pub fn new(generator: impl Generator + Send + Sync + 'static) -> Self {
-		BoxedGenerator(Box::new(generator))
+		ArcGenerator(Arc::new(generator))
 	}
 }
 
-impl Deref for BoxedGenerator {
-	type Target = dyn Generator + Send + Sync;
+impl Deref for ArcGenerator {
+	type Target = dyn Generator;
 
 	fn deref(&self) -> &Self::Target {
 		&*self.0

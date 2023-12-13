@@ -1,5 +1,5 @@
 use crate::voxel_object::calculate_chunk_location;
-use crate::{connection::ServerConnection, generator::BoxedGenerator, sync, sync::Subscribers};
+use crate::{connection::ServerConnection, generator::ArcGenerator, sync, sync::Subscribers};
 use hecs::World;
 use log::info;
 use nalgebra::{convert_unchecked, Vector3};
@@ -13,8 +13,7 @@ pub fn update_position(
 ) {
 	let mut new_chunks = vec![];
 
-	for (voxject_ent, (_, voxject_loc, voxject_gen)) in &mut world.query::<(&VoxelObject, &Location, &BoxedGenerator)>()
-	{
+	for (voxject_ent, (_, voxject_loc, voxject_gen)) in &mut world.query::<(&VoxelObject, &Location, &ArcGenerator)>() {
 		let player_chunk_grid_pos: Vector3<i32> = convert_unchecked((voxject_loc.position - position) / 16.0);
 
 		for x in player_chunk_grid_pos.x - 5..player_chunk_grid_pos.x + 5 {
