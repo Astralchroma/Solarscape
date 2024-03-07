@@ -1,0 +1,27 @@
+[workspace]
+members = ["client", "server", "shared"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "0.0.0"
+
+[workspace.dependencies]
+solarscape-shared = { path = "shared" }
+
+anyhow = "1"
+bincode = "1"
+log = "0.4"
+nalgebra = "0.32"
+thiserror = "1"
+
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+tokio = { version = "1", features = ["net", "rt-multi-thread", "sync"] }
+
+[profile.dev.package."*"]
+codegen-units = 1
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = true

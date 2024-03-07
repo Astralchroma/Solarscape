@@ -1,0 +1,22 @@
+on: push
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  cargo:
+    name: Cargo
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Cache
+        uses: swatinem/rust-cache@v2
+      - name: Format Check
+        run: cargo fmt --check
+      - name: Build
+        run: |
+          cargo build --message-format=json-diagnostic-rendered-ansi | jq -r 'select(.reason == "compiler-message" and .message.level != "warning").message | . as {message: $message, level: $level, rendered: $rendered} | .spans[] | select(.is_primary == true) | "::" + $level + " file=" + .file_name + ",col=" + (.column_start | tostring) + ",endColumn=" + (.column_end | tostring) + ",line=" + (.line_start | tostring) + ",endLine=" + (.line_end | tostring) + "::" + $message + "\n" + $rendered'
+          exit ${PIPESTATUS[0]}
+      - name: Clippy
+        run: |
+          cargo clippy --all-features --message-format=json-diagnostic-rendered-ansi | jq -r 'select(.reason == "compiler-message").message | . as {message: $message, level: $level, rendered: $rendered} | .spans[] | select(.is_primary == true) | "::" + $level + " file=" + .file_name + ",col=" + (.column_start | tostring) + ",endColumn=" + (.column_end | tostring) + ",line=" + (.line_start | tostring) + ",endLine=" + (.line_end | tostring) + "::" + $message + "\n" + $rendered'
+          exit ${PIPESTATUS[0]}

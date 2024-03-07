@@ -1,0 +1,11 @@
+[package]
+name = "solarscape-shared"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chrono.workspace = true
+log.workspace = true
+
+nalgebra = { workspace = true, features = ["serde-serialize"] }
+serde = { version = "1", features = ["derive"] }

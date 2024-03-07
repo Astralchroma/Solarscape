@@ -1,0 +1,28 @@
+{
+	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"extends": [
+		"config:base",
+		":semanticCommitsDisabled"
+	],
+	"packageRules": [
+		{
+			"automerge": true,
+			"automergeStrategy": "rebase",
+			"automergeType": "branch",
+			"matchCurrentVersion": "!/^0/",
+			"matchUpdateTypes": [
+				"major"
+			]
+		},
+		{
+			"automerge": true,
+			"automergeStrategy": "rebase",
+			"automergeType": "branch",
+			"matchCurrentVersion": "/^0/",
+			"matchUpdateTypes": [
+				"major",
+				"minor"
+			]
+		}
+	]
+}
