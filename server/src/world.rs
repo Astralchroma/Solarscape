@@ -1,7 +1,7 @@
 use crate::connection::Connection;
 use log::error;
 use nalgebra::Isometry3;
-use solarscape_shared::messages::AddVoxject;
+use solarscape_shared::messages::clientbound::AddVoxject;
 use std::{mem, thread, time::Duration, time::Instant};
 use tokio::{runtime::Handle, sync::mpsc::error::TryRecvError, sync::mpsc::Receiver};
 

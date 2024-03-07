@@ -8,7 +8,7 @@ use axum::extract::{Path, State, WebSocketUpgrade};
 use axum::{http::StatusCode, response::IntoResponse, response::Response};
 use log::{error, info, warn};
 use rand::distributions::{Alphanumeric, DistString};
-use solarscape_shared::messages::Message;
+use solarscape_shared::messages::{clientbound::ClientboundMessage, serverbound::ServerboundMessage};
 use std::{borrow::Cow, sync::atomic::AtomicU64, sync::atomic::Ordering::Relaxed, sync::Arc, time::Duration};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tokio::sync::oneshot::{channel as oneshot, Receiver as OneshotReceiver, Sender as OneshotSender};
@@ -22,7 +22,7 @@ pub struct Connection {
 	// std::time::Duration uses u64 for millis and I don't want to spam `as u64` everywhere.
 	latency: Arc<AtomicU64>,
 
-	outgoing: Sender<Message>,
+	outgoing: Sender<ClientboundMessage>,
 
 	incoming: Receiver<Event>,
 }
@@ -36,7 +36,7 @@ impl Connection {
 		Duration::from_millis(self.latency.load(Relaxed))
 	}
 
-	pub fn send(&self, message: impl Into<Message>) {
+	pub fn send(&self, message: impl Into<ClientboundMessage>) {
 		let _ = self.outgoing.send(message.into());
 	}
 
@@ -99,7 +99,7 @@ impl Connection {
 		mut socket: WebSocket,
 		disconnect: OneshotReceiver<Option<CloseFrame<'static>>>,
 		latency: Arc<AtomicU64>,
-		outgoing: Receiver<Message>,
+		outgoing: Receiver<ClientboundMessage>,
 		incoming: Sender<Event>,
 	) {
 		info!("[{name}] Connected");
@@ -156,7 +156,7 @@ impl Connection {
 		socket: &mut WebSocket,
 		mut disconnect: OneshotReceiver<Option<CloseFrame<'static>>>,
 		latency: Arc<AtomicU64>,
-		mut outgoing: Receiver<Message>,
+		mut outgoing: Receiver<ClientboundMessage>,
 		incoming: Sender<Event>,
 	) -> Result<Closed, Error> {
 		let mut last_pings: [Duration; 12] = [Duration::default(); 12];
@@ -256,5 +256,5 @@ impl From<axum::Error> for Error {
 pub enum Event {
 	/// The connection has already been closed, this will be repeated
 	Closed,
-	Message(Message),
+	Message(ServerboundMessage),
 }

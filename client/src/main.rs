@@ -3,7 +3,9 @@
 use crate::{connection::Connection, connection::Event, world::Voxject, world::World};
 use log::{info, LevelFilter::Trace};
 use nalgebra::Isometry3;
-use solarscape_shared::{messages::AddVoxject, messages::Message, StdLogger};
+use solarscape_shared::messages::clientbound;
+use solarscape_shared::messages::clientbound::AddVoxject;
+use solarscape_shared::StdLogger;
 use std::{borrow::Cow, env, error::Error, iter::once, time::Instant};
 use thiserror::Error;
 use tokio::runtime::Builder;
@@ -152,7 +154,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		},
 		UserEvent(event) => match event {
 			Event::Message(message) => match message {
-				Message::AddVoxject(AddVoxject { id, name }) => {
+				clientbound::ClientboundMessage::AddVoxject(AddVoxject { id, name }) => {
 					info!("Added Voxject {id} {name:?}");
 					world.voxjects.insert(
 						id,
