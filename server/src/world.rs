@@ -1,7 +1,8 @@
 use crate::{connection::Connection, connection::Event, player::Player};
 use log::error;
 use nalgebra::Isometry3;
-use solarscape_shared::messages::{clientbound::AddVoxject, serverbound::ServerboundMessage};
+use solarscape_shared::messages::clientbound::{AddVoxject, VoxjectPosition};
+use solarscape_shared::messages::serverbound::ServerboundMessage;
 use std::{thread, time::Duration, time::Instant};
 use tokio::{runtime::Handle, sync::mpsc::error::TryRecvError, sync::mpsc::Receiver};
 
@@ -46,6 +47,10 @@ impl World {
 							id: index,
 							name: voxject.name.clone(),
 						});
+						connection.send(VoxjectPosition {
+							id: index,
+							position: voxject.position,
+						});
 					}
 
 					self.players.push(Player {
@@ -81,6 +86,6 @@ impl World {
 }
 
 pub struct Voxject {
-	pub name: String,
-	pub position: Isometry3<f32>,
+	name: String,
+	position: Isometry3<f32>,
 }
