@@ -1,6 +1,7 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
 mod connection;
+mod player;
 mod world;
 
 use crate::{connection::Connection, world::World};

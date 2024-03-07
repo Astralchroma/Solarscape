@@ -112,6 +112,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let load_time = end_time - start_time;
 	info!("Ready! {load_time:?}");
 
+	connection.send(Isometry3::default());
+
 	event_loop.run(|event, control_flow| match event {
 		WindowEvent { event, .. } => match event {
 			Resized(new_size) => {

@@ -1,13 +1,14 @@
-use crate::connection::Connection;
+use crate::{connection::Connection, connection::Event, player::Player};
 use log::error;
 use nalgebra::Isometry3;
-use solarscape_shared::messages::clientbound::AddVoxject;
-use std::{mem, thread, time::Duration, time::Instant};
+use solarscape_shared::messages::{clientbound::AddVoxject, serverbound::ServerboundMessage};
+use std::{thread, time::Duration, time::Instant};
 use tokio::{runtime::Handle, sync::mpsc::error::TryRecvError, sync::mpsc::Receiver};
 
 pub struct World {
 	_runtime: Handle,
 	incoming_connections: Receiver<Connection>,
+	players: Vec<Player>,
 	voxjects: Box<[Voxject]>,
 }
 
@@ -16,6 +17,7 @@ impl World {
 		Self {
 			_runtime: runtime,
 			incoming_connections,
+			players: vec![],
 			voxjects: Box::new([Voxject {
 				name: String::from("example_voxject"),
 				position: Isometry3::default(),
@@ -46,9 +48,26 @@ impl World {
 						});
 					}
 
-					mem::forget(connection); // temp
+					self.players.push(Player {
+						connection,
+						position: Isometry3::default(),
+					});
 				}
 			}
+
+			self.players.retain_mut(|player| {
+				for message in player.connection.recv() {
+					match message {
+						Event::Closed => return false,
+						Event::Message(message) => match message {
+							// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
+							ServerboundMessage::PlayerPosition(position) => player.position = position,
+						},
+					}
+				}
+
+				true
+			});
 
 			let tick_end = Instant::now();
 			let tick_duration = tick_end - tick_start;
@@ -56,7 +75,7 @@ impl World {
 		}
 	}
 
-	pub fn stop(self) {
+	fn stop(self) {
 		drop(self);
 	}
 }
