@@ -1,19 +1,24 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
 use crate::{connection::Connection, connection::Event, world::Voxject, world::World};
+use bytemuck::cast_slice;
 use log::{info, LevelFilter::Trace};
 use nalgebra::Isometry3;
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, VoxjectPosition};
 use solarscape_shared::StdLogger;
-use std::{borrow::Cow, env, error::Error, iter::once, time::Instant};
+use std::{borrow::Cow, env, error::Error, iter::once, mem::size_of, time::Instant};
 use thiserror::Error;
 use tokio::runtime::Builder;
 use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame};
 use wgpu::{
-	Backends, Color, CommandEncoderDescriptor, CompositeAlphaMode::Opaque, DeviceDescriptor, Dx12Compiler, Features,
-	Gles3MinorVersion::Version0, Instance, InstanceDescriptor, InstanceFlags, LoadOp::Clear, Operations,
-	PowerPreference::HighPerformance, PresentMode::AutoNoVsync, RenderPassColorAttachment, RenderPassDescriptor,
-	RequestAdapterOptions, StoreOp::Store, SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor,
+	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, Backends, BlendState, BufferUsages, Color,
+	ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode::Opaque, DeviceDescriptor,
+	Dx12Compiler, Face, Features, FragmentState, FrontFace, Gles3MinorVersion::Version0, IndexFormat, Instance,
+	InstanceDescriptor, InstanceFlags, LoadOp::Clear, MultisampleState, Operations, PipelineLayoutDescriptor,
+	PolygonMode, PowerPreference::HighPerformance, PresentMode::AutoNoVsync, PrimitiveState, PrimitiveTopology,
+	RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, RequestAdapterOptions, StoreOp::Store,
+	SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor, VertexAttribute, VertexBufferLayout,
+	VertexFormat, VertexState, VertexStepMode,
 };
 use winit::event::WindowEvent::{CloseRequested, Destroyed, RedrawRequested, Resized};
 use winit::event::{Event::AboutToWait, Event::UserEvent, Event::WindowEvent};
@@ -21,6 +26,18 @@ use winit::{dpi::PhysicalSize, event_loop::EventLoopBuilder, window::WindowBuild
 
 mod connection;
 mod world;
+
+#[rustfmt::skip]
+pub const THE_TEST_CUBE_VERTICES: [f32; 24] = [
+	-0.5, -0.5, -0.5, /**/ 0.5, -0.5, -0.5, /**/ -0.5, -0.5,  0.5, /**/ 0.5, -0.5,  0.5,
+	-0.5,  0.5, -0.5, /**/ 0.5,  0.5, -0.5, /**/ -0.5,  0.5,  0.5, /**/ 0.5,  0.5,  0.5,
+];
+
+#[rustfmt::skip]
+pub const THE_TEST_CUBE_INDECES: [u16; 36] = [
+	0, 1, 2, /**/ 2, 3, 1, /**/ 1, 0, 4, /**/ 4, 5, 1, /**/ 1, 4, 7, /**/ 7, 3, 1,
+	3, 2, 6, /**/ 6, 7, 3, /**/ 7, 5, 6, /**/ 6, 5, 4, /**/ 3, 0, 2, /**/ 2, 6, 4,
+];
 
 fn main() -> Result<(), Box<dyn Error>> {
 	let start_time = Instant::now();
@@ -104,6 +121,69 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	surface.configure(&device, &config);
 
+	let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
+
+	let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+		label: None,
+		bind_group_layouts: &[],
+		push_constant_ranges: &[],
+	});
+
+	let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+		label: None,
+		layout: Some(&render_pipeline_layout),
+		vertex: VertexState {
+			module: &shader,
+			entry_point: "vertex",
+			buffers: &[VertexBufferLayout {
+				array_stride: size_of::<f32>() as u64 * 3,
+				step_mode: VertexStepMode::Vertex,
+				attributes: &[VertexAttribute {
+					offset: 0,
+					shader_location: 0,
+					format: VertexFormat::Float32x3,
+				}],
+			}],
+		},
+		primitive: PrimitiveState {
+			topology: PrimitiveTopology::TriangleList,
+			strip_index_format: None,
+			front_face: FrontFace::Cw,
+			cull_mode: Some(Face::Back),
+			unclipped_depth: false,
+			polygon_mode: PolygonMode::Fill,
+			conservative: false,
+		},
+		depth_stencil: None,
+		multisample: MultisampleState {
+			count: 1,
+			mask: !0,
+			alpha_to_coverage_enabled: false,
+		},
+		fragment: Some(FragmentState {
+			module: &shader,
+			entry_point: "fragment",
+			targets: &[Some(ColorTargetState {
+				format: config.format,
+				blend: Some(BlendState::REPLACE),
+				write_mask: ColorWrites::ALL,
+			})],
+		}),
+		multiview: None,
+	});
+
+	let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
+		label: None,
+		contents: cast_slice(&THE_TEST_CUBE_VERTICES),
+		usage: BufferUsages::VERTEX,
+	});
+
+	let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
+		label: None,
+		contents: cast_slice(&THE_TEST_CUBE_INDECES),
+		usage: BufferUsages::INDEX,
+	});
+
 	let connection = runtime.block_on(connection_task).unwrap().unwrap();
 	let mut world = World { voxjects: vec![] };
 
@@ -135,7 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 				let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
 
 				{
-					encoder.begin_render_pass(&RenderPassDescriptor {
+					let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
 						color_attachments: &[Some(RenderPassColorAttachment {
 							ops: Operations {
 								load: Clear(Color::BLACK),
@@ -146,6 +226,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 						})],
 						..Default::default()
 					});
+
+					render_pass.set_pipeline(&render_pipeline);
+					render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+					render_pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
+					#[allow(clippy::cast_possible_truncation)] // not bigger than u32, it's fine
+					render_pass.draw_indexed(0..THE_TEST_CUBE_INDECES.len() as u32, 0, 0..1);
 				}
 
 				queue.submit(once(encoder.finish()));
