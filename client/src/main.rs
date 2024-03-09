@@ -3,7 +3,7 @@
 use crate::{connection::Connection, connection::Event, world::Voxject, world::World};
 use bytemuck::cast_slice;
 use log::{info, LevelFilter::Trace};
-use nalgebra::Isometry3;
+use nalgebra::{Isometry3, Matrix4, Point3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, VoxjectPosition};
 use solarscape_shared::StdLogger;
 use std::{borrow::Cow, env, error::Error, iter::once, mem::size_of, time::Instant};
@@ -11,14 +11,15 @@ use thiserror::Error;
 use tokio::runtime::Builder;
 use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame};
 use wgpu::{
-	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, Backends, BlendState, BufferUsages, Color,
+	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, Backends, BindGroupDescriptor, BindGroupEntry,
+	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType, BufferUsages, Color,
 	ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode::Opaque, DeviceDescriptor,
 	Dx12Compiler, Face, Features, FragmentState, FrontFace, Gles3MinorVersion::Version0, IndexFormat, Instance,
 	InstanceDescriptor, InstanceFlags, LoadOp::Clear, MultisampleState, Operations, PipelineLayoutDescriptor,
 	PolygonMode, PowerPreference::HighPerformance, PresentMode::AutoNoVsync, PrimitiveState, PrimitiveTopology,
-	RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, RequestAdapterOptions, StoreOp::Store,
-	SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor, VertexAttribute, VertexBufferLayout,
-	VertexFormat, VertexState, VertexStepMode,
+	RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, RequestAdapterOptions, ShaderStages,
+	StoreOp::Store, SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor, VertexAttribute,
+	VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
 };
 use winit::event::WindowEvent::{CloseRequested, Destroyed, RedrawRequested, Resized};
 use winit::event::{Event::AboutToWait, Event::UserEvent, Event::WindowEvent};
@@ -29,14 +30,30 @@ mod world;
 
 #[rustfmt::skip]
 pub const THE_TEST_CUBE_VERTICES: [f32; 24] = [
-	-0.5, -0.5, -0.5, /**/ 0.5, -0.5, -0.5, /**/ -0.5, -0.5,  0.5, /**/ 0.5, -0.5,  0.5,
-	-0.5,  0.5, -0.5, /**/ 0.5,  0.5, -0.5, /**/ -0.5,  0.5,  0.5, /**/ 0.5,  0.5,  0.5,
+	-0.5, -0.5, -0.5,
+	-0.5, -0.5,  0.5,
+	 0.5, -0.5, -0.5,
+	 0.5, -0.5,  0.5,
+	-0.5,  0.5, -0.5,
+	-0.5,  0.5,  0.5, 
+	 0.5,  0.5, -0.5, 
+	 0.5,  0.5,  0.5,
 ];
 
 #[rustfmt::skip]
 pub const THE_TEST_CUBE_INDECES: [u16; 36] = [
-	0, 1, 2, /**/ 2, 3, 1, /**/ 1, 0, 4, /**/ 4, 5, 1, /**/ 1, 4, 7, /**/ 7, 3, 1,
-	3, 2, 6, /**/ 6, 7, 3, /**/ 7, 5, 6, /**/ 6, 5, 4, /**/ 3, 0, 2, /**/ 2, 6, 4,
+	0, 2, 1,
+	1, 2, 3,
+	0, 1, 4,
+	4, 1, 5,
+	5, 1, 7,
+	7, 1, 3,
+	3, 2, 7,
+	7, 2, 6,
+	6, 2, 0,
+	0, 4, 6,
+	7, 6, 5,
+	5, 6, 4
 ];
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -123,9 +140,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
 
+	let camera_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+		label: None,
+		entries: &[BindGroupLayoutEntry {
+			binding: 0,
+			visibility: ShaderStages::VERTEX,
+			ty: BindingType::Buffer {
+				ty: BufferBindingType::Uniform,
+				has_dynamic_offset: false,
+				min_binding_size: None,
+			},
+			count: None,
+		}],
+	});
+
 	let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
 		label: None,
-		bind_group_layouts: &[],
+		bind_group_layouts: &[&camera_bind_group_layout],
 		push_constant_ranges: &[],
 	});
 
@@ -148,7 +179,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		primitive: PrimitiveState {
 			topology: PrimitiveTopology::TriangleList,
 			strip_index_format: None,
-			front_face: FrontFace::Cw,
+			front_face: FrontFace::Ccw,
 			cull_mode: Some(Face::Back),
 			unclipped_depth: false,
 			polygon_mode: PolygonMode::Fill,
@@ -170,6 +201,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 			})],
 		}),
 		multiview: None,
+	});
+
+	let camera = Camera {
+		eye: Point3::new(-5.0, 5.0, -5.0),
+		target: Point3::default(),
+		up: Vector3::new(0.0, 1.0, 0.0),
+		aspect: 16.0 / 9.0,
+		fov: 45.0,
+	};
+
+	let camera_buffer = device.create_buffer_init(&BufferInitDescriptor {
+		label: None,
+		contents: cast_slice(camera.projection_matrix().as_slice()),
+		usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+	});
+
+	let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
+		label: None,
+		layout: &camera_bind_group_layout,
+		entries: &[BindGroupEntry {
+			binding: 0,
+			resource: camera_buffer.as_entire_binding(),
+		}],
 	});
 
 	let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -228,6 +282,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 					});
 
 					render_pass.set_pipeline(&render_pipeline);
+					render_pass.set_bind_group(0, &camera_bind_group, &[]);
 					render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
 					render_pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
 					#[allow(clippy::cast_possible_truncation)] // not bigger than u32, it's fine
@@ -277,3 +332,19 @@ struct NoAdapter;
 #[derive(Debug, Error)]
 #[error("no surface format found")]
 struct NoSurfaceFormat;
+
+struct Camera {
+	eye: Point3<f32>,
+	target: Point3<f32>,
+	up: Vector3<f32>,
+	aspect: f32,
+	fov: f32,
+}
+
+impl Camera {
+	fn projection_matrix(&self) -> Matrix4<f32> {
+		let projection = Matrix4::new_perspective(self.aspect, f32::to_radians(self.fov), 0.0, f32::MAX);
+		let view = Matrix4::look_at_rh(&self.eye, &self.target, &self.up);
+		projection * view
+	}
+}
