@@ -1,10 +1,10 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
-use crate::{connection::Connection, connection::Event, world::Voxject, world::World};
+use crate::{connection::Connection, connection::Event, world::Chunk, world::Voxject, world::World};
 use bytemuck::cast_slice;
 use log::{info, LevelFilter::Trace};
-use nalgebra::{Isometry3, Matrix4, Point3, Vector3};
-use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, VoxjectPosition};
+use nalgebra::{convert, Isometry3, Matrix4, Point3, Similarity3, Translation, Vector3};
+use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncChunk, VoxjectPosition};
 use solarscape_shared::StdLogger;
 use std::{borrow::Cow, env, error::Error, iter::once, mem::size_of, time::Instant};
 use thiserror::Error;
@@ -54,6 +54,23 @@ pub const THE_TEST_CUBE_INDECES: [u16; 36] = [
 	0, 4, 6,
 	7, 6, 5,
 	5, 6, 4
+];
+
+#[rustfmt::skip]
+pub const CHUNK_DEBUG_VERTICES: [f32; 24] = [
+	0.0, 0.0, 0.0,
+	0.0, 0.0, 1.0,
+	0.0, 1.0, 0.0,
+	0.0, 1.0, 1.0,
+	1.0, 0.0, 0.0,
+	1.0, 0.0, 1.0,
+	1.0, 1.0, 0.0,
+	1.0, 1.0, 1.0
+];
+
+#[rustfmt::skip]
+pub const CHUNK_DEBUG_INDICES: [u16; 19] = [
+	0, 1, 3, 2, 0, 4, 5, 7, 6, 4, 0xFFFF, 1, 5, 0xFFFF, 2, 6, 0xFFFF, 3, 7
 ];
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -138,7 +155,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	surface.configure(&device, &config);
 
-	let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
+	let the_test_cube_shader = device.create_shader_module(include_wgsl!("the_test_cube.wgsl"));
+	let chunk_debug_shader = device.create_shader_module(include_wgsl!("chunk_debug.wgsl"));
 
 	let camera_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
 		label: None,
@@ -154,17 +172,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 		}],
 	});
 
-	let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+	let the_test_cube_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
 		label: None,
 		bind_group_layouts: &[&camera_bind_group_layout],
 		push_constant_ranges: &[],
 	});
 
-	let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+	let the_test_cube_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
 		label: None,
-		layout: Some(&render_pipeline_layout),
+		layout: Some(&the_test_cube_pipeline_layout),
 		vertex: VertexState {
-			module: &shader,
+			module: &the_test_cube_shader,
 			entry_point: "vertex",
 			buffers: &[VertexBufferLayout {
 				array_stride: size_of::<f32>() as u64 * 3,
@@ -192,7 +210,84 @@ fn main() -> Result<(), Box<dyn Error>> {
 			alpha_to_coverage_enabled: false,
 		},
 		fragment: Some(FragmentState {
-			module: &shader,
+			module: &the_test_cube_shader,
+			entry_point: "fragment",
+			targets: &[Some(ColorTargetState {
+				format: config.format,
+				blend: Some(BlendState::REPLACE),
+				write_mask: ColorWrites::ALL,
+			})],
+		}),
+		multiview: None,
+	});
+
+	let chunk_debug_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+		label: None,
+		bind_group_layouts: &[&camera_bind_group_layout],
+		push_constant_ranges: &[],
+	});
+
+	let chunk_debug_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+		label: None,
+		layout: Some(&chunk_debug_pipeline_layout),
+		vertex: VertexState {
+			module: &chunk_debug_shader,
+			entry_point: "vertex",
+			buffers: &[
+				VertexBufferLayout {
+					array_stride: size_of::<f32>() as u64 * 3,
+					step_mode: VertexStepMode::Vertex,
+					attributes: &[VertexAttribute {
+						offset: 0,
+						shader_location: 0,
+						format: VertexFormat::Float32x3,
+					}],
+				},
+				VertexBufferLayout {
+					array_stride: (size_of::<f32>() * 4 * 4) as u64,
+					step_mode: VertexStepMode::Instance,
+					attributes: &[
+						VertexAttribute {
+							offset: 0,
+							shader_location: 1,
+							format: VertexFormat::Float32x4,
+						},
+						VertexAttribute {
+							offset: (size_of::<f32>() * 4) as u64,
+							shader_location: 2,
+							format: VertexFormat::Float32x4,
+						},
+						VertexAttribute {
+							offset: (size_of::<f32>() * 4 * 2) as u64,
+							shader_location: 3,
+							format: VertexFormat::Float32x4,
+						},
+						VertexAttribute {
+							offset: (size_of::<f32>() * 4 * 3) as u64,
+							shader_location: 4,
+							format: VertexFormat::Float32x4,
+						},
+					],
+				},
+			],
+		},
+		primitive: PrimitiveState {
+			topology: PrimitiveTopology::LineStrip,
+			strip_index_format: Some(IndexFormat::Uint16),
+			front_face: FrontFace::Ccw,
+			cull_mode: None,
+			unclipped_depth: false,
+			polygon_mode: PolygonMode::Fill,
+			conservative: false,
+		},
+		depth_stencil: None,
+		multisample: MultisampleState {
+			count: 1,
+			mask: !0,
+			alpha_to_coverage_enabled: false,
+		},
+		fragment: Some(FragmentState {
+			module: &chunk_debug_shader,
 			entry_point: "fragment",
 			targets: &[Some(ColorTargetState {
 				format: config.format,
@@ -204,8 +299,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 	});
 
 	let camera = Camera {
-		eye: Point3::new(-5.0, 5.0, -5.0),
-		target: Point3::default(),
+		eye: Point3::new(0.001, 8192.0, 0.000),
+		target: Point3::new(0.0, 0.0, 0.0),
 		up: Vector3::new(0.0, 1.0, 0.0),
 		aspect: 16.0 / 9.0,
 		fov: 45.0,
@@ -226,17 +321,38 @@ fn main() -> Result<(), Box<dyn Error>> {
 		}],
 	});
 
-	let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
+	let the_test_cube_vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
 		label: None,
 		contents: cast_slice(&THE_TEST_CUBE_VERTICES),
 		usage: BufferUsages::VERTEX,
 	});
 
-	let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
+	let the_test_cube_index_buffer = device.create_buffer_init(&BufferInitDescriptor {
 		label: None,
 		contents: cast_slice(&THE_TEST_CUBE_INDECES),
 		usage: BufferUsages::INDEX,
 	});
+
+	let chunk_debug_vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
+		label: None,
+		contents: cast_slice(&CHUNK_DEBUG_VERTICES),
+		usage: BufferUsages::VERTEX,
+	});
+
+	let chunk_debug_index_buffer = device.create_buffer_init(&BufferInitDescriptor {
+		label: None,
+		contents: cast_slice(&CHUNK_DEBUG_INDICES),
+		usage: BufferUsages::INDEX,
+	});
+
+	let mut chunk_debug_instance_buffer = device.create_buffer_init(&BufferInitDescriptor {
+		label: None,
+		contents: &[],
+		usage: BufferUsages::VERTEX,
+	});
+
+	let mut chunk_count = 0;
+	let mut chunks_changed = false;
 
 	let connection = runtime.block_on(connection_task).unwrap().unwrap();
 	let mut world = World { voxjects: vec![] };
@@ -256,6 +372,39 @@ fn main() -> Result<(), Box<dyn Error>> {
 			}
 			CloseRequested | Destroyed => control_flow.exit(),
 			RedrawRequested => {
+				if chunks_changed {
+					// TODO: costly, dumb, and jank, good thing its temporary!
+					let chunk_debug_instances = world
+						.voxjects
+						.iter()
+						.flat_map(|voxject| {
+							voxject.chunks.iter().enumerate().flat_map(move |(level, chunks)| {
+								chunks.keys().map(move |grid_position| {
+									let position: Vector3<f32> =
+										convert(grid_position.map(|value| value as i64 * (16 << level)));
+									Similarity3::from_parts(
+										Translation::from(position),
+										voxject.position.rotation,
+										(16u64 << level) as f32,
+									)
+									.to_homogeneous()
+								})
+							})
+						})
+						.collect::<Vec<_>>();
+
+					chunk_count = chunk_debug_instances.len() as u32;
+					info!("Updated chunk_debug_buffer with {chunk_count} chunks");
+
+					chunk_debug_instance_buffer = device.create_buffer_init(&BufferInitDescriptor {
+						label: None,
+						contents: cast_slice(&chunk_debug_instances),
+						usage: BufferUsages::VERTEX,
+					});
+
+					chunks_changed = false;
+				}
+
 				let output = if let Ok(output) = surface.get_current_texture() {
 					output
 				} else {
@@ -281,12 +430,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 						..Default::default()
 					});
 
-					render_pass.set_pipeline(&render_pipeline);
 					render_pass.set_bind_group(0, &camera_bind_group, &[]);
-					render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-					render_pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
+
+					render_pass.set_pipeline(&the_test_cube_pipeline);
+					render_pass.set_vertex_buffer(0, the_test_cube_vertex_buffer.slice(..));
+					render_pass.set_index_buffer(the_test_cube_index_buffer.slice(..), IndexFormat::Uint16);
 					#[allow(clippy::cast_possible_truncation)] // not bigger than u32, it's fine
 					render_pass.draw_indexed(0..THE_TEST_CUBE_INDECES.len() as u32, 0, 0..1);
+
+					render_pass.set_pipeline(&chunk_debug_pipeline);
+					render_pass.set_vertex_buffer(0, chunk_debug_vertex_buffer.slice(..));
+					render_pass.set_vertex_buffer(1, chunk_debug_instance_buffer.slice(..));
+					render_pass.set_index_buffer(chunk_debug_index_buffer.slice(..), IndexFormat::Uint16);
+					render_pass.draw_indexed(0..CHUNK_DEBUG_INDICES.len() as u32, 0, 0..chunk_count);
 				}
 
 				queue.submit(once(encoder.finish()));
@@ -303,11 +459,20 @@ fn main() -> Result<(), Box<dyn Error>> {
 						Voxject {
 							name,
 							position: Isometry3::default(),
+							chunks: Default::default(),
 						},
 					);
 				}
 				ClientboundMessage::VoxjectPosition(VoxjectPosition { id, position }) => {
 					world.voxjects[id].position = position;
+				}
+				ClientboundMessage::SyncChunk(SyncChunk {
+					voxject_id,
+					level,
+					grid_coordinate,
+				}) => {
+					world.voxjects[voxject_id].chunks[level as usize].insert(grid_coordinate, Chunk);
+					chunks_changed = true;
 				}
 			},
 		},
