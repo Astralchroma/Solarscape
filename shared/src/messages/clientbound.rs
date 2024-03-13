@@ -21,9 +21,6 @@ pub struct SyncChunk {
 }
 
 #[derive(Deserialize, Serialize)]
-// "Message" like clippy wants would conflict with the serverbound equivalent, would rather have ClientboundMessage
-// instead of clientbound::Message
-#[allow(clippy::module_name_repetitions)]
 pub enum ClientboundMessage {
 	AddVoxject(AddVoxject),
 	VoxjectPosition(VoxjectPosition),

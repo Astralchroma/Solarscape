@@ -190,7 +190,6 @@ impl Connection {
 									last_pings.copy_within(1.., 0);
 									last_pings[11] = round_trip_time;
 
-									#[allow(clippy::cast_possible_truncation)]
 									latency.store(
 										(last_pings.iter().fold(
 											Duration::ZERO,

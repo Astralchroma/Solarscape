@@ -1,4 +1,4 @@
-#![warn(clippy::pedantic, clippy::nursery)]
+#![warn(clippy::nursery)]
 
 use crate::{connection::Connection, connection::Event, world::Chunk, world::Voxject, world::World};
 use bytemuck::cast_slice;

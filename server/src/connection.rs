@@ -60,7 +60,6 @@ impl Connection {
 		ReceiveIterator(self)
 	}
 
-	#[allow(clippy::unused_async)] // Axum requires this to be async
 	pub async fn await_connections(
 		State(worlds): State<Worlds>,
 		Path(world): Path<String>,
@@ -214,7 +213,6 @@ impl Connection {
 									last_pings.copy_within(1.., 0);
 									last_pings[11] = round_trip_time;
 
-									#[allow(clippy::cast_possible_truncation)]
 									latency.store(
 										(last_pings.iter().fold(
 											Duration::ZERO,
