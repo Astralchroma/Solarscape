@@ -1,9 +1,10 @@
 #![warn(clippy::nursery)]
 
-use crate::{connection::Connection, connection::Event, world::Chunk, world::Voxject, world::World};
+use crate::{connection::Connection, connection::Event, types::Degrees, world::Chunk, world::Voxject, world::World};
 use bytemuck::cast_slice;
+use camera::Camera;
 use log::{info, LevelFilter::Trace};
-use nalgebra::{convert, Isometry3, Matrix4, Point3, Similarity3, Translation, Vector3};
+use nalgebra::{convert, Isometry3, IsometryMatrix3, Point3, Similarity3, Translation, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncChunk, SyncVoxject};
 use solarscape_shared::StdLogger;
 use std::{borrow::Cow, env, error::Error, iter::once, mem::size_of, time::Instant};
@@ -11,21 +12,22 @@ use thiserror::Error;
 use tokio::runtime::Builder;
 use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame};
 use wgpu::{
-	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, Backends, BindGroupDescriptor, BindGroupEntry,
-	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType, BufferUsages, Color,
+	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, Backends, BlendState, BufferUsages, Color,
 	ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode::Opaque, DeviceDescriptor,
 	Dx12Compiler, Features, FragmentState, FrontFace, Gles3MinorVersion::Version0, IndexFormat, Instance,
 	InstanceDescriptor, InstanceFlags, LoadOp::Clear, MultisampleState, Operations, PipelineLayoutDescriptor,
 	PolygonMode, PowerPreference::HighPerformance, PresentMode::AutoNoVsync, PrimitiveState, PrimitiveTopology,
-	RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, RequestAdapterOptions, ShaderStages,
-	StoreOp::Store, SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor, VertexAttribute,
-	VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+	RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, RequestAdapterOptions, StoreOp::Store,
+	SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor, VertexAttribute, VertexBufferLayout,
+	VertexFormat, VertexState, VertexStepMode,
 };
 use winit::event::WindowEvent::{CloseRequested, Destroyed, RedrawRequested, Resized};
 use winit::event::{Event::AboutToWait, Event::UserEvent, Event::WindowEvent};
 use winit::{dpi::PhysicalSize, event_loop::EventLoopBuilder, window::WindowBuilder};
 
+mod camera;
 mod connection;
+mod types;
 mod world;
 
 #[rustfmt::skip]
@@ -114,11 +116,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 		.find(TextureFormat::is_srgb)
 		.ok_or(NoSurfaceFormat)?;
 
+	let PhysicalSize { mut width, mut height } = window.inner_size();
+
 	let mut config = SurfaceConfiguration {
 		usage: TextureUsages::RENDER_ATTACHMENT,
 		format: surface_format,
-		width: window.inner_size().width,
-		height: window.inner_size().height,
+		width,
+		height,
 		present_mode: AutoNoVsync,
 		desired_maximum_frame_latency: 0,
 		alpha_mode: Opaque,
@@ -127,25 +131,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	surface.configure(&device, &config);
 
-	let chunk_debug_shader = device.create_shader_module(include_wgsl!("chunk_debug.wgsl"));
+	let mut camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
+	camera.set_view(IsometryMatrix3::look_at_rh(
+		&Point3::new(512.0, 0.0, 0.0),
+		&Point3::origin(),
+		&Vector3::y(),
+	));
 
-	let camera_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-		label: None,
-		entries: &[BindGroupLayoutEntry {
-			binding: 0,
-			visibility: ShaderStages::VERTEX,
-			ty: BindingType::Buffer {
-				ty: BufferBindingType::Uniform,
-				has_dynamic_offset: false,
-				min_binding_size: None,
-			},
-			count: None,
-		}],
-	});
+	let chunk_debug_shader = device.create_shader_module(include_wgsl!("chunk_debug.wgsl"));
 
 	let chunk_debug_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
 		label: None,
-		bind_group_layouts: &[&camera_bind_group_layout],
+		bind_group_layouts: &[camera.bind_group_layout()],
 		push_constant_ranges: &[],
 	});
 
@@ -208,26 +205,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 		multiview: None,
 	});
 
-	let camera = Camera {
-		eye: Point3::new(0.001, 8192.0, 0.000),
-		target: Point3::new(0.0, 0.0, 0.0),
-		up: Vector3::new(0.0, 1.0, 0.0),
-		aspect: 16.0 / 9.0,
-		fov: 45.0,
-	};
-
-	let camera_buffer = device.create_buffer_init(&BufferInitDescriptor {
-		label: None,
-		contents: cast_slice(camera.projection_matrix().as_slice()),
-		usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-	});
-
-	let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
-		label: None,
-		layout: &camera_bind_group_layout,
-		entries: &[BindGroupEntry { binding: 0, resource: camera_buffer.as_entire_binding() }],
-	});
-
 	let chunk_debug_vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
 		label: None,
 		contents: cast_slice(&CHUNK_DEBUG_VERTICES),
@@ -258,9 +235,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 	event_loop.run(|event, control_flow| match event {
 		WindowEvent { event, .. } => match event {
 			Resized(new_size) => {
-				config.width = new_size.width;
-				config.height = new_size.height;
+				width = new_size.width;
+				height = new_size.height;
+				config.width = width;
+				config.height = height;
 				surface.configure(&device, &config);
+				camera.set_aspect(width as f32 / height as f32);
 			}
 			CloseRequested | Destroyed => control_flow.exit(),
 			RedrawRequested => {
@@ -319,7 +299,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 						..Default::default()
 					});
 
-					render_pass.set_bind_group(0, &camera_bind_group, &[]);
+					camera.use_camera(&queue, &mut render_pass);
 
 					render_pass.set_pipeline(&chunk_debug_pipeline);
 					render_pass.set_vertex_buffer(0, chunk_debug_vertex_buffer.slice(..));
@@ -372,19 +352,3 @@ struct NoAdapter;
 #[derive(Debug, Error)]
 #[error("no surface format found")]
 struct NoSurfaceFormat;
-
-struct Camera {
-	eye: Point3<f32>,
-	target: Point3<f32>,
-	up: Vector3<f32>,
-	aspect: f32,
-	fov: f32,
-}
-
-impl Camera {
-	fn projection_matrix(&self) -> Matrix4<f32> {
-		let projection = Matrix4::new_perspective(self.aspect, f32::to_radians(self.fov), 0.0, f32::MAX);
-		let view = Matrix4::look_at_rh(&self.eye, &self.target, &self.up);
-		projection * view
-	}
-}
