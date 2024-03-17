@@ -152,7 +152,11 @@ impl World {
 
 			let tick_end = Instant::now();
 			let tick_duration = tick_end - tick_start;
-			thread::sleep(target_tick_time - tick_duration);
+			if let Some(time_until_next_tick) = target_tick_time.checked_sub(tick_duration) {
+				thread::sleep(time_until_next_tick);
+			} else {
+				warn!("Tick took {tick_duration:?}, exceeding {target_tick_time:?} target");
+			}
 		}
 	}
 
