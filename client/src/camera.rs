@@ -19,6 +19,7 @@ pub struct Camera {
 }
 
 impl Camera {
+	#[must_use]
 	pub fn new(aspect: f32, fov_y: impl Into<Radians>, device: &Device) -> Self {
 		let perspective = Perspective3::new(aspect, *fov_y.into(), 0.0, f32::MAX);
 		let view = IsometryMatrix3::identity();
@@ -49,6 +50,7 @@ impl Camera {
 		Self { perspective, view, changed: true, bind_group_layout, buffer, bind_group }
 	}
 
+	#[must_use]
 	pub const fn bind_group_layout(&self) -> &BindGroupLayout {
 		&self.bind_group_layout
 	}

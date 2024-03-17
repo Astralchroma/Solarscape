@@ -32,6 +32,7 @@ impl Connection {
 		let _ = self.close.send(reason);
 	}
 
+	#[must_use]
 	pub fn latency(&self) -> Duration {
 		Duration::from_millis(self.latency.load(Relaxed))
 	}
@@ -60,6 +61,7 @@ impl Connection {
 		ReceiveIterator(self)
 	}
 
+	#[must_use]
 	pub async fn await_connections(
 		State(worlds): State<Worlds>,
 		Path(world): Path<String>,

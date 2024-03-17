@@ -32,6 +32,7 @@ impl Connection {
 		let _ = self.close.send(reason);
 	}
 
+	#[must_use]
 	pub fn latency(&self) -> Duration {
 		Duration::from_millis(self.latency.load(Relaxed))
 	}

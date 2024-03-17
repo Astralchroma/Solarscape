@@ -29,19 +29,23 @@ impl DerefMut for ProtoChunk {
 }
 
 impl ProtoChunk {
+	#[must_use]
 	pub fn new(level: u8, coordinates: Vector3<i32>) -> Self {
 		Self { level, coordinates, data: ChunkData::new() }
 	}
 
+	#[must_use]
 	pub const fn level(&self) -> &u8 {
 		&self.level
 	}
 
+	#[must_use]
 	pub const fn coordinates(&self) -> &Vector3<i32> {
 		&self.coordinates
 	}
 
 	/// Populates data with the distance to the center
+	#[must_use]
 	pub fn distance(mut self, center: Vector3<f32>) -> Self {
 		let chunk_position = self.coordinates.cast();
 
@@ -65,11 +69,13 @@ impl ProtoChunk {
 	}
 
 	/// Sets any cells exceeding `comparison` to the `new_value`
+	#[must_use]
 	pub fn set_greater_than(self, comparison: f32, new_value: f32) -> Self {
 		self.map(|value| if value > comparison { new_value } else { value });
 		self
 	}
 
+	#[must_use]
 	pub fn build(self) -> Chunk {
 		Chunk { level: self.level, coordinates: self.coordinates, data: self.data }
 	}
