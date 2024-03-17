@@ -14,7 +14,7 @@ use wgpu::{
 	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, Backends, BindGroupDescriptor, BindGroupEntry,
 	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType, BufferUsages, Color,
 	ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode::Opaque, DeviceDescriptor,
-	Dx12Compiler, Face, Features, FragmentState, FrontFace, Gles3MinorVersion::Version0, IndexFormat, Instance,
+	Dx12Compiler, Features, FragmentState, FrontFace, Gles3MinorVersion::Version0, IndexFormat, Instance,
 	InstanceDescriptor, InstanceFlags, LoadOp::Clear, MultisampleState, Operations, PipelineLayoutDescriptor,
 	PolygonMode, PowerPreference::HighPerformance, PresentMode::AutoNoVsync, PrimitiveState, PrimitiveTopology,
 	RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, RequestAdapterOptions, ShaderStages,
@@ -27,34 +27,6 @@ use winit::{dpi::PhysicalSize, event_loop::EventLoopBuilder, window::WindowBuild
 
 mod connection;
 mod world;
-
-#[rustfmt::skip]
-pub const THE_TEST_CUBE_VERTICES: [f32; 24] = [
-	-0.5, -0.5, -0.5,
-	-0.5, -0.5,  0.5,
-	 0.5, -0.5, -0.5,
-	 0.5, -0.5,  0.5,
-	-0.5,  0.5, -0.5,
-	-0.5,  0.5,  0.5, 
-	 0.5,  0.5, -0.5, 
-	 0.5,  0.5,  0.5,
-];
-
-#[rustfmt::skip]
-pub const THE_TEST_CUBE_INDECES: [u16; 36] = [
-	0, 2, 1,
-	1, 2, 3,
-	0, 1, 4,
-	4, 1, 5,
-	5, 1, 7,
-	7, 1, 3,
-	3, 2, 7,
-	7, 2, 6,
-	6, 2, 0,
-	0, 4, 6,
-	7, 6, 5,
-	5, 6, 4
-];
 
 #[rustfmt::skip]
 pub const CHUNK_DEBUG_VERTICES: [f32; 24] = [
@@ -155,7 +127,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	surface.configure(&device, &config);
 
-	let the_test_cube_shader = device.create_shader_module(include_wgsl!("the_test_cube.wgsl"));
 	let chunk_debug_shader = device.create_shader_module(include_wgsl!("chunk_debug.wgsl"));
 
 	let camera_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -170,55 +141,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 			},
 			count: None,
 		}],
-	});
-
-	let the_test_cube_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-		label: None,
-		bind_group_layouts: &[&camera_bind_group_layout],
-		push_constant_ranges: &[],
-	});
-
-	let the_test_cube_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-		label: None,
-		layout: Some(&the_test_cube_pipeline_layout),
-		vertex: VertexState {
-			module: &the_test_cube_shader,
-			entry_point: "vertex",
-			buffers: &[VertexBufferLayout {
-				array_stride: size_of::<f32>() as u64 * 3,
-				step_mode: VertexStepMode::Vertex,
-				attributes: &[VertexAttribute {
-					offset: 0,
-					shader_location: 0,
-					format: VertexFormat::Float32x3,
-				}],
-			}],
-		},
-		primitive: PrimitiveState {
-			topology: PrimitiveTopology::TriangleList,
-			strip_index_format: None,
-			front_face: FrontFace::Ccw,
-			cull_mode: Some(Face::Back),
-			unclipped_depth: false,
-			polygon_mode: PolygonMode::Fill,
-			conservative: false,
-		},
-		depth_stencil: None,
-		multisample: MultisampleState {
-			count: 1,
-			mask: !0,
-			alpha_to_coverage_enabled: false,
-		},
-		fragment: Some(FragmentState {
-			module: &the_test_cube_shader,
-			entry_point: "fragment",
-			targets: &[Some(ColorTargetState {
-				format: config.format,
-				blend: Some(BlendState::REPLACE),
-				write_mask: ColorWrites::ALL,
-			})],
-		}),
-		multiview: None,
 	});
 
 	let chunk_debug_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -321,18 +243,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 		}],
 	});
 
-	let the_test_cube_vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-		label: None,
-		contents: cast_slice(&THE_TEST_CUBE_VERTICES),
-		usage: BufferUsages::VERTEX,
-	});
-
-	let the_test_cube_index_buffer = device.create_buffer_init(&BufferInitDescriptor {
-		label: None,
-		contents: cast_slice(&THE_TEST_CUBE_INDECES),
-		usage: BufferUsages::INDEX,
-	});
-
 	let chunk_debug_vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
 		label: None,
 		contents: cast_slice(&CHUNK_DEBUG_VERTICES),
@@ -431,12 +341,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 					});
 
 					render_pass.set_bind_group(0, &camera_bind_group, &[]);
-
-					render_pass.set_pipeline(&the_test_cube_pipeline);
-					render_pass.set_vertex_buffer(0, the_test_cube_vertex_buffer.slice(..));
-					render_pass.set_index_buffer(the_test_cube_index_buffer.slice(..), IndexFormat::Uint16);
-					#[allow(clippy::cast_possible_truncation)] // not bigger than u32, it's fine
-					render_pass.draw_indexed(0..THE_TEST_CUBE_INDECES.len() as u32, 0, 0..1);
 
 					render_pass.set_pipeline(&chunk_debug_pipeline);
 					render_pass.set_vertex_buffer(0, chunk_debug_vertex_buffer.slice(..));
