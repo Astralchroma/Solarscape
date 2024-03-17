@@ -1,8 +1,8 @@
-use crate::{connection::Connection, connection::Event, player::Player};
+use crate::{connection::Connection, connection::Event, generation::ProtoChunk, player::Player};
 use log::{error, warn};
-use nalgebra::{convert, convert_unchecked, Isometry3, Vector3};
+use nalgebra::{convert, convert_unchecked, zero, Isometry3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, SyncChunk, VoxjectPosition};
-use solarscape_shared::messages::serverbound::ServerboundMessage;
+use solarscape_shared::{messages::serverbound::ServerboundMessage, types::ChunkData};
 use std::{collections::HashSet, thread, time::Duration, time::Instant};
 use tokio::{runtime::Handle, sync::mpsc::error::TryRecvError, sync::mpsc::Receiver};
 
@@ -127,11 +127,7 @@ impl World {
 										player_chunk.apply(|value| *value >>= 1);
 
 										for chunk in chunks {
-											chunks_to_send.push(SyncChunk {
-												voxject_id: index,
-												level: level as u8,
-												grid_coordinate: chunk,
-											});
+											chunks_to_send.push((index, level, chunk));
 										}
 
 										chunks = next_chunks;
@@ -143,9 +139,24 @@ impl World {
 					}
 				}
 
-				for chunk in chunks_to_send {
-					player.connection.send(chunk);
-				}
+				chunks_to_send
+					.into_iter()
+					.map(|(voxject_index, level, coordinates)| {
+						(
+							voxject_index,
+							ProtoChunk::new(level as u8, coordinates)
+								.distance(zero())
+								.set_greater_than(1000.0, 0.0)
+								.build(),
+						)
+					})
+					.map(|(voxject_index, chunk)| SyncChunk {
+						voxject_id: voxject_index,
+						level: chunk.level,
+						grid_coordinate: chunk.coordinates,
+						chunk_data: chunk.data,
+					})
+					.for_each(|sync_chunk| player.connection.send(sync_chunk));
 
 				true
 			});
@@ -168,4 +179,10 @@ impl World {
 pub struct Voxject {
 	name: String,
 	position: Isometry3<f32>,
+}
+
+pub struct Chunk {
+	pub level: u8,
+	pub coordinates: Vector3<i32>,
+	pub data: ChunkData,
 }

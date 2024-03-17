@@ -374,6 +374,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 					voxject_id,
 					level,
 					grid_coordinate,
+					..
 				}) => {
 					world.voxjects[voxject_id].chunks[level as usize].insert(grid_coordinate, Chunk);
 					chunks_changed = true;

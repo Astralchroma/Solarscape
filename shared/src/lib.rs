@@ -1,6 +1,7 @@
 #![warn(clippy::nursery)]
 
 pub mod messages;
+pub mod types;
 
 use chrono::{Local, SubsecRound};
 use log::{Log, Metadata, Record};

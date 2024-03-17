@@ -1,6 +1,7 @@
 #![warn(clippy::nursery)]
 
 mod connection;
+mod generation;
 mod player;
 mod world;
 

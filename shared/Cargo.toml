@@ -9,4 +9,6 @@ log.workspace = true
 
 nalgebra = { workspace = true, features = ["serde-serialize"] }
 
+serde_with = "3"
+
 serde = { version = "1", features = ["derive"] }
