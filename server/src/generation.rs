@@ -30,11 +30,7 @@ impl DerefMut for ProtoChunk {
 
 impl ProtoChunk {
 	pub fn new(level: u8, coordinates: Vector3<i32>) -> Self {
-		Self {
-			level,
-			coordinates,
-			data: ChunkData::new(),
-		}
+		Self { level, coordinates, data: ChunkData::new() }
 	}
 
 	pub const fn level(&self) -> &u8 {
@@ -75,10 +71,6 @@ impl ProtoChunk {
 	}
 
 	pub fn build(self) -> Chunk {
-		Chunk {
-			level: self.level,
-			coordinates: self.coordinates,
-			data: self.data,
-		}
+		Chunk { level: self.level, coordinates: self.coordinates, data: self.data }
 	}
 }

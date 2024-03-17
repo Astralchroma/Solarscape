@@ -132,18 +132,16 @@ impl Connection {
 
 		match reason {
 			Closed::Client(frame) => {
-				let frame = frame.as_ref().unwrap_or(&CloseFrame {
-					code: close_code::ABNORMAL,
-					reason: Cow::Borrowed("Abnormal"),
-				});
+				let frame = frame
+					.as_ref()
+					.unwrap_or(&CloseFrame { code: close_code::ABNORMAL, reason: Cow::Borrowed("Abnormal") });
 				info!("[{name}] Disconnected by Client: {} {}", frame.code, frame.reason);
 			}
 			Closed::Server(frame) => {
 				{
-					let frame = frame.as_ref().unwrap_or(&CloseFrame {
-						code: close_code::ERROR,
-						reason: Cow::Borrowed("Unknown"),
-					});
+					let frame = frame
+						.as_ref()
+						.unwrap_or(&CloseFrame { code: close_code::ERROR, reason: Cow::Borrowed("Unknown") });
 					info!("[{name}] Disconnected by Server: {} {}", frame.code, frame.reason);
 				}
 				let _ = socket.send(Frame::Close(frame)).await;

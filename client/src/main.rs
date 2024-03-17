@@ -159,21 +159,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 				VertexBufferLayout {
 					array_stride: size_of::<f32>() as u64 * 3,
 					step_mode: VertexStepMode::Vertex,
-					attributes: &[VertexAttribute {
-						offset: 0,
-						shader_location: 0,
-						format: VertexFormat::Float32x3,
-					}],
+					attributes: &[VertexAttribute { offset: 0, shader_location: 0, format: VertexFormat::Float32x3 }],
 				},
 				VertexBufferLayout {
 					array_stride: (size_of::<f32>() * 4 * 4) as u64,
 					step_mode: VertexStepMode::Instance,
 					attributes: &[
-						VertexAttribute {
-							offset: 0,
-							shader_location: 1,
-							format: VertexFormat::Float32x4,
-						},
+						VertexAttribute { offset: 0, shader_location: 1, format: VertexFormat::Float32x4 },
 						VertexAttribute {
 							offset: (size_of::<f32>() * 4) as u64,
 							shader_location: 2,
@@ -203,11 +195,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 			conservative: false,
 		},
 		depth_stencil: None,
-		multisample: MultisampleState {
-			count: 1,
-			mask: !0,
-			alpha_to_coverage_enabled: false,
-		},
+		multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
 		fragment: Some(FragmentState {
 			module: &chunk_debug_shader,
 			entry_point: "fragment",
@@ -237,10 +225,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
 		label: None,
 		layout: &camera_bind_group_layout,
-		entries: &[BindGroupEntry {
-			binding: 0,
-			resource: camera_buffer.as_entire_binding(),
-		}],
+		entries: &[BindGroupEntry { binding: 0, resource: camera_buffer.as_entire_binding() }],
 	});
 
 	let chunk_debug_vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -255,11 +240,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 		usage: BufferUsages::INDEX,
 	});
 
-	let mut chunk_debug_instance_buffer = device.create_buffer_init(&BufferInitDescriptor {
-		label: None,
-		contents: &[],
-		usage: BufferUsages::VERTEX,
-	});
+	let mut chunk_debug_instance_buffer =
+		device.create_buffer_init(&BufferInitDescriptor { label: None, contents: &[], usage: BufferUsages::VERTEX });
 
 	let mut chunk_count = 0;
 	let mut chunks_changed = false;
@@ -330,10 +312,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 				{
 					let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
 						color_attachments: &[Some(RenderPassColorAttachment {
-							ops: Operations {
-								load: Clear(Color::BLACK),
-								store: Store,
-							},
+							ops: Operations { load: Clear(Color::BLACK), store: Store },
 							resolve_target: None,
 							view: &view,
 						})],
@@ -360,25 +339,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 					info!("Added Voxject {voxject_index} {name:?}");
 					world.voxjects.insert(
 						voxject_index,
-						Voxject {
-							name,
-							location: Isometry3::default(),
-							chunks: Default::default(),
-						},
+						Voxject { name, location: Isometry3::default(), chunks: Default::default() },
 					);
 				}
-				ClientboundMessage::SyncVoxject(SyncVoxject {
-					voxject_index,
-					location,
-				}) => {
+				ClientboundMessage::SyncVoxject(SyncVoxject { voxject_index, location }) => {
 					world.voxjects[voxject_index].location = location;
 				}
-				ClientboundMessage::SyncChunk(SyncChunk {
-					voxject_index,
-					level,
-					coordinates,
-					..
-				}) => {
+				ClientboundMessage::SyncChunk(SyncChunk { voxject_index, level, coordinates, .. }) => {
 					world.voxjects[voxject_index].chunks[level as usize].insert(coordinates, Chunk);
 					chunks_changed = true;
 				}

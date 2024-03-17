@@ -20,10 +20,7 @@ impl World {
 			_runtime: runtime,
 			incoming_connections,
 			players: vec![],
-			voxjects: Box::new([Voxject {
-				name: String::from("example_voxject"),
-				location: Isometry3::default(),
-			}]),
+			voxjects: Box::new([Voxject { name: String::from("example_voxject"), location: Isometry3::default() }]),
 		}
 	}
 
@@ -44,20 +41,11 @@ impl World {
 				}
 				Ok(connection) => {
 					for (voxject_index, voxject) in self.voxjects.iter().enumerate() {
-						connection.send(AddVoxject {
-							voxject_index,
-							name: voxject.name.clone(),
-						});
-						connection.send(SyncVoxject {
-							voxject_index,
-							location: voxject.location,
-						});
+						connection.send(AddVoxject { voxject_index, name: voxject.name.clone() });
+						connection.send(SyncVoxject { voxject_index, location: voxject.location });
 					}
 
-					self.players.push(Player {
-						connection,
-						location: Isometry3::default(),
-					});
+					self.players.push(Player { connection, location: Isometry3::default() });
 				}
 			}
 
