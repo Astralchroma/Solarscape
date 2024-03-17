@@ -4,7 +4,7 @@ use crate::{connection::Connection, connection::Event, world::Chunk, world::Voxj
 use bytemuck::cast_slice;
 use log::{info, LevelFilter::Trace};
 use nalgebra::{convert, Isometry3, Matrix4, Point3, Similarity3, Translation, Vector3};
-use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncChunk, VoxjectPosition};
+use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncChunk, SyncVoxject};
 use solarscape_shared::StdLogger;
 use std::{borrow::Cow, env, error::Error, iter::once, mem::size_of, time::Instant};
 use thiserror::Error;
@@ -294,7 +294,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 										convert(grid_position.map(|value| value as i64 * (16 << level)));
 									Similarity3::from_parts(
 										Translation::from(position),
-										voxject.position.rotation,
+										voxject.location.rotation,
 										(16u64 << level) as f32,
 									)
 									.to_homogeneous()
@@ -356,27 +356,30 @@ fn main() -> Result<(), Box<dyn Error>> {
 		},
 		UserEvent(event) => match event {
 			Event::Message(message) => match message {
-				ClientboundMessage::AddVoxject(AddVoxject { id, name }) => {
-					info!("Added Voxject {id} {name:?}");
+				ClientboundMessage::AddVoxject(AddVoxject { voxject_index, name }) => {
+					info!("Added Voxject {voxject_index} {name:?}");
 					world.voxjects.insert(
-						id,
+						voxject_index,
 						Voxject {
 							name,
-							position: Isometry3::default(),
+							location: Isometry3::default(),
 							chunks: Default::default(),
 						},
 					);
 				}
-				ClientboundMessage::VoxjectPosition(VoxjectPosition { id, position }) => {
-					world.voxjects[id].position = position;
+				ClientboundMessage::SyncVoxject(SyncVoxject {
+					voxject_index,
+					location,
+				}) => {
+					world.voxjects[voxject_index].location = location;
 				}
 				ClientboundMessage::SyncChunk(SyncChunk {
-					voxject_id,
+					voxject_index,
 					level,
-					grid_coordinate,
+					coordinates,
 					..
 				}) => {
-					world.voxjects[voxject_id].chunks[level as usize].insert(grid_coordinate, Chunk);
+					world.voxjects[voxject_index].chunks[level as usize].insert(coordinates, Chunk);
 					chunks_changed = true;
 				}
 			},

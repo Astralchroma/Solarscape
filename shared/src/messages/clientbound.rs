@@ -4,28 +4,28 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
 pub struct AddVoxject {
-	pub id: usize,
+	pub voxject_index: usize,
 	pub name: String,
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct VoxjectPosition {
-	pub id: usize,
-	pub position: Isometry3<f32>,
+pub struct SyncVoxject {
+	pub voxject_index: usize,
+	pub location: Isometry3<f32>,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct SyncChunk {
-	pub voxject_id: usize,
+	pub voxject_index: usize,
 	pub level: u8,
-	pub grid_coordinate: Vector3<i32>,
-	pub chunk_data: ChunkData,
+	pub coordinates: Vector3<i32>,
+	pub data: ChunkData,
 }
 
 #[derive(Deserialize, Serialize)]
 pub enum ClientboundMessage {
 	AddVoxject(AddVoxject),
-	VoxjectPosition(VoxjectPosition),
+	SyncVoxject(SyncVoxject),
 	SyncChunk(SyncChunk),
 }
 
@@ -35,9 +35,9 @@ impl From<AddVoxject> for ClientboundMessage {
 	}
 }
 
-impl From<VoxjectPosition> for ClientboundMessage {
-	fn from(value: VoxjectPosition) -> Self {
-		Self::VoxjectPosition(value)
+impl From<SyncVoxject> for ClientboundMessage {
+	fn from(value: SyncVoxject) -> Self {
+		Self::SyncVoxject(value)
 	}
 }
 

@@ -1,7 +1,7 @@
 use crate::{connection::Connection, connection::Event, generation::ProtoChunk, player::Player};
 use log::{error, warn};
 use nalgebra::{convert, convert_unchecked, zero, Isometry3, Vector3};
-use solarscape_shared::messages::clientbound::{AddVoxject, SyncChunk, VoxjectPosition};
+use solarscape_shared::messages::clientbound::{AddVoxject, SyncChunk, SyncVoxject};
 use solarscape_shared::{messages::serverbound::ServerboundMessage, types::ChunkData};
 use std::{collections::HashSet, thread, time::Duration, time::Instant};
 use tokio::{runtime::Handle, sync::mpsc::error::TryRecvError, sync::mpsc::Receiver};
@@ -22,7 +22,7 @@ impl World {
 			players: vec![],
 			voxjects: Box::new([Voxject {
 				name: String::from("example_voxject"),
-				position: Isometry3::default(),
+				location: Isometry3::default(),
 			}]),
 		}
 	}
@@ -43,20 +43,20 @@ impl World {
 					}
 				}
 				Ok(connection) => {
-					for (index, voxject) in self.voxjects.iter().enumerate() {
+					for (voxject_index, voxject) in self.voxjects.iter().enumerate() {
 						connection.send(AddVoxject {
-							id: index,
+							voxject_index,
 							name: voxject.name.clone(),
 						});
-						connection.send(VoxjectPosition {
-							id: index,
-							position: voxject.position,
+						connection.send(SyncVoxject {
+							voxject_index,
+							location: voxject.location,
 						});
 					}
 
 					self.players.push(Player {
 						connection,
-						position: Isometry3::default(),
+						location: Isometry3::default(),
 					});
 				}
 			}
@@ -68,9 +68,9 @@ impl World {
 					match message {
 						Event::Closed => return false,
 						Event::Message(message) => match message {
-							ServerboundMessage::PlayerPosition(position) => {
+							ServerboundMessage::PlayerLocation(location) => {
 								// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
-								player.position = position;
+								player.location = location;
 
 								// This mess can probably be improved
 								for (index, voxject) in self.voxjects.iter().enumerate() {
@@ -78,9 +78,9 @@ impl World {
 									// so a 0.5, 0.5, 0.5 player position on level 0 means in chunk 0, 0, 0
 									// on the next level that becomes 0.25, 0.25, 0.25 in chunk 0, 0, 0
 									// this shit is cursed and hard to understand, but it works!
-									let mut player_position: Vector3<f32> =
-										voxject.position.inverse_transform_vector(&position.translation.vector) / 16.0;
-									let mut player_chunk: Vector3<i32> = convert_unchecked(player_position);
+									let mut player_location: Vector3<f32> =
+										voxject.location.inverse_transform_vector(&location.translation.vector) / 16.0;
+									let mut player_chunk: Vector3<i32> = convert_unchecked(player_location);
 									let mut chunks: HashSet<Vector3<i32>> = HashSet::new();
 									let mut next_chunks = HashSet::new();
 
@@ -94,19 +94,19 @@ impl World {
 										for x in player_chunk.x - chunk_radius..=player_chunk.x + chunk_radius {
 											for y in player_chunk.y - chunk_radius..=player_chunk.y + chunk_radius {
 												for z in player_chunk.z - chunk_radius..=player_chunk.z + chunk_radius {
-													let chunk = Vector3::new(x, y, z);
+													let coordinates = Vector3::new(x, y, z);
 
 													// circles look nicer
-													let chunk_center =
-														convert::<_, Vector3<f32>>(chunk) + Vector3::new(0.5, 0.5, 0.5);
-													if player_chunk != chunk
-														&& player_position.metric_distance(&chunk_center) as i32
+													let center = convert::<_, Vector3<f32>>(coordinates)
+														+ Vector3::new(0.5, 0.5, 0.5);
+													if player_chunk != coordinates
+														&& player_location.metric_distance(&center) as i32
 															> chunk_radius
 													{
 														continue;
 													}
 
-													next_chunks.insert(chunk.map(|value| value >> 1));
+													next_chunks.insert(coordinates.map(|value| value >> 1));
 												}
 											}
 										}
@@ -123,7 +123,7 @@ impl World {
 											chunks.insert(chunk + Vector3::new(1, 1, 1));
 										}
 
-										player_position /= 2.0;
+										player_location /= 2.0;
 										player_chunk.apply(|value| *value >>= 1);
 
 										for chunk in chunks {
@@ -151,10 +151,10 @@ impl World {
 						)
 					})
 					.map(|(voxject_index, chunk)| SyncChunk {
-						voxject_id: voxject_index,
+						voxject_index,
 						level: chunk.level,
-						grid_coordinate: chunk.coordinates,
-						chunk_data: chunk.data,
+						coordinates: chunk.coordinates,
+						data: chunk.data,
 					})
 					.for_each(|sync_chunk| player.connection.send(sync_chunk));
 
@@ -178,7 +178,7 @@ impl World {
 
 pub struct Voxject {
 	name: String,
-	position: Isometry3<f32>,
+	location: Isometry3<f32>,
 }
 
 pub struct Chunk {

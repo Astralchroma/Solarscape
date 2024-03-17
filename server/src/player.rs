@@ -3,5 +3,5 @@ use nalgebra::Isometry3;
 
 pub struct Player {
 	pub connection: Connection,
-	pub position: Isometry3<f32>,
+	pub location: Isometry3<f32>,
 }
