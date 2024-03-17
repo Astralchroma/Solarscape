@@ -1,25 +1,20 @@
 #![warn(clippy::nursery)]
 
-use crate::{connection::Connection, connection::Event, types::Degrees, world::Chunk, world::Voxject, world::World};
-use bytemuck::cast_slice;
-use camera::Camera;
+use crate::connection::{Connection, Event};
+use crate::{camera::Camera, types::Degrees, world::Chunk, world::Voxject, world::World};
 use log::{info, LevelFilter::Trace};
-use nalgebra::{convert, Isometry3, IsometryMatrix3, Point3, Similarity3, Translation, Vector3};
+use nalgebra::{Isometry3, IsometryMatrix3, Point3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncChunk, SyncVoxject};
 use solarscape_shared::StdLogger;
-use std::{borrow::Cow, env, error::Error, iter::once, mem::size_of, time::Instant};
+use std::{borrow::Cow, env, error::Error, iter::once, time::Instant};
 use thiserror::Error;
 use tokio::runtime::Builder;
 use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame};
 use wgpu::{
-	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, Backends, BlendState, BufferUsages, Color,
-	ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompositeAlphaMode::Opaque, DeviceDescriptor,
-	Dx12Compiler, Features, FragmentState, FrontFace, Gles3MinorVersion::Version0, IndexFormat, Instance,
-	InstanceDescriptor, InstanceFlags, LoadOp::Clear, MultisampleState, Operations, PipelineLayoutDescriptor,
-	PolygonMode, PowerPreference::HighPerformance, PresentMode::AutoNoVsync, PrimitiveState, PrimitiveTopology,
-	RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, RequestAdapterOptions, StoreOp::Store,
-	SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor, VertexAttribute, VertexBufferLayout,
-	VertexFormat, VertexState, VertexStepMode,
+	Backends, Color, CommandEncoderDescriptor, CompositeAlphaMode::Opaque, DeviceDescriptor, Dx12Compiler, Features,
+	Gles3MinorVersion::Version0, Instance, InstanceDescriptor, InstanceFlags, LoadOp::Clear, Operations,
+	PowerPreference::HighPerformance, PresentMode::AutoNoVsync, RenderPassColorAttachment, RenderPassDescriptor,
+	RequestAdapterOptions, StoreOp::Store, SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor,
 };
 use winit::event::WindowEvent::{CloseRequested, Destroyed, RedrawRequested, Resized};
 use winit::event::{Event::AboutToWait, Event::UserEvent, Event::WindowEvent};
@@ -29,23 +24,6 @@ mod camera;
 mod connection;
 mod types;
 mod world;
-
-#[rustfmt::skip]
-pub const CHUNK_DEBUG_VERTICES: [f32; 24] = [
-	0.0, 0.0, 0.0,
-	0.0, 0.0, 1.0,
-	0.0, 1.0, 0.0,
-	0.0, 1.0, 1.0,
-	1.0, 0.0, 0.0,
-	1.0, 0.0, 1.0,
-	1.0, 1.0, 0.0,
-	1.0, 1.0, 1.0
-];
-
-#[rustfmt::skip]
-pub const CHUNK_DEBUG_INDICES: [u16; 19] = [
-	0, 1, 3, 2, 0, 4, 5, 7, 6, 4, 0xFFFF, 1, 5, 0xFFFF, 2, 6, 0xFFFF, 3, 7
-];
 
 fn main() -> Result<(), Box<dyn Error>> {
 	let start_time = Instant::now();
@@ -132,99 +110,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 	surface.configure(&device, &config);
 
 	let mut camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
+
 	camera.set_view(IsometryMatrix3::look_at_rh(
 		&Point3::new(512.0, 0.0, 0.0),
 		&Point3::origin(),
 		&Vector3::y(),
 	));
 
-	let chunk_debug_shader = device.create_shader_module(include_wgsl!("chunk_debug.wgsl"));
-
-	let chunk_debug_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-		label: None,
-		bind_group_layouts: &[camera.bind_group_layout()],
-		push_constant_ranges: &[],
-	});
-
-	let chunk_debug_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-		label: None,
-		layout: Some(&chunk_debug_pipeline_layout),
-		vertex: VertexState {
-			module: &chunk_debug_shader,
-			entry_point: "vertex",
-			buffers: &[
-				VertexBufferLayout {
-					array_stride: size_of::<f32>() as u64 * 3,
-					step_mode: VertexStepMode::Vertex,
-					attributes: &[VertexAttribute { offset: 0, shader_location: 0, format: VertexFormat::Float32x3 }],
-				},
-				VertexBufferLayout {
-					array_stride: (size_of::<f32>() * 4 * 4) as u64,
-					step_mode: VertexStepMode::Instance,
-					attributes: &[
-						VertexAttribute { offset: 0, shader_location: 1, format: VertexFormat::Float32x4 },
-						VertexAttribute {
-							offset: (size_of::<f32>() * 4) as u64,
-							shader_location: 2,
-							format: VertexFormat::Float32x4,
-						},
-						VertexAttribute {
-							offset: (size_of::<f32>() * 4 * 2) as u64,
-							shader_location: 3,
-							format: VertexFormat::Float32x4,
-						},
-						VertexAttribute {
-							offset: (size_of::<f32>() * 4 * 3) as u64,
-							shader_location: 4,
-							format: VertexFormat::Float32x4,
-						},
-					],
-				},
-			],
-		},
-		primitive: PrimitiveState {
-			topology: PrimitiveTopology::LineStrip,
-			strip_index_format: Some(IndexFormat::Uint16),
-			front_face: FrontFace::Ccw,
-			cull_mode: None,
-			unclipped_depth: false,
-			polygon_mode: PolygonMode::Fill,
-			conservative: false,
-		},
-		depth_stencil: None,
-		multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
-		fragment: Some(FragmentState {
-			module: &chunk_debug_shader,
-			entry_point: "fragment",
-			targets: &[Some(ColorTargetState {
-				format: config.format,
-				blend: Some(BlendState::REPLACE),
-				write_mask: ColorWrites::ALL,
-			})],
-		}),
-		multiview: None,
-	});
-
-	let chunk_debug_vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-		label: None,
-		contents: cast_slice(&CHUNK_DEBUG_VERTICES),
-		usage: BufferUsages::VERTEX,
-	});
-
-	let chunk_debug_index_buffer = device.create_buffer_init(&BufferInitDescriptor {
-		label: None,
-		contents: cast_slice(&CHUNK_DEBUG_INDICES),
-		usage: BufferUsages::INDEX,
-	});
-
-	let mut chunk_debug_instance_buffer =
-		device.create_buffer_init(&BufferInitDescriptor { label: None, contents: &[], usage: BufferUsages::VERTEX });
-
-	let mut chunk_count = 0;
-	let mut chunks_changed = false;
-
 	let connection = runtime.block_on(connection_task).unwrap().unwrap();
-	let mut world = World { voxjects: vec![] };
+	let mut world = World::new(&config, &camera, &device);
 
 	let end_time = Instant::now();
 	let load_time = end_time - start_time;
@@ -244,39 +138,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 			}
 			CloseRequested | Destroyed => control_flow.exit(),
 			RedrawRequested => {
-				if chunks_changed {
-					// TODO: costly, dumb, and jank, good thing its temporary!
-					let chunk_debug_instances = world
-						.voxjects
-						.iter()
-						.flat_map(|voxject| {
-							voxject.chunks.iter().enumerate().flat_map(move |(level, chunks)| {
-								chunks.keys().map(move |grid_position| {
-									let position: Vector3<f32> =
-										convert(grid_position.map(|value| value as i64 * (16 << level)));
-									Similarity3::from_parts(
-										Translation::from(position),
-										voxject.location.rotation,
-										(16u64 << level) as f32,
-									)
-									.to_homogeneous()
-								})
-							})
-						})
-						.collect::<Vec<_>>();
-
-					chunk_count = chunk_debug_instances.len() as u32;
-					info!("Updated chunk_debug_buffer with {chunk_count} chunks");
-
-					chunk_debug_instance_buffer = device.create_buffer_init(&BufferInitDescriptor {
-						label: None,
-						contents: cast_slice(&chunk_debug_instances),
-						usage: BufferUsages::VERTEX,
-					});
-
-					chunks_changed = false;
-				}
-
 				let output = if let Ok(output) = surface.get_current_texture() {
 					output
 				} else {
@@ -300,12 +161,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 					});
 
 					camera.use_camera(&queue, &mut render_pass);
-
-					render_pass.set_pipeline(&chunk_debug_pipeline);
-					render_pass.set_vertex_buffer(0, chunk_debug_vertex_buffer.slice(..));
-					render_pass.set_vertex_buffer(1, chunk_debug_instance_buffer.slice(..));
-					render_pass.set_index_buffer(chunk_debug_index_buffer.slice(..), IndexFormat::Uint16);
-					render_pass.draw_indexed(0..CHUNK_DEBUG_INDICES.len() as u32, 0, 0..chunk_count);
+					world.render(&device, &mut render_pass);
 				}
 
 				queue.submit(once(encoder.finish()));
@@ -327,7 +183,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 				}
 				ClientboundMessage::SyncChunk(SyncChunk { voxject_index, level, coordinates, .. }) => {
 					world.voxjects[voxject_index].chunks[level as usize].insert(coordinates, Chunk);
-					chunks_changed = true;
+					world.changed = true;
 				}
 			},
 		},
