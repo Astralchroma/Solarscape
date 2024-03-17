@@ -1,5 +1,5 @@
 use crate::{connection::Connection, connection::Event, player::Player};
-use log::error;
+use log::{error, warn};
 use nalgebra::{convert, convert_unchecked, Isometry3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, SyncChunk, VoxjectPosition};
 use solarscape_shared::messages::serverbound::ServerboundMessage;
