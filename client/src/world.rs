@@ -2,10 +2,10 @@ use crate::{camera::Camera, chunk::Chunk};
 use nalgebra::{Isometry3, Vector3};
 use std::collections::HashMap;
 use wgpu::{
-	include_wgsl, BlendState, ColorTargetState, ColorWrites, Device, FragmentState, FrontFace, IndexFormat,
-	MultisampleState, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass,
-	RenderPipeline, RenderPipelineDescriptor, SurfaceConfiguration, VertexAttribute, VertexBufferLayout, VertexFormat,
-	VertexState, VertexStepMode,
+	include_wgsl, BlendState, ColorTargetState, ColorWrites, Device, FragmentState, FrontFace, MultisampleState,
+	PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline,
+	RenderPipelineDescriptor, SurfaceConfiguration, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState,
+	VertexStepMode,
 };
 
 pub struct World {
@@ -88,7 +88,7 @@ impl World {
 }
 
 pub struct Voxject {
-	pub name: String,
+	pub name: Box<str>,
 	pub location: Isometry3<f32>,
 	pub chunks: [HashMap<Vector3<i32>, Chunk>; 31],
 }

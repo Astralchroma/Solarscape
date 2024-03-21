@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Serialize)]
 pub struct AddVoxject {
 	pub voxject_index: usize,
-	pub name: String,
+	pub name: Box<str>,
 }
 
 #[derive(Deserialize, Serialize)]

@@ -41,24 +41,14 @@ impl Connection {
 		let _ = self.outgoing.send(message.into());
 	}
 
-	pub fn recv(&mut self) -> impl Iterator<Item = Event> + '_ {
-		pub struct ReceiveIterator<'c>(&'c mut Connection);
-
-		impl Iterator for ReceiveIterator<'_> {
-			type Item = Event;
-
-			fn next(&mut self) -> Option<Self::Item> {
-				self.0.incoming.try_recv().map_or_else(
-					|error| match error {
-						TryRecvError::Empty => None,
-						TryRecvError::Disconnected => Some(Event::Closed),
-					},
-					Some,
-				)
-			}
-		}
-
-		ReceiveIterator(self)
+	pub fn recv(&mut self) -> Option<Event> {
+		self.incoming.try_recv().map_or_else(
+			|error| match error {
+				TryRecvError::Empty => None,
+				TryRecvError::Disconnected => Some(Event::Closed),
+			},
+			Some,
+		)
 	}
 
 	#[must_use]
