@@ -47,7 +47,7 @@ impl ProtoChunk {
 	/// Populates data with the distance to the center
 	#[must_use]
 	pub fn distance(mut self, center: Vector3<f32>) -> Self {
-		let chunk_position = self.coordinates.cast();
+		let chunk_position = self.coordinates.cast() * (16i64 << self.level) as f32;
 
 		for x in 0..16 {
 			for y in 0..16 {
@@ -65,13 +65,6 @@ impl ProtoChunk {
 			}
 		}
 
-		self
-	}
-
-	/// Sets any cells exceeding `comparison` to the `new_value`
-	#[must_use]
-	pub fn set_greater_than(self, comparison: f32, new_value: f32) -> Self {
-		self.map(|value| if value > comparison { new_value } else { value });
 		self
 	}
 

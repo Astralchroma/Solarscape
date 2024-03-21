@@ -132,10 +132,7 @@ impl World {
 					.map(|(voxject_index, level, coordinates)| {
 						(
 							voxject_index,
-							ProtoChunk::new(level as u8, coordinates)
-								.distance(zero())
-								.set_greater_than(1000.0, 0.0)
-								.build(),
+							ProtoChunk::new(level as u8, coordinates).distance(zero()).build(),
 						)
 					})
 					.map(|(voxject_index, chunk)| SyncChunk {

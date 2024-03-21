@@ -1,7 +1,7 @@
 #![warn(clippy::nursery)]
 
 use crate::connection::{Connection, Event};
-use crate::{camera::Camera, types::Degrees, world::Chunk, world::Voxject, world::World};
+use crate::{camera::Camera, chunk::Chunk, types::Degrees, world::Voxject, world::World};
 use log::{info, LevelFilter::Trace};
 use nalgebra::{Isometry3, IsometryMatrix3, Point3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncChunk, SyncVoxject};
@@ -21,7 +21,9 @@ use winit::event::{Event::AboutToWait, Event::UserEvent, Event::WindowEvent};
 use winit::{dpi::PhysicalSize, event_loop::EventLoopBuilder, window::WindowBuilder};
 
 mod camera;
+mod chunk;
 mod connection;
+mod data;
 mod types;
 mod world;
 
@@ -112,7 +114,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let mut camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
 
 	camera.set_view(IsometryMatrix3::look_at_rh(
-		&Point3::new(512.0, 0.0, 0.0),
+		&Point3::new(0.01, 16.0, 0.0),
 		&Point3::origin(),
 		&Vector3::y(),
 	));
@@ -161,7 +163,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 					});
 
 					camera.use_camera(&queue, &mut render_pass);
-					world.render(&device, &mut render_pass);
+					world.render(&mut render_pass);
 				}
 
 				queue.submit(once(encoder.finish()));
@@ -181,9 +183,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 				ClientboundMessage::SyncVoxject(SyncVoxject { voxject_index, location }) => {
 					world.voxjects[voxject_index].location = location;
 				}
-				ClientboundMessage::SyncChunk(SyncChunk { voxject_index, level, coordinates, .. }) => {
-					world.voxjects[voxject_index].chunks[level as usize].insert(coordinates, Chunk);
-					world.changed = true;
+				ClientboundMessage::SyncChunk(SyncChunk { voxject_index, level, coordinates, data }) => {
+					let mut chunk = Chunk { level, coordinates, data, mesh: None };
+					chunk.rebuild_mesh(&device);
+					world.voxjects[voxject_index].chunks[level as usize].insert(coordinates, chunk);
 				}
 			},
 		},
