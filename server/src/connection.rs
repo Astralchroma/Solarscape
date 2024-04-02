@@ -15,6 +15,8 @@ use tokio::sync::oneshot::{channel as oneshot, Receiver as OneshotReceiver, Send
 use tokio::{pin, select, sync::mpsc::error::TryRecvError, time::interval, time::Instant};
 
 pub struct Connection {
+	name: Arc<str>,
+
 	close: OneshotSender<Option<CloseFrame<'static>>>,
 
 	// Not a Arc<RwLock<Duration>> because std::sync::RwLock sucks and I don't want to use tokio::Sync::RwLock because
@@ -57,7 +59,7 @@ impl Connection {
 		Path(sector): Path<String>,
 		socket: WebSocketUpgrade,
 	) -> Response {
-		let name = Alphanumeric.sample_string(&mut rand::thread_rng(), 16);
+		let name: Arc<str> = Arc::from(Alphanumeric.sample_string(&mut rand::thread_rng(), 16));
 		sectors.get(&sector).map_or_else(
 			|| StatusCode::NOT_FOUND.into_response(),
 			|sector_handle| {
@@ -69,13 +71,14 @@ impl Connection {
 					let (incoming_send, incoming_recv) = channel();
 
 					let connection = Self {
+						name: name.clone(),
 						close: close_send,
 						latency: latency.clone(),
 						outgoing: outgoing_send,
 						incoming: incoming_recv,
 					};
 
-					if sector_handle.send(connection).await.is_err() {
+					if sector_handle.send(connection).is_err() {
 						return;
 					}
 
@@ -86,7 +89,7 @@ impl Connection {
 	}
 
 	async fn connection_handler(
-		name: String,
+		name: Arc<str>,
 		mut socket: WebSocket,
 		disconnect: OneshotReceiver<Option<CloseFrame<'static>>>,
 		latency: Arc<AtomicU64>,
@@ -220,6 +223,11 @@ impl Connection {
 				}
 			}
 		}
+	}
+
+	#[must_use]
+	pub const fn name(&self) -> &Arc<str> {
+		&self.name
 	}
 }
 

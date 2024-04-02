@@ -9,6 +9,7 @@ use solarscape_shared::types::ChunkData;
 use std::ops::{Deref, DerefMut};
 
 pub struct ProtoChunk {
+	// TODO: Use a Vector4
 	level: u8,
 	coordinates: Vector3<i32>,
 	data: ChunkData,

@@ -3,7 +3,7 @@ use serde_with::serde_as;
 use std::ops::{Deref, DerefMut};
 
 #[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct ChunkData(#[serde_as(as = "Box<[_; 4096]>")] Box<[f32; 4096]>);

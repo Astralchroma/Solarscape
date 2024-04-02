@@ -9,7 +9,8 @@ use crate::{connection::Connection, world::Sector};
 use axum::{http::StatusCode, routing::get};
 use log::{info, warn, LevelFilter::Trace};
 use std::{env, fs, io, sync::Arc, sync::Barrier, thread, time::Instant};
-use tokio::{net::TcpListener, runtime::Builder, sync::mpsc, sync::mpsc::Sender};
+use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedSender as Sender};
+use tokio::{net::TcpListener, runtime::Builder};
 
 type Sectors = Arc<dashmap::DashMap<String, Sender<Connection>>>;
 
@@ -55,15 +56,14 @@ fn main() -> io::Result<()> {
 
 	let barrier = Arc::new(Barrier::new(static_sectors.len() + 1));
 	for sector_name in static_sectors {
-		let (send, receiver) = mpsc::channel(1);
+		let (send, receiver) = channel();
 		sectors.insert(sector_name.clone(), send);
 
 		let barrier = barrier.clone();
-		let runtime = runtime.handle().clone();
 		thread::Builder::new().name(sector_name.clone()).spawn(move || {
 			let start_time = Instant::now();
 
-			let sector = Sector::load(runtime, receiver);
+			let sector = Sector::load();
 
 			let end_time = Instant::now();
 			let load_time = end_time - start_time;
@@ -71,7 +71,7 @@ fn main() -> io::Result<()> {
 
 			barrier.wait();
 
-			sector.run();
+			sector.run(receiver);
 		})?;
 	}
 

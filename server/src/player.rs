@@ -1,31 +1,40 @@
-use crate::{connection::Connection, connection::Event, generation::ProtoChunk, world::Sector};
-use nalgebra::{convert, convert_unchecked, zero, Isometry3, Vector3};
+use crate::{connection::Connection, connection::Event, world::Chunk, world::Sector};
+use nalgebra::{convert, convert_unchecked, Isometry3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, SyncChunk, SyncVoxject};
 use solarscape_shared::messages::serverbound::ServerboundMessage;
-use std::{array, cell::RefCell, collections::HashSet, mem};
+use std::{array, cell::Cell, cell::RefCell, collections::HashSet, mem};
 
 pub struct Player {
 	connection: RefCell<Connection>,
-
-	location: Isometry3<f32>,
-
-	chunk_list: Vec<[HashSet<Vector3<i32>>; 31]>,
+	location: Cell<Isometry3<f32>>,
 }
 
 impl Player {
 	pub fn accept(connection: Connection, sector: &Sector) -> Self {
-		for (voxject_index, voxject) in sector.voxjects.iter().enumerate() {
+		for (voxject_index, voxject) in sector.voxjects().iter().enumerate() {
 			connection.send(AddVoxject { voxject_index, name: Box::from(voxject.name()) });
-			connection.send(SyncVoxject { voxject_index, location: *voxject.location() });
+			connection.send(SyncVoxject { voxject_index, location: voxject.location.get() });
 		}
 
-		Self { connection: RefCell::new(connection), location: Default::default(), chunk_list: vec![] }
+		Self { connection: RefCell::new(connection), location: Default::default() }
 	}
 
-	pub fn process_player(&mut self, sector: &Sector) -> bool {
+	/// Called by the `Voxject` when a `Chunk` is locked by the `Player`. If the chunk is loaded, this is called
+	/// immediately after the `Player` locks the chunk, otherwise it is called once the chunk is loaded.
+	pub fn on_lock_chunk(&self, chunk: &Chunk) {
+		self.connection.borrow().send(SyncChunk {
+			voxject_index: 0,
+			level: chunk.level,
+			coordinates: chunk.coordinates,
+			data: chunk.data.clone(),
+		})
+	}
+
+	/// Returns `true` if the connection is still open
+	pub fn process_player(&self, sector: &Sector) -> bool {
 		loop {
 			let message = match self.connection.borrow_mut().recv() {
-				None => break,
+				None => return true,
 				Some(message) => message,
 			};
 
@@ -34,44 +43,39 @@ impl Player {
 				Event::Message(message) => match message {
 					ServerboundMessage::PlayerLocation(location) => {
 						// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
-						self.location = location;
+						self.location.set(location);
 
-						self.refresh_chunks(sector);
+						let chunk_list = self.generate_chunk_list(sector);
 
-						self.chunk_list.iter().enumerate().for_each(|(voxject_index, levels)| {
-							levels.iter().enumerate().for_each(|(level, chunks)| {
-								let level = level as u8;
-
-								chunks.iter().for_each(|&coordinates| {
-									let data = ProtoChunk::new(level, coordinates).distance(zero()).build().data;
-									self.connection.borrow_mut().send(SyncChunk {
-										voxject_index,
+						for (voxject, levels) in chunk_list.iter().enumerate() {
+							for (level, chunks) in levels.iter().enumerate() {
+								for chunk in chunks {
+									sector.voxjects()[voxject].lock_chunk(
+										self.connection.borrow().name(),
 										level,
-										coordinates,
-										data,
-									})
-								})
-							})
-						});
+										*chunk,
+									)
+								}
+							}
+						}
 					}
 				},
 			}
 		}
-
-		true
 	}
 
-	pub fn refresh_chunks(&mut self, sector: &Sector) {
-		let mut new_chunk_list = vec![];
+	pub fn generate_chunk_list(&self, sector: &Sector) -> Box<[[HashSet<Vector3<i32>>; 31]]> {
+		let mut chunk_list = vec![];
 
-		for voxject in sector.voxjects.iter() {
+		for voxject in sector.voxjects().iter() {
 			let mut voxject_chunk_list = array::from_fn(|_| HashSet::new());
 
 			// These values are local to the level they are on. So a 0.5, 0.5, 0.5 player position on level 0 means in
 			// chunk 0, 0, 0 on the next level that becomes 0.25, 0.25, 0.25 in chunk 0, 0, 0.
 			let mut p_pos = voxject
-				.location()
-				.inverse_transform_vector(&self.location.translation.vector)
+				.location
+				.get()
+				.inverse_transform_vector(&self.location.get().translation.vector)
 				/ 16.0;
 			let mut p_chunk: Vector3<i32> = convert_unchecked(p_pos);
 			let mut chunks: HashSet<Vector3<i32>> = HashSet::new();
@@ -84,19 +88,19 @@ impl Player {
 					next_chunks.insert(chunk.map(|value| value >> 1));
 				}
 
-				for x in p_chunk.x - l_radius..=p_chunk.x + l_radius {
-					for y in p_chunk.y - l_radius..=p_chunk.y + l_radius {
-						for z in p_chunk.z - l_radius..=p_chunk.z + l_radius {
-							let chunk = Vector3::new(x, y, z);
+				for c_x in p_chunk.x - l_radius..=p_chunk.x + l_radius {
+					for c_y in p_chunk.y - l_radius..=p_chunk.y + l_radius {
+						for c_z in p_chunk.z - l_radius..=p_chunk.z + l_radius {
+							let c_chunk = Vector3::new(c_x, c_y, c_z);
 
 							// circles look nicer
-							let c_center = convert::<_, Vector3<f32>>(chunk) + Vector3::repeat(0.5);
+							let c_center = convert::<_, Vector3<f32>>(c_chunk) + Vector3::repeat(0.5);
 
-							if p_chunk != chunk && p_pos.metric_distance(&c_center) as i32 > l_radius {
+							if p_chunk != c_chunk && p_pos.metric_distance(&c_center) as i32 > l_radius {
 								continue;
 							}
 
-							next_chunks.insert(chunk.map(|value| value >> 1));
+							next_chunks.insert(c_chunk.map(|value| value >> 1));
 						}
 					}
 				}
@@ -120,9 +124,9 @@ impl Player {
 				mem::swap(&mut next_chunks, &mut voxject_chunk_list[level as usize]);
 			}
 
-			new_chunk_list.push(voxject_chunk_list);
+			chunk_list.push(voxject_chunk_list);
 		}
 
-		self.chunk_list = new_chunk_list;
+		chunk_list.into_boxed_slice()
 	}
 }

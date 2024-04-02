@@ -1,55 +1,79 @@
-use crate::{connection::Connection, player::Player};
+use crate::{connection::Connection, generation::ProtoChunk, player::Player};
 use log::{error, warn};
-use nalgebra::{Isometry3, Vector3};
+use nalgebra::{vector, zero, Isometry3, Vector3, Vector4};
 use solarscape_shared::types::ChunkData;
-use std::{thread, time::Duration, time::Instant};
-use tokio::{runtime::Handle, sync::mpsc::error::TryRecvError, sync::mpsc::Receiver};
+use std::collections::{HashMap, HashSet};
+use std::{cell::Cell, cell::RefCell, sync::Arc, thread, time::Duration, time::Instant};
+use tokio::sync::mpsc::error::TryRecvError;
+use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 
 pub struct Sector {
-	_runtime: Handle,
-	incoming_connections: Receiver<Connection>,
-	pub voxjects: Box<[Voxject]>,
+	voxjects: Box<[Voxject]>,
+	players: RefCell<HashMap<Arc<str>, Player>>, // We'll want to make this a HashMap later, or probably a DashMap
 }
 
 impl Sector {
 	#[must_use]
-	pub fn load(runtime: Handle, incoming_connections: Receiver<Connection>) -> Self {
+	pub fn load() -> Self {
+		let (completed_chunks_sender, completed_chunks) = channel();
+
 		Self {
-			_runtime: runtime,
-			incoming_connections,
-			voxjects: Box::new([Voxject { name: Box::from("example_voxject"), location: Isometry3::default() }]),
+			players: RefCell::new(HashMap::new()),
+			voxjects: Box::new([Voxject {
+				name: Box::from("example_voxject"),
+				location: Cell::new(Isometry3::default()),
+				completed_chunks: RefCell::new(completed_chunks),
+				completed_chunks_sender,
+				pending_chunk_locks: RefCell::new(HashMap::new()),
+			}]),
 		}
 	}
 
-	pub fn run(mut self) {
-		let mut players = vec![];
-
+	pub fn run(self, mut incoming_connections: Receiver<Connection>) {
 		let target_tick_time = Duration::from_secs(1) / 30;
-		// let mut last_tick_start = Instant::now();
+
 		loop {
 			let tick_start = Instant::now();
-			// let tick_delta = tick_start - last_tick_start;
-			// last_tick_start = tick_start;
 
-			// only accept one connection, we'll handle the rest on the next tick anyway
-			match self.incoming_connections.try_recv() {
-				Err(error) => {
-					if error == TryRecvError::Disconnected {
-						error!("Connection Channel was dropped!");
-						return self.stop();
-					}
+			// Accept one connection, any other connections will simply be handled on the next tick
+			match incoming_connections.try_recv() {
+				Ok(connection) => {
+					let name = connection.name().clone();
+					self.players
+						.borrow_mut()
+						.insert(name, Player::accept(connection, &self));
 				}
-				Ok(connection) => players.push(Player::accept(connection, &self)),
+				Err(TryRecvError::Disconnected) => {
+					error!("Connection Channel was dropped!");
+					return self.stop();
+				}
+				_ => {}
 			}
 
-			players.retain_mut(|player| player.process_player(&self));
+			// Process all players
+			let mut connected_players = HashSet::new();
+			for (player_name, player) in self.players.borrow().iter() {
+				if player.process_player(&self) {
+					connected_players.insert(player_name.clone());
+				}
+			}
+
+			// Remove any players that are no longer connected
+			self.players
+				.borrow_mut()
+				.retain(|player_name, _| connected_players.contains(player_name));
+
+			// Tick Voxjects
+			for voxject in self.voxjects.iter() {
+				voxject.tick(&self)
+			}
 
 			let tick_end = Instant::now();
 			let tick_duration = tick_end - tick_start;
-			if let Some(time_until_next_tick) = target_tick_time.checked_sub(tick_duration) {
-				thread::sleep(time_until_next_tick);
-			} else {
-				warn!("Tick took {tick_duration:.0?}, exceeding {target_tick_time:.0?} target");
+
+			match target_tick_time.checked_sub(tick_duration) {
+				Some(time_until_next_tick) => thread::sleep(time_until_next_tick),
+				None => warn!("Tick took {tick_duration:.0?}, exceeding {target_tick_time:.0?} target"),
 			}
 		}
 	}
@@ -57,22 +81,81 @@ impl Sector {
 	fn stop(self) {
 		drop(self);
 	}
+
+	pub const fn voxjects(&self) -> &[Voxject] {
+		&self.voxjects
+	}
 }
 
 pub struct Voxject {
 	name: Box<str>,
-	location: Isometry3<f32>,
+	pub location: Cell<Isometry3<f32>>,
+
+	completed_chunks: RefCell<Receiver<Chunk>>,
+	completed_chunks_sender: Sender<Chunk>,
+	pending_chunk_locks: RefCell<HashMap<Vector4<i32>, Vec<Arc<str>>>>,
 }
 
 impl Voxject {
-	#[must_use]
-	pub const fn name(&self) -> &str {
-		&self.name
+	fn tick(&self, sector: &Sector) {
+		// Handle completed chunks
+		let mut completed_chunks = self.completed_chunks.borrow_mut();
+		let mut pending_chunk_locks = self.pending_chunk_locks.borrow_mut();
+		let sector_players = sector.players.borrow();
+
+		loop {
+			let chunk = match completed_chunks.try_recv() {
+				Err(TryRecvError::Disconnected) => unreachable!(),
+				Err(TryRecvError::Empty) => break,
+				Ok(chunk) => chunk,
+			};
+
+			let coordinates = vector![
+				chunk.coordinates.x,
+				chunk.coordinates.y,
+				chunk.coordinates.z,
+				chunk.level as i32
+			];
+			if let Some(chunk_locks) = pending_chunk_locks.remove(&coordinates) {
+				for player_name in chunk_locks {
+					if let Some(player) = sector_players.get(&player_name) {
+						player.on_lock_chunk(&chunk)
+					}
+				}
+			}
+		}
+	}
+
+	pub fn lock_chunk(&self, player: &Arc<str>, level: usize, level_coordinates: Vector3<i32>) {
+		let mut pending_chunk_locks = self.pending_chunk_locks.borrow_mut();
+		let coordinates = vector![
+			level_coordinates.x,
+			level_coordinates.y,
+			level_coordinates.z,
+			level as i32
+		];
+
+		match pending_chunk_locks.get_mut(&coordinates) {
+			Some(pending_chunk_lock) => pending_chunk_lock.push(player.clone()),
+			None => {
+				let completed_chunks_sender = self.completed_chunks_sender.clone();
+
+				// fifo because unimportant
+				rayon::spawn_fifo(move || {
+					let chunk = ProtoChunk::new(level as u8, level_coordinates).distance(zero()).build();
+
+					// If this fails then the server is probably shutting down, or is crashing, so it won't matter
+					let _ = completed_chunks_sender.send(chunk);
+				});
+
+				pending_chunk_locks.insert(coordinates, vec![player.clone()]);
+			}
+		};
 	}
 
 	#[must_use]
-	pub const fn location(&self) -> &Isometry3<f32> {
-		&self.location
+	pub const fn name(&self) -> &str {
+		&self.name
 	}
 }
 
