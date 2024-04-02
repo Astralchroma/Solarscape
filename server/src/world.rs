@@ -9,7 +9,7 @@ use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Recei
 
 pub struct Sector {
 	voxjects: Box<[Voxject]>,
-	players: RefCell<HashMap<Arc<str>, Player>>, // We'll want to make this a HashMap later, or probably a DashMap
+	players: RefCell<HashMap<Arc<str>, Player>>,
 }
 
 impl Sector {
