@@ -1,7 +1,7 @@
 #![warn(clippy::nursery)]
 
 use crate::connection::{Connection, Event};
-use crate::{camera::Camera, chunk::Chunk, types::Degrees, world::Voxject, world::World};
+use crate::{camera::Camera, types::Degrees, world::Sector, world::Voxject};
 use log::{info, LevelFilter::Trace};
 use nalgebra::{Isometry3, IsometryMatrix3, Point3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncChunk, SyncVoxject};
@@ -19,9 +19,9 @@ use wgpu::{
 use winit::event::WindowEvent::{CloseRequested, Destroyed, RedrawRequested, Resized};
 use winit::event::{Event::AboutToWait, Event::UserEvent, Event::WindowEvent};
 use winit::{dpi::PhysicalSize, event_loop::EventLoopBuilder, window::WindowBuilder};
+use world::Chunk;
 
 mod camera;
-mod chunk;
 mod connection;
 mod data;
 mod types;
@@ -120,11 +120,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 	));
 
 	let connection = runtime.block_on(connection_task).unwrap().unwrap();
-	let mut world = World::new(&config, &camera, &device);
+	let mut sector = Sector::new(&config, &camera, &device);
 
 	let end_time = Instant::now();
 	let load_time = end_time - start_time;
-	info!("Ready! {load_time:?}");
+	info!("Ready! {load_time:.0?}");
 
 	connection.send(Isometry3::default());
 
@@ -163,7 +163,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 					});
 
 					camera.use_camera(&queue, &mut render_pass);
-					world.render(&mut render_pass);
+					sector.render(&mut render_pass);
 				}
 
 				queue.submit(once(encoder.finish()));
@@ -175,18 +175,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 			Event::Message(message) => match message {
 				ClientboundMessage::AddVoxject(AddVoxject { voxject_index, name }) => {
 					info!("Added Voxject {voxject_index} {name:?}");
-					world.voxjects.insert(
+					sector.voxjects.insert(
 						voxject_index,
 						Voxject { name, location: Isometry3::default(), chunks: Default::default() },
 					);
 				}
 				ClientboundMessage::SyncVoxject(SyncVoxject { voxject_index, location }) => {
-					world.voxjects[voxject_index].location = location;
+					sector.voxjects[voxject_index].location = location;
 				}
 				ClientboundMessage::SyncChunk(SyncChunk { voxject_index, level, coordinates, data }) => {
 					let mut chunk = Chunk { level, coordinates, data, mesh: None };
 					chunk.rebuild_mesh(&device);
-					world.voxjects[voxject_index].chunks[level as usize].insert(coordinates, chunk);
+					sector.voxjects[voxject_index].chunks[level as usize].insert(coordinates, chunk);
 				}
 			},
 		},

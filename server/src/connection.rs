@@ -2,7 +2,7 @@
 //! handling events through a channel instead of the `winit` `EventLoop`. If you make a change here, check if that
 //! change is needed on the client.
 
-use crate::Worlds;
+use crate::Sectors;
 use axum::extract::ws::{close_code, CloseFrame, Message as Frame, WebSocket};
 use axum::extract::{Path, State, WebSocketUpgrade};
 use axum::{http::StatusCode, response::IntoResponse, response::Response};
@@ -53,15 +53,15 @@ impl Connection {
 
 	#[must_use]
 	pub async fn await_connections(
-		State(worlds): State<Worlds>,
-		Path(world): Path<String>,
+		State(sectors): State<Sectors>,
+		Path(sector): Path<String>,
 		socket: WebSocketUpgrade,
 	) -> Response {
 		let name = Alphanumeric.sample_string(&mut rand::thread_rng(), 16);
-		worlds.get(&world).map_or_else(
+		sectors.get(&sector).map_or_else(
 			|| StatusCode::NOT_FOUND.into_response(),
-			|world_handle| {
-				let world_handle = world_handle.clone();
+			|sector_handle| {
+				let sector_handle = sector_handle.clone();
 				socket.on_upgrade(|socket| async move {
 					let latency = Arc::new(AtomicU64::default());
 					let (close_send, close_recv) = oneshot();
@@ -75,7 +75,7 @@ impl Connection {
 						incoming: incoming_recv,
 					};
 
-					if world_handle.send(connection).await.is_err() {
+					if sector_handle.send(connection).await.is_err() {
 						return;
 					}
 

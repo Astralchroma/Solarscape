@@ -1,6 +1,10 @@
 #![warn(clippy::nursery)]
 
-pub mod messages;
+pub mod messages {
+	pub mod clientbound;
+	pub mod serverbound;
+}
+
 pub mod types;
 
 use chrono::{Local, SubsecRound};

@@ -1,17 +1,17 @@
 use crate::{connection::Connection, player::Player};
 use log::{error, warn};
 use nalgebra::{Isometry3, Vector3};
-use solarscape_shared::{messages::clientbound::AddVoxject, messages::clientbound::SyncVoxject, types::ChunkData};
+use solarscape_shared::types::ChunkData;
 use std::{thread, time::Duration, time::Instant};
 use tokio::{runtime::Handle, sync::mpsc::error::TryRecvError, sync::mpsc::Receiver};
 
-pub struct World {
+pub struct Sector {
 	_runtime: Handle,
 	incoming_connections: Receiver<Connection>,
 	pub voxjects: Box<[Voxject]>,
 }
 
-impl World {
+impl Sector {
 	#[must_use]
 	pub fn load(runtime: Handle, incoming_connections: Receiver<Connection>) -> Self {
 		Self {

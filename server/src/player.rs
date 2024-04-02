@@ -1,4 +1,4 @@
-use crate::{connection::Connection, connection::Event, generation::ProtoChunk, world::World};
+use crate::{connection::Connection, connection::Event, generation::ProtoChunk, world::Sector};
 use nalgebra::{convert, convert_unchecked, zero, Isometry3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, SyncChunk, SyncVoxject};
 use solarscape_shared::messages::serverbound::ServerboundMessage;
@@ -13,8 +13,8 @@ pub struct Player {
 }
 
 impl Player {
-	pub fn accept(connection: Connection, world: &World) -> Self {
-		for (voxject_index, voxject) in world.voxjects.iter().enumerate() {
+	pub fn accept(connection: Connection, sector: &Sector) -> Self {
+		for (voxject_index, voxject) in sector.voxjects.iter().enumerate() {
 			connection.send(AddVoxject { voxject_index, name: Box::from(voxject.name()) });
 			connection.send(SyncVoxject { voxject_index, location: *voxject.location() });
 		}
@@ -22,7 +22,7 @@ impl Player {
 		Self { connection: RefCell::new(connection), location: Default::default(), chunk_list: vec![] }
 	}
 
-	pub fn process_player(&mut self, world: &World) -> bool {
+	pub fn process_player(&mut self, sector: &Sector) -> bool {
 		loop {
 			let message = match self.connection.borrow_mut().recv() {
 				None => break,
@@ -36,7 +36,7 @@ impl Player {
 						// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
 						self.location = location;
 
-						self.refresh_chunks(world);
+						self.refresh_chunks(sector);
 
 						self.chunk_list.iter().enumerate().for_each(|(voxject_index, levels)| {
 							levels.iter().enumerate().for_each(|(level, chunks)| {
@@ -61,10 +61,10 @@ impl Player {
 		true
 	}
 
-	pub fn refresh_chunks(&mut self, world: &World) {
+	pub fn refresh_chunks(&mut self, sector: &Sector) {
 		let mut new_chunk_list = vec![];
 
-		for voxject in world.voxjects.iter() {
+		for voxject in sector.voxjects.iter() {
 			let mut voxject_chunk_list = array::from_fn(|_| HashSet::new());
 
 			// These values are local to the level they are on. So a 0.5, 0.5, 0.5 player position on level 0 means in
@@ -124,11 +124,5 @@ impl Player {
 		}
 
 		self.chunk_list = new_chunk_list;
-	}
-}
-
-impl From<Connection> for Player {
-	fn from(connection: Connection) -> Self {
-		Self { connection: RefCell::new(connection), location: Default::default(), chunk_list: vec![] }
 	}
 }
