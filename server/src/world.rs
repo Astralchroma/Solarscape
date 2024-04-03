@@ -3,7 +3,7 @@ use log::{error, warn};
 use nalgebra::{vector, zero, Isometry3, Vector3, Vector4};
 use solarscape_shared::types::ChunkData;
 use std::collections::{HashMap, HashSet};
-use std::{cell::Cell, cell::RefCell, sync::Arc, thread, time::Duration, time::Instant};
+use std::{array, cell::Cell, cell::RefCell, sync::Arc, thread, time::Duration, time::Instant};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 
@@ -25,6 +25,7 @@ impl Sector {
 				completed_chunks: RefCell::new(completed_chunks),
 				completed_chunks_sender,
 				pending_chunk_locks: RefCell::new(HashMap::new()),
+				chunks: RefCell::new(array::from_fn(|_| HashMap::new())),
 			}]),
 		}
 	}
@@ -94,6 +95,8 @@ pub struct Voxject {
 	completed_chunks: RefCell<Receiver<Chunk>>,
 	completed_chunks_sender: Sender<Chunk>,
 	pending_chunk_locks: RefCell<HashMap<Vector4<i32>, Vec<Arc<str>>>>,
+
+	chunks: RefCell<[HashMap<Vector3<i32>, Chunk>; 31]>,
 }
 
 impl Voxject {
@@ -102,6 +105,7 @@ impl Voxject {
 		let mut completed_chunks = self.completed_chunks.borrow_mut();
 		let mut pending_chunk_locks = self.pending_chunk_locks.borrow_mut();
 		let sector_players = sector.players.borrow();
+		let mut chunks = self.chunks.borrow_mut();
 
 		loop {
 			let chunk = match completed_chunks.try_recv() {
@@ -122,12 +126,15 @@ impl Voxject {
 						player.on_lock_chunk(&chunk)
 					}
 				}
+
+				chunks[chunk.level as usize].insert(chunk.coordinates, chunk);
 			}
 		}
 	}
 
-	pub fn lock_chunk(&self, player: &Arc<str>, level: usize, level_coordinates: Vector3<i32>) {
+	pub fn lock_chunk(&self, sector: &Sector, player: &Arc<str>, level: usize, level_coordinates: Vector3<i32>) {
 		let mut pending_chunk_locks = self.pending_chunk_locks.borrow_mut();
+		let mut chunks = self.chunks.borrow_mut();
 		let coordinates = vector![
 			level_coordinates.x,
 			level_coordinates.y,
@@ -138,17 +145,25 @@ impl Voxject {
 		match pending_chunk_locks.get_mut(&coordinates) {
 			Some(pending_chunk_lock) => pending_chunk_lock.push(player.clone()),
 			None => {
-				let completed_chunks_sender = self.completed_chunks_sender.clone();
+				match chunks[level].get(&level_coordinates) {
+					Some(chunk) => {
+						let player = &sector.players.borrow()[player];
+						player.on_lock_chunk(chunk);
+					}
+					None => {
+						let completed_chunks_sender = self.completed_chunks_sender.clone();
 
-				// fifo because unimportant
-				rayon::spawn_fifo(move || {
-					let chunk = ProtoChunk::new(level as u8, level_coordinates).distance(zero()).build();
+						// fifo because unimportant
+						rayon::spawn_fifo(move || {
+							let chunk = ProtoChunk::new(level as u8, level_coordinates).distance(zero()).build();
 
-					// If this fails then the server is probably shutting down, or is crashing, so it won't matter
-					let _ = completed_chunks_sender.send(chunk);
-				});
+							// If this fails then the server is probably shutting down, or is crashing, so it won't matter
+							let _ = completed_chunks_sender.send(chunk);
+						});
 
-				pending_chunk_locks.insert(coordinates, vec![player.clone()]);
+						pending_chunk_locks.insert(coordinates, vec![player.clone()]);
+					}
+				}
 			}
 		};
 	}

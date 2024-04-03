@@ -51,6 +51,7 @@ impl Player {
 							for (level, chunks) in levels.iter().enumerate() {
 								for chunk in chunks {
 									sector.voxjects()[voxject].lock_chunk(
+										sector,
 										self.connection.borrow().name(),
 										level,
 										*chunk,
