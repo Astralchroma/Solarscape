@@ -2,11 +2,13 @@ use crate::{connection::Connection, connection::Event, world::Chunk, world::Sect
 use nalgebra::{convert, convert_unchecked, Isometry3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, SyncChunk, SyncVoxject};
 use solarscape_shared::messages::serverbound::ServerboundMessage;
-use std::{array, cell::Cell, cell::RefCell, collections::HashSet, mem};
+use std::{array, cell::Cell, cell::RefCell, collections::HashSet, iter::repeat, iter::zip, mem};
 
 pub struct Player {
 	connection: RefCell<Connection>,
 	location: Cell<Isometry3<f32>>,
+
+	pub loaded_chunks: RefCell<Box<[[HashSet<Vector3<i32>>; 31]]>>,
 }
 
 impl Player {
@@ -16,7 +18,15 @@ impl Player {
 			connection.send(SyncVoxject { voxject_index, location: voxject.location.get() });
 		}
 
-		Self { connection: RefCell::new(connection), location: Default::default() }
+		Self {
+			connection: RefCell::new(connection),
+			location: Default::default(),
+			loaded_chunks: RefCell::new(
+				repeat(array::from_fn(|_| HashSet::new()))
+					.take(sector.voxjects().len())
+					.collect(),
+			),
+		}
 	}
 
 	/// Called by the `Voxject` when a `Chunk` is locked by the `Player`. If the chunk is loaded, this is called
@@ -30,32 +40,49 @@ impl Player {
 		})
 	}
 
-	/// Returns `true` if the connection is still open
+	/// Returns `true` if the connection is closed
 	pub fn process_player(&self, sector: &Sector) -> bool {
 		loop {
 			let message = match self.connection.borrow_mut().recv() {
-				None => return true,
+				None => return false,
 				Some(message) => message,
 			};
 
 			match message {
-				Event::Closed => return false,
+				Event::Closed => return true,
 				Event::Message(message) => match message {
 					ServerboundMessage::PlayerLocation(location) => {
 						// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
 						self.location.set(location);
 
-						let chunk_list = self.generate_chunk_list(sector);
+						let old_chunk_list = self.loaded_chunks.replace(self.generate_chunk_list(sector));
+						let new_chunk_list = self.loaded_chunks.borrow();
 
-						for (voxject, levels) in chunk_list.iter().enumerate() {
-							for (level, chunks) in levels.iter().enumerate() {
-								for chunk in chunks {
-									sector.voxjects()[voxject].lock_chunk(
+						for (voxject, (new_levels, old_levels)) in
+							zip(new_chunk_list.iter(), old_chunk_list.iter()).enumerate()
+						{
+							for (level, (new_chunks, old_chunks)) in
+								zip(new_levels.iter(), old_levels.iter()).enumerate()
+							{
+								let added_chunks = new_chunks.difference(old_chunks);
+
+								for chunk in added_chunks {
+									sector.voxjects()[voxject].lock_and_load_chunk(
 										sector,
 										self.connection.borrow().name(),
 										level,
 										*chunk,
-									)
+									);
+								}
+
+								let removed_chunks = old_chunks.difference(new_chunks);
+
+								for chunk in removed_chunks {
+									sector.voxjects()[voxject].release_chunk(
+										self.connection.borrow().name(),
+										level,
+										*chunk,
+									);
 								}
 							}
 						}

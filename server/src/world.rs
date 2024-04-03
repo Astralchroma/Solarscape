@@ -52,17 +52,26 @@ impl Sector {
 			}
 
 			// Process all players
-			let mut connected_players = HashSet::new();
+			let mut disconnected_players = HashSet::new();
 			for (player_name, player) in self.players.borrow().iter() {
 				if player.process_player(&self) {
-					connected_players.insert(player_name.clone());
+					disconnected_players.insert(player_name.clone());
 				}
 			}
 
-			// Remove any players that are no longer connected
-			self.players
-				.borrow_mut()
-				.retain(|player_name, _| connected_players.contains(player_name));
+			for player_name in disconnected_players {
+				if let Some(player) = self.players.borrow_mut().remove(&player_name) {
+					for (voxject, levels) in player.loaded_chunks.take().iter().enumerate() {
+						let voxject = &self.voxjects[voxject];
+
+						for (level, chunks) in levels.iter().enumerate() {
+							for chunk in chunks {
+								voxject.release_chunk(&player_name, level, *chunk);
+							}
+						}
+					}
+				}
+			}
 
 			// Tick Voxjects
 			for voxject in self.voxjects.iter() {
@@ -108,7 +117,7 @@ impl Voxject {
 		let mut chunks = self.chunks.borrow_mut();
 
 		loop {
-			let chunk = match completed_chunks.try_recv() {
+			let mut chunk = match completed_chunks.try_recv() {
 				Err(TryRecvError::Disconnected) => unreachable!(),
 				Err(TryRecvError::Empty) => break,
 				Ok(chunk) => chunk,
@@ -123,7 +132,8 @@ impl Voxject {
 			if let Some(chunk_locks) = pending_chunk_locks.remove(&coordinates) {
 				for player_name in chunk_locks {
 					if let Some(player) = sector_players.get(&player_name) {
-						player.on_lock_chunk(&chunk)
+						player.on_lock_chunk(&chunk);
+						chunk.locks.insert(player_name.clone());
 					}
 				}
 
@@ -132,7 +142,13 @@ impl Voxject {
 		}
 	}
 
-	pub fn lock_chunk(&self, sector: &Sector, player: &Arc<str>, level: usize, level_coordinates: Vector3<i32>) {
+	pub fn lock_and_load_chunk(
+		&self,
+		sector: &Sector,
+		player_name: &Arc<str>,
+		level: usize,
+		level_coordinates: Vector3<i32>,
+	) {
 		let mut pending_chunk_locks = self.pending_chunk_locks.borrow_mut();
 		let mut chunks = self.chunks.borrow_mut();
 		let coordinates = vector![
@@ -143,12 +159,13 @@ impl Voxject {
 		];
 
 		match pending_chunk_locks.get_mut(&coordinates) {
-			Some(pending_chunk_lock) => pending_chunk_lock.push(player.clone()),
+			Some(pending_chunk_lock) => pending_chunk_lock.push(player_name.clone()),
 			None => {
-				match chunks[level].get(&level_coordinates) {
+				match chunks[level].get_mut(&level_coordinates) {
 					Some(chunk) => {
-						let player = &sector.players.borrow()[player];
+						let player = &sector.players.borrow()[player_name];
 						player.on_lock_chunk(chunk);
+						chunk.locks.insert(player_name.clone());
 					}
 					None => {
 						let completed_chunks_sender = self.completed_chunks_sender.clone();
@@ -161,11 +178,24 @@ impl Voxject {
 							let _ = completed_chunks_sender.send(chunk);
 						});
 
-						pending_chunk_locks.insert(coordinates, vec![player.clone()]);
+						pending_chunk_locks.insert(coordinates, vec![player_name.clone()]);
 					}
 				}
 			}
 		};
+	}
+
+	pub fn release_chunk(&self, player_name: &Arc<str>, level: usize, level_coordinates: Vector3<i32>) {
+		let level_chunks = &mut self.chunks.borrow_mut()[level];
+		if let Some(chunk) = level_chunks.get_mut(&level_coordinates) {
+			if chunk.locks.contains(player_name) {
+				chunk.locks.remove(player_name);
+			}
+
+			if chunk.locks.is_empty() {
+				level_chunks.remove(&level_coordinates);
+			}
+		}
 	}
 
 	#[must_use]
@@ -178,4 +208,5 @@ pub struct Chunk {
 	pub level: u8,
 	pub coordinates: Vector3<i32>,
 	pub data: ChunkData,
+	pub locks: HashSet<Arc<str>>,
 }

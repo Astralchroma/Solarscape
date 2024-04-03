@@ -6,7 +6,7 @@
 use crate::world::Chunk;
 use nalgebra::Vector3;
 use solarscape_shared::types::ChunkData;
-use std::ops::{Deref, DerefMut};
+use std::{collections::HashSet, ops::Deref, ops::DerefMut};
 
 pub struct ProtoChunk {
 	// TODO: Use a Vector4
@@ -71,6 +71,6 @@ impl ProtoChunk {
 
 	#[must_use]
 	pub fn build(self) -> Chunk {
-		Chunk { level: self.level, coordinates: self.coordinates, data: self.data }
+		Chunk { level: self.level, coordinates: self.coordinates, data: self.data, locks: HashSet::new() }
 	}
 }
