@@ -61,7 +61,7 @@ impl ProtoChunk {
 					let position = chunk_position + cell_position;
 					let distance = position.metric_distance(&center);
 
-					self[x << 8 | y << 4 | z] = distance
+					self[x << 8 | y << 4 | z] = distance as u8;
 				}
 			}
 		}

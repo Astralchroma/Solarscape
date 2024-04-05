@@ -146,7 +146,7 @@ impl Voxject {
 				upleveled_chunk_coordinates.map(|coordinates| self.chunks[current_chunk_level + 1].get(&coordinates));
 		}
 
-		let mut data = [0.0_f32; 17 * 17 * 17];
+		let mut data = [0; 17 * 17 * 17];
 		let mut need_upleveled_chunks = false;
 
 		'x: for x in 0..17 {
@@ -277,7 +277,7 @@ pub struct ChunkMesh {
 }
 
 impl Chunk {
-	pub fn rebuild_mesh(&mut self, device: &Device, data: [f32; 17 * 17 * 17]) {
+	pub fn rebuild_mesh(&mut self, device: &Device, data: [u8; 17 * 17 * 17]) {
 		let mut vertices = vec![];
 
 		for x in 0..16 {
@@ -285,14 +285,14 @@ impl Chunk {
 				for z in 0..16 {
 					#[allow(clippy::identity_op)]
 					#[rustfmt::skip]
-					let case_index = ((data[((x  ) * 289) + ((y  ) * 17) + (z+1)] <= 5.0) as usize) << 0
-					               | ((data[((x+1) * 289) + ((y  ) * 17) + (z+1)] <= 5.0) as usize) << 1
-					               | ((data[((x+1) * 289) + ((y  ) * 17) + (z  )] <= 5.0) as usize) << 2
-					               | ((data[((x  ) * 289) + ((y  ) * 17) + (z  )] <= 5.0) as usize) << 3
-					               | ((data[((x  ) * 289) + ((y+1) * 17) + (z+1)] <= 5.0) as usize) << 4
-					               | ((data[((x+1) * 289) + ((y+1) * 17) + (z+1)] <= 5.0) as usize) << 5
-					               | ((data[((x+1) * 289) + ((y+1) * 17) + (z  )] <= 5.0) as usize) << 6
-					               | ((data[((x  ) * 289) + ((y+1) * 17) + (z  )] <= 5.0) as usize) << 7;
+					let case_index = ((data[((x  ) * 289) + ((y  ) * 17) + (z+1)] <= 5) as usize) << 0
+					               | ((data[((x+1) * 289) + ((y  ) * 17) + (z+1)] <= 5) as usize) << 1
+					               | ((data[((x+1) * 289) + ((y  ) * 17) + (z  )] <= 5) as usize) << 2
+					               | ((data[((x  ) * 289) + ((y  ) * 17) + (z  )] <= 5) as usize) << 3
+					               | ((data[((x  ) * 289) + ((y+1) * 17) + (z+1)] <= 5) as usize) << 4
+					               | ((data[((x+1) * 289) + ((y+1) * 17) + (z+1)] <= 5) as usize) << 5
+					               | ((data[((x+1) * 289) + ((y+1) * 17) + (z  )] <= 5) as usize) << 6
+					               | ((data[((x  ) * 289) + ((y+1) * 17) + (z  )] <= 5) as usize) << 7;
 
 					let EdgeData { count, edge_indices } = CELL_EDGE_MAP[case_index];
 

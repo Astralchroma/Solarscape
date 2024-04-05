@@ -6,10 +6,10 @@ use std::ops::{Deref, DerefMut};
 #[derive(Clone, Serialize, Deserialize)]
 #[repr(transparent)]
 #[serde(transparent)]
-pub struct ChunkData(#[serde_as(as = "Box<[_; 4096]>")] Box<[f32; 4096]>);
+pub struct ChunkData(#[serde_as(as = "Box<[_; 4096]>")] Box<[u8; 4096]>);
 
 impl Deref for ChunkData {
-	type Target = [f32; 4096];
+	type Target = [u8; 4096];
 
 	fn deref(&self) -> &Self::Target {
 		&self.0
@@ -24,7 +24,7 @@ impl DerefMut for ChunkData {
 
 impl Default for ChunkData {
 	fn default() -> Self {
-		Self(Box::new([0.0; 4096]))
+		Self(Box::new([0; 4096]))
 	}
 }
 
