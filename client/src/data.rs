@@ -265,19 +265,19 @@ pub const CELL_EDGE_MAP: [EdgeData; 256] = [
 	EdgeData { count:  0, edge_indices: [ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0] },
 ];
 
-pub const EDGE_CORNER_MAP: [[usize; 2]; 12] = [
-	[0, 1],
-	[1, 2],
-	[2, 3],
-	[3, 0],
-	[4, 5],
-	[5, 6],
-	[6, 7],
-	[7, 4],
-	[0, 4],
-	[1, 5],
-	[2, 6],
-	[3, 7],
+pub const EDGE_CORNER_MAP: [(usize, usize); 12] = [
+	(0, 1),
+	(1, 2),
+	(2, 3),
+	(3, 0),
+	(4, 5),
+	(5, 6),
+	(6, 7),
+	(7, 4),
+	(0, 4),
+	(1, 5),
+	(2, 6),
+	(3, 7),
 ];
 
 pub const CORNERS: [Point3<f32>; 8] = [

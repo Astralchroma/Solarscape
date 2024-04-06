@@ -1,9 +1,8 @@
 use crate::{camera::Camera, data::EdgeData, data::CELL_EDGE_MAP, data::CORNERS, data::EDGE_CORNER_MAP};
 use bytemuck::{cast_slice, Pod, Zeroable};
 use nalgebra::{Isometry3, Point3, Vector3};
-use solarscape_shared::types::{ChunkData, GridCoordinates};
-use std::collections::{HashMap, HashSet};
-use std::ops::{Deref, DerefMut};
+use solarscape_shared::types::{ChunkData, GridCoordinates, Material};
+use std::{collections::HashMap, collections::HashSet, ops::Deref, ops::DerefMut};
 use wgpu::{
 	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, BlendState, Buffer, BufferUsages, ColorTargetState,
 	ColorWrites, CompareFunction::GreaterEqual, DepthStencilState, Device, Face::Back, FragmentState, FrontFace,
@@ -37,20 +36,19 @@ impl Sector {
 				entry_point: "vertex",
 				buffers: &[
 					VertexBufferLayout {
-						array_stride: 12,
+						array_stride: 24,
 						step_mode: VertexStepMode::Vertex,
-						attributes: &[VertexAttribute {
-							offset: 0,
-							shader_location: 0,
-							format: VertexFormat::Float32x3,
-						}],
+						attributes: &[
+							VertexAttribute { offset: 0, shader_location: 0, format: VertexFormat::Float32x3 },
+							VertexAttribute { offset: 12, shader_location: 1, format: VertexFormat::Float32x3 },
+						],
 					},
 					VertexBufferLayout {
 						array_stride: 16,
 						step_mode: VertexStepMode::Instance,
 						attributes: &[
-							VertexAttribute { offset: 0, shader_location: 1, format: VertexFormat::Float32x3 },
-							VertexAttribute { offset: 12, shader_location: 2, format: VertexFormat::Float32 },
+							VertexAttribute { offset: 0, shader_location: 2, format: VertexFormat::Float32x3 },
+							VertexAttribute { offset: 12, shader_location: 3, format: VertexFormat::Float32 },
 						],
 					},
 				],
@@ -147,7 +145,8 @@ impl Voxject {
 				.map(|coordinates| self.chunks[grid_coordinates.level as usize + 1].get(&coordinates));
 		}
 
-		let mut data = [0; 17 * 17 * 17];
+		let mut densities = [0; 17 * 17 * 17];
+		let mut materials = [Material::Nothing; 17 * 17 * 17];
 		let mut need_upleveled_chunks = false;
 
 		'x: for x in 0..17 {
@@ -155,12 +154,15 @@ impl Voxject {
 				for z in 0..17 {
 					// messy but probably fast?
 					let chunk_index = ((x & 0x10) >> 2) | ((y & 0x10) >> 3) | ((z & 0x10) >> 4);
+					let cell_index = (x * 289) + (y * 17) + z;
 
 					// The actual chunk we need is loaded, yay! This is the easy path.
 					if let Some(chunk) = dependency_chunks[chunk_index] {
 						// Data expands a little bit further than chunk data, so we can't just copy the chunk data array
-						// instead we have to map it to the data
-						data[(x * 289) + (y * 17) + z] = chunk.densities[(x & 0x0F) << 8 | (y & 0x0F) << 4 | z & 0x0F];
+						// instead we have to map it to the
+						let chunk_cell_index = (x & 0x0F) << 8 | (y & 0x0F) << 4 | z & 0x0F;
+						densities[cell_index] = chunk.densities[chunk_cell_index];
+						materials[cell_index] = chunk.materials[chunk_cell_index];
 						continue;
 					}
 
@@ -178,8 +180,9 @@ impl Voxject {
 						let upleveled_chunk_index = ((u_x & 0x10) >> 2) | ((u_y & 0x10) >> 3) | ((u_z & 0x10) >> 4);
 
 						if let Some(chunk) = upleveled_dependency_chunks[upleveled_chunk_index] {
-							data[(x * 289) + (y * 17) + z] =
-								chunk.densities[(u_x & 0x0F) << 8 | (u_y & 0x0F) << 4 | u_z & 0x0F];
+							let u_chunk_cell_index = (u_x & 0x0F) << 8 | (u_y & 0x0F) << 4 | u_z & 0x0F;
+							densities[cell_index] = chunk.densities[u_chunk_cell_index];
+							materials[cell_index] = chunk.materials[u_chunk_cell_index];
 							continue;
 						}
 
@@ -245,7 +248,7 @@ impl Voxject {
 			}
 
 			// Now we can build the chunk mesh
-			chunk.rebuild_mesh(device, data)
+			chunk.rebuild_mesh(device, densities, materials);
 		}
 	}
 }
@@ -276,36 +279,64 @@ pub struct ChunkMesh {
 }
 
 impl Chunk {
-	pub fn rebuild_mesh(&mut self, device: &Device, data: [u8; 17 * 17 * 17]) {
+	pub fn rebuild_mesh(
+		&mut self,
+		device: &Device,
+		densities: [u8; 17 * 17 * 17],
+		materials: [Material; 17 * 17 * 17],
+	) {
 		let mut vertices = vec![];
 
 		for x in 0..16 {
 			for y in 0..16 {
 				for z in 0..16 {
+					let material = materials[(x * 289) + (y * 17) + z];
+
+					let indexes = [
+						(x, y, z + 1),
+						(x + 1, y, z + 1),
+						(x + 1, y, z),
+						(x, y, z),
+						(x, y + 1, z + 1),
+						(x + 1, y + 1, z + 1),
+						(x + 1, y + 1, z),
+						(x, y + 1, z),
+					]
+					.map(|(x, y, z)| (x * 289) + (y * 17) + z);
+
+					// let densities = indexes.map(|index| densities[index]);
+					let materials = indexes.map(|index| materials[index]);
+
 					#[allow(clippy::identity_op)]
 					#[rustfmt::skip]
-					let case_index = ((data[((x  ) * 289) + ((y  ) * 17) + (z+1)] != 0) as usize) << 0
-					               | ((data[((x+1) * 289) + ((y  ) * 17) + (z+1)] != 0) as usize) << 1
-					               | ((data[((x+1) * 289) + ((y  ) * 17) + (z  )] != 0) as usize) << 2
-					               | ((data[((x  ) * 289) + ((y  ) * 17) + (z  )] != 0) as usize) << 3
-					               | ((data[((x  ) * 289) + ((y+1) * 17) + (z+1)] != 0) as usize) << 4
-					               | ((data[((x+1) * 289) + ((y+1) * 17) + (z+1)] != 0) as usize) << 5
-					               | ((data[((x+1) * 289) + ((y+1) * 17) + (z  )] != 0) as usize) << 6
-					               | ((data[((x  ) * 289) + ((y+1) * 17) + (z  )] != 0) as usize) << 7;
+					let case_index = ((materials[0] as u8 != 0) as usize) << 0
+					               | ((materials[1] as u8 != 0) as usize) << 1
+					               | ((materials[2] as u8 != 0) as usize) << 2
+					               | ((materials[3] as u8 != 0) as usize) << 3
+					               | ((materials[4] as u8 != 0) as usize) << 4
+					               | ((materials[5] as u8 != 0) as usize) << 5
+					               | ((materials[6] as u8 != 0) as usize) << 6
+					               | ((materials[7] as u8 != 0) as usize) << 7;
 
 					let EdgeData { count, edge_indices } = CELL_EDGE_MAP[case_index];
 
 					for edge_index in &edge_indices[0..count as usize] {
-						let edge = EDGE_CORNER_MAP[*edge_index as usize];
+						let (a_index, b_index) = EDGE_CORNER_MAP[*edge_index as usize];
 
-						let a = interpolate(CORNERS[edge[0]], CORNERS[edge[1]]);
-						let b = interpolate(CORNERS[edge[1]], CORNERS[edge[0]]);
+						let a = interpolate(CORNERS[a_index], CORNERS[b_index]);
+						let b = interpolate(CORNERS[b_index], CORNERS[a_index]);
 
-						vertices.push(Point3::new(
+						vertices.push(Vector3::new(
 							x as f32 + (a.x + b.x) / 2.0,
 							y as f32 + (a.y + b.y) / 2.0,
 							z as f32 + (a.z + b.z) / 2.0,
 						));
+						vertices.push(match material {
+							Material::Nothing => Vector3::new(0.0, 0.0, 0.0),
+							Material::Corium => Vector3::new(0.1, 0.1, 0.1),
+							Material::Ground => Vector3::new(0.5, 0.25, 0.1),
+							Material::Stone => Vector3::new(0.6, 0.6, 0.6),
+						})
 					}
 				}
 			}
@@ -327,7 +358,7 @@ impl Chunk {
 		unsafe impl Pod for InstanceData {}
 
 		self.mesh = Some(ChunkMesh {
-			vertex_count: vertices.len() as u32,
+			vertex_count: vertices.len() as u32 / 2,
 			vertex_buffer: device.create_buffer_init(&BufferInitDescriptor {
 				label: Some("chunk.mesh.vertex_buffer"),
 				contents: cast_slice(&vertices),

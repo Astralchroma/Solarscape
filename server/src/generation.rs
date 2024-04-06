@@ -9,7 +9,7 @@
 use crate::world::Chunk;
 use log::warn;
 use nalgebra::{vector, zero, Vector3};
-use solarscape_shared::types::GridCoordinates;
+use solarscape_shared::types::{GridCoordinates, Material};
 use tokio::sync::mpsc::UnboundedSender as Sender;
 
 type GeneratorFunction = (dyn (Fn(GridCoordinates) -> Chunk) + Send + Sync);
@@ -42,16 +42,23 @@ impl Generator {
 // While Chunk is defined in world.rs, the later chunk generation library will likely have it's own [Chunk] later, so
 // we'll keep all the generation specific functions here.
 impl Chunk {
-	pub fn sphere(mut self, radius: f32) -> Self {
+	pub fn sphere(mut self, radius: f32, material_map: impl Fn(f32) -> Material) -> Self {
+		// temporary missing chunk so you can see the materials inside
+		if self.grid_coordinates.coordinates == zero::<Vector3<_>>() {
+			return self;
+		}
+
 		let level_radius = radius / f32::powi(2.0, self.grid_coordinates.level as i32);
 		let chunk_origin_level_coordinates = self.grid_coordinates.coordinates.cast() * 16.0;
 
 		for x in 0..16 {
 			for y in 0..16 {
 				for z in 0..16 {
+					let index = x << 8 | y << 4 | z;
 					let level_coordinates = chunk_origin_level_coordinates + vector![x as f32, y as f32, z as f32];
 					let distance = level_coordinates.metric_distance(&zero::<Vector3<_>>());
-					self.densities[x << 8 | y << 4 | z] = (256.0 * (level_radius - distance)) as u8;
+					self.densities[index] = (256.0 * (level_radius - distance)) as u8;
+					self.materials[index] = material_map(distance);
 				}
 			}
 		}
@@ -61,5 +68,15 @@ impl Chunk {
 }
 
 pub fn sphere_generator(grid_coordinates: GridCoordinates) -> Chunk {
-	Chunk::new(grid_coordinates).sphere(8.0)
+	Chunk::new(grid_coordinates).sphere(8.0, |distance| {
+		if distance >= 8.0 {
+			Material::Nothing
+		} else if distance >= 6.0 {
+			Material::Ground
+		} else if distance >= 2.0 {
+			Material::Stone
+		} else {
+			Material::Corium
+		}
+	})
 }
