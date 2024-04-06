@@ -11,10 +11,12 @@ use thiserror::Error;
 use tokio::runtime::Builder;
 use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame};
 use wgpu::{
-	Backends, Color, CommandEncoderDescriptor, CompositeAlphaMode::Opaque, DeviceDescriptor, Dx12Compiler, Features,
-	Gles3MinorVersion::Version0, Instance, InstanceDescriptor, InstanceFlags, LoadOp::Clear, Operations,
-	PowerPreference::HighPerformance, PresentMode::AutoNoVsync, RenderPassColorAttachment, RenderPassDescriptor,
-	RequestAdapterOptions, StoreOp::Store, SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor,
+	Backends, Color, CommandEncoderDescriptor, CompositeAlphaMode::Opaque, DeviceDescriptor, Dx12Compiler, Extent3d,
+	Features, Gles3MinorVersion::Version0, Instance, InstanceDescriptor, InstanceFlags, LoadOp::Clear, Operations,
+	PowerPreference::HighPerformance, PresentMode::AutoNoVsync, RenderPassColorAttachment,
+	RenderPassDepthStencilAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp::Store,
+	SurfaceConfiguration, TextureDescriptor, TextureDimension::D2, TextureFormat, TextureFormat::Depth32Float,
+	TextureUsages, TextureViewDescriptor,
 };
 use winit::event::WindowEvent::{CloseRequested, Destroyed, RedrawRequested, Resized};
 use winit::event::{Event::AboutToWait, Event::UserEvent, Event::WindowEvent};
@@ -110,10 +112,24 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	surface.configure(&device, &config);
 
+	let mut depth_texture_descriptor = TextureDescriptor {
+		label: Some("depth_buffer"),
+		size: Extent3d { width, height, depth_or_array_layers: 1 },
+		mip_level_count: 1,
+		sample_count: 1,
+		dimension: D2,
+		format: Depth32Float,
+		usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+		view_formats: &[],
+	};
+
+	let mut depth_texture = device.create_texture(&depth_texture_descriptor);
+	let mut depth_texture_view = depth_texture.create_view(&TextureViewDescriptor::default());
+
 	let mut camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
 
 	camera.set_view(IsometryMatrix3::look_at_rh(
-		&Point3::new(0.01, 16.0, 0.0),
+		&Point3::new(16.0, 16.0, 16.0),
 		&Point3::origin(),
 		&Vector3::y(),
 	));
@@ -135,6 +151,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 				config.width = width;
 				config.height = height;
 				surface.configure(&device, &config);
+				depth_texture_descriptor.size = Extent3d { width, height, depth_or_array_layers: 1 };
+				depth_texture = device.create_texture(&depth_texture_descriptor);
+				depth_texture_view = depth_texture.create_view(&TextureViewDescriptor::default());
 				camera.set_aspect(width as f32 / height as f32);
 			}
 			CloseRequested | Destroyed => control_flow.exit(),
@@ -158,6 +177,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 							resolve_target: None,
 							view: &view,
 						})],
+						depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+							view: &depth_texture_view,
+							depth_ops: Some(Operations { load: Clear(0.0), store: Store }),
+							stencil_ops: None,
+						}),
 						..Default::default()
 					});
 

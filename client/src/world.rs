@@ -6,9 +6,10 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use wgpu::{
 	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, BlendState, Buffer, BufferUsages, ColorTargetState,
-	ColorWrites, Device, FragmentState, FrontFace, MultisampleState, PipelineLayoutDescriptor, PolygonMode,
-	PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, SurfaceConfiguration,
-	VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+	ColorWrites, CompareFunction::GreaterEqual, DepthStencilState, Device, Face::Back, FragmentState, FrontFace,
+	MultisampleState, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass,
+	RenderPipeline, RenderPipelineDescriptor, SurfaceConfiguration, TextureFormat::Depth32Float, VertexAttribute,
+	VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
 };
 
 pub struct Sector {
@@ -58,12 +59,18 @@ impl Sector {
 				topology: PrimitiveTopology::TriangleList,
 				strip_index_format: None,
 				front_face: FrontFace::Ccw,
-				cull_mode: None,
+				cull_mode: Some(Back),
 				unclipped_depth: false,
 				polygon_mode: PolygonMode::Fill,
 				conservative: false,
 			},
-			depth_stencil: None,
+			depth_stencil: Some(DepthStencilState {
+				format: Depth32Float,
+				depth_write_enabled: true,
+				depth_compare: GreaterEqual,
+				stencil: Default::default(),
+				bias: Default::default(),
+			}),
 			multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
 			fragment: Some(FragmentState {
 				module: &chunk_shader,
