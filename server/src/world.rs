@@ -1,7 +1,7 @@
-use crate::{connection::Connection, generation::ProtoChunk, player::Player};
+use crate::{connection::Connection, generation::sphere_generator, generation::Generator, player::Player};
 use log::{error, warn};
-use nalgebra::{vector, zero, Isometry3, Vector3, Vector4};
-use solarscape_shared::types::ChunkData;
+use nalgebra::{Isometry3, Vector3};
+use solarscape_shared::types::{ChunkData, GridCoordinates};
 use std::collections::{HashMap, HashSet};
 use std::{array, cell::Cell, cell::RefCell, sync::Arc, thread, time::Duration, time::Instant};
 use tokio::sync::mpsc::error::TryRecvError;
@@ -22,6 +22,7 @@ impl Sector {
 			voxjects: Box::new([Voxject {
 				name: Box::from("example_voxject"),
 				location: Cell::new(Isometry3::default()),
+				generator: Generator::new(&sphere_generator),
 				completed_chunks: RefCell::new(completed_chunks),
 				completed_chunks_sender,
 				pending_chunk_locks: RefCell::new(HashMap::new()),
@@ -101,9 +102,11 @@ pub struct Voxject {
 	name: Box<str>,
 	pub location: Cell<Isometry3<f32>>,
 
+	generator: Generator,
+
 	completed_chunks: RefCell<Receiver<Chunk>>,
 	completed_chunks_sender: Sender<Chunk>,
-	pending_chunk_locks: RefCell<HashMap<Vector4<i32>, Vec<Arc<str>>>>,
+	pending_chunk_locks: RefCell<HashMap<GridCoordinates, Vec<Arc<str>>>>,
 
 	chunks: RefCell<[HashMap<Vector3<i32>, Chunk>; 31]>,
 }
@@ -123,13 +126,7 @@ impl Voxject {
 				Ok(chunk) => chunk,
 			};
 
-			let coordinates = vector![
-				chunk.coordinates.x,
-				chunk.coordinates.y,
-				chunk.coordinates.z,
-				chunk.level as i32
-			];
-			if let Some(chunk_locks) = pending_chunk_locks.remove(&coordinates) {
+			if let Some(chunk_locks) = pending_chunk_locks.remove(&chunk.grid_coordinates) {
 				for player_name in chunk_locks {
 					if let Some(player) = sector_players.get(&player_name) {
 						player.on_lock_chunk(&chunk);
@@ -137,51 +134,28 @@ impl Voxject {
 					}
 				}
 
-				chunks[chunk.level as usize].insert(chunk.coordinates, chunk);
+				chunks[chunk.grid_coordinates.level as usize].insert(chunk.grid_coordinates.coordinates, chunk);
 			}
 		}
 	}
 
-	pub fn lock_and_load_chunk(
-		&self,
-		sector: &Sector,
-		player_name: &Arc<str>,
-		level: usize,
-		level_coordinates: Vector3<i32>,
-	) {
+	pub fn lock_and_load_chunk(&self, sector: &Sector, player_name: &Arc<str>, grid_coordinates: GridCoordinates) {
 		let mut pending_chunk_locks = self.pending_chunk_locks.borrow_mut();
 		let mut chunks = self.chunks.borrow_mut();
-		let coordinates = vector![
-			level_coordinates.x,
-			level_coordinates.y,
-			level_coordinates.z,
-			level as i32
-		];
 
-		match pending_chunk_locks.get_mut(&coordinates) {
+		match pending_chunk_locks.get_mut(&grid_coordinates) {
 			Some(pending_chunk_lock) => pending_chunk_lock.push(player_name.clone()),
-			None => {
-				match chunks[level].get_mut(&level_coordinates) {
-					Some(chunk) => {
-						let player = &sector.players.borrow()[player_name];
-						player.on_lock_chunk(chunk);
-						chunk.locks.insert(player_name.clone());
-					}
-					None => {
-						let completed_chunks_sender = self.completed_chunks_sender.clone();
-
-						// fifo because unimportant
-						rayon::spawn_fifo(move || {
-							let chunk = ProtoChunk::new(level as u8, level_coordinates).distance(zero()).build();
-
-							// If this fails then the server is probably shutting down, or is crashing, so it won't matter
-							let _ = completed_chunks_sender.send(chunk);
-						});
-
-						pending_chunk_locks.insert(coordinates, vec![player_name.clone()]);
-					}
+			None => match chunks[grid_coordinates.level as usize].get_mut(&grid_coordinates.coordinates) {
+				Some(chunk) => {
+					let player = &sector.players.borrow()[player_name];
+					player.on_lock_chunk(chunk);
+					chunk.locks.insert(player_name.clone());
 				}
-			}
+				None => {
+					self.generator.generate(grid_coordinates, &self.completed_chunks_sender);
+					pending_chunk_locks.insert(grid_coordinates, vec![player_name.clone()]);
+				}
+			},
 		};
 	}
 
@@ -204,9 +178,15 @@ impl Voxject {
 	}
 }
 
+#[must_use]
 pub struct Chunk {
-	pub level: u8,
-	pub coordinates: Vector3<i32>,
+	pub grid_coordinates: GridCoordinates,
 	pub data: ChunkData,
 	pub locks: HashSet<Arc<str>>,
+}
+
+impl Chunk {
+	pub fn new(grid_coordinates: GridCoordinates) -> Self {
+		Self { grid_coordinates, data: ChunkData::new(), locks: HashSet::new() }
+	}
 }

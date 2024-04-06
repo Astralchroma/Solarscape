@@ -187,8 +187,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 				ClientboundMessage::SyncVoxject(SyncVoxject { voxject_index, location }) => {
 					sector.voxjects[voxject_index].location = location;
 				}
-				ClientboundMessage::SyncChunk(SyncChunk { voxject_index, level, coordinates, data }) => {
-					let chunk = Chunk { level, coordinates, data, mesh: None };
+				ClientboundMessage::SyncChunk(SyncChunk { voxject_index, grid_coordinates, data }) => {
+					let chunk = Chunk { grid_coordinates, data, mesh: None };
 					let voxject = &mut sector.voxjects[voxject_index];
 					voxject.add_chunk(&device, chunk);
 				}

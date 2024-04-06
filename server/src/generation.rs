@@ -2,75 +2,64 @@
 // plugins, for now though, we'll just do some basic world generation in here.
 //
 // When that happens, we'll probably start by just refactoring what's here into the library.
+//
+// Also should be noted that this module isn't really very well planned ahead, so current capabilities are likely
+// inadequate for any complicated generation.
 
 use crate::world::Chunk;
-use nalgebra::Vector3;
-use solarscape_shared::types::ChunkData;
-use std::{collections::HashSet, ops::Deref, ops::DerefMut};
+use log::warn;
+use nalgebra::{vector, zero, Vector3};
+use solarscape_shared::types::GridCoordinates;
+use tokio::sync::mpsc::UnboundedSender as Sender;
 
-pub struct ProtoChunk {
-	// TODO: Use a Vector4
-	level: u8,
-	coordinates: Vector3<i32>,
-	data: ChunkData,
-}
+type GeneratorFunction = (dyn (Fn(GridCoordinates) -> Chunk) + Send + Sync);
 
-impl Deref for ProtoChunk {
-	type Target = ChunkData;
+// We plan to do some FFI stuff and put generators in an external library which gets loaded at runtime, so because of
+// this we make this a wrapper struct and not a trait. For convenience it also must be Send, Sync, and Clone so we can
+// share it between threads, the implications of that are up to generators to handle, although they shouldn't have any
+// shared mutable state anyway so this shouldn't cause any issues.
+#[derive(Clone, Copy)]
+pub struct Generator(&'static GeneratorFunction);
 
-	fn deref(&self) -> &Self::Target {
-		&self.data
+impl Generator {
+	pub fn new(generator_function: &'static GeneratorFunction) -> Self {
+		Self(generator_function)
+	}
+
+	pub fn generate(&self, grid_coordinates: GridCoordinates, completion_channel: &Sender<Chunk>) {
+		let generator = *self;
+		let completion_channel = completion_channel.clone();
+		rayon::spawn_fifo(move || {
+			let chunk = generator.0(grid_coordinates);
+			if completion_channel.send(chunk).is_err() {
+				// TODO: Maybe we should have a "server stopping" flag
+				warn!("Failed to return completed chunk ({grid_coordinates}), either the server is stopping or something broke");
+			}
+		})
 	}
 }
 
-impl DerefMut for ProtoChunk {
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.data
-	}
-}
-
-impl ProtoChunk {
-	#[must_use]
-	pub fn new(level: u8, coordinates: Vector3<i32>) -> Self {
-		Self { level, coordinates, data: ChunkData::new() }
-	}
-
-	#[must_use]
-	pub const fn level(&self) -> &u8 {
-		&self.level
-	}
-
-	#[must_use]
-	pub const fn coordinates(&self) -> &Vector3<i32> {
-		&self.coordinates
-	}
-
-	/// Populates data with the distance to the center
-	#[must_use]
-	pub fn distance(mut self, center: Vector3<f32>) -> Self {
-		let chunk_position = self.coordinates.cast() * (16i64 << self.level) as f32;
+// While Chunk is defined in world.rs, the later chunk generation library will likely have it's own [Chunk] later, so
+// we'll keep all the generation specific functions here.
+impl Chunk {
+	pub fn sphere(mut self, radius: f32) -> Self {
+		let level_radius = radius / f32::powi(2.0, self.grid_coordinates.level as i32);
+		let chunk_origin_level_coordinates = self.grid_coordinates.coordinates.cast() * 16.0;
 
 		for x in 0..16 {
 			for y in 0..16 {
 				for z in 0..16 {
-					let cell_position = Vector3::new(
-						(x << self.level) as f32,
-						(y << self.level) as f32,
-						(z << self.level) as f32,
-					);
-					let position = chunk_position + cell_position;
-					let distance = position.metric_distance(&center);
-
-					self[x << 8 | y << 4 | z] = distance as u8;
+					let level_coordinates = chunk_origin_level_coordinates + vector![x as f32, y as f32, z as f32];
+					let distance = level_coordinates.metric_distance(&zero::<Vector3<_>>());
+					self.data[x << 8 | y << 4 | z] = (256.0 * (level_radius - distance)) as u8;
 				}
 			}
 		}
 
 		self
 	}
+}
 
-	#[must_use]
-	pub fn build(self) -> Chunk {
-		Chunk { level: self.level, coordinates: self.coordinates, data: self.data, locks: HashSet::new() }
-	}
+pub fn sphere_generator(grid_coordinates: GridCoordinates) -> Chunk {
+	Chunk::new(grid_coordinates).sphere(8.0)
 }

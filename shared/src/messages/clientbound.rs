@@ -1,5 +1,5 @@
-use crate::types::ChunkData;
-use nalgebra::{Isometry3, Vector3};
+use crate::types::{ChunkData, GridCoordinates};
+use nalgebra::Isometry3;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
@@ -17,8 +17,7 @@ pub struct SyncVoxject {
 #[derive(Deserialize, Serialize)]
 pub struct SyncChunk {
 	pub voxject_index: usize,
-	pub level: u8,
-	pub coordinates: Vector3<i32>,
+	pub grid_coordinates: GridCoordinates,
 	pub data: ChunkData,
 }
 

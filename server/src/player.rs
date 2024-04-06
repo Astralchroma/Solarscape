@@ -1,7 +1,7 @@
 use crate::{connection::Connection, connection::Event, world::Chunk, world::Sector};
 use nalgebra::{convert, convert_unchecked, Isometry3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, SyncChunk, SyncVoxject};
-use solarscape_shared::messages::serverbound::ServerboundMessage;
+use solarscape_shared::{messages::serverbound::ServerboundMessage, types::GridCoordinates};
 use std::{array, cell::Cell, cell::RefCell, collections::HashSet, iter::repeat, iter::zip, mem};
 
 pub struct Player {
@@ -33,9 +33,8 @@ impl Player {
 	/// immediately after the `Player` locks the chunk, otherwise it is called once the chunk is loaded.
 	pub fn on_lock_chunk(&self, chunk: &Chunk) {
 		self.connection.borrow().send(SyncChunk {
-			voxject_index: 0,
-			level: chunk.level,
-			coordinates: chunk.coordinates,
+			voxject_index: 0, // TODO
+			grid_coordinates: chunk.grid_coordinates,
 			data: chunk.data.clone(),
 		})
 	}
@@ -70,8 +69,7 @@ impl Player {
 									sector.voxjects()[voxject].lock_and_load_chunk(
 										sector,
 										self.connection.borrow().name(),
-										level,
-										*chunk,
+										GridCoordinates { coordinates: *chunk, level: level as u8 },
 									);
 								}
 

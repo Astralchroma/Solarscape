@@ -1,10 +1,33 @@
+use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::ops::{Deref, DerefMut};
+use std::{fmt::Display, fmt::Formatter, ops::Deref, ops::DerefMut};
+
+#[must_use]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct GridCoordinates {
+	pub coordinates: Vector3<i32>,
+	pub level: u8,
+}
+
+impl GridCoordinates {
+	pub fn uplevel(&self) -> Self {
+		Self { coordinates: self.coordinates.map(|coordinate| coordinate >> 1), level: self.level + 1 }
+	}
+}
+
+impl Display for GridCoordinates {
+	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+		write!(
+			f,
+			"{}: {}, {}, {}",
+			self.level, self.coordinates.x, self.coordinates.y, self.coordinates
+		)
+	}
+}
 
 #[serde_as]
 #[derive(Clone, Serialize, Deserialize)]
-#[repr(transparent)]
 #[serde(transparent)]
 pub struct ChunkData(#[serde_as(as = "Box<[_; 4096]>")] Box<[u8; 4096]>);
 
