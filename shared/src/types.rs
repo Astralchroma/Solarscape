@@ -36,7 +36,7 @@ pub struct ChunkData {
 	pub materials: Box<[Material; 4096]>,
 
 	#[serde_as(as = "Box<[_; 4096]>")]
-	pub densities: Box<[u8; 4096]>,
+	pub densities: Box<[f32; 4096]>,
 }
 
 impl ChunkData {
@@ -47,7 +47,7 @@ impl ChunkData {
 
 impl From<GridCoordinates> for ChunkData {
 	fn from(grid_coordinates: GridCoordinates) -> Self {
-		Self { grid_coordinates, materials: Box::new([Material::Nothing; 4096]), densities: Box::new([0; 4096]) }
+		Self { grid_coordinates, materials: Box::new([Material::Nothing; 4096]), densities: Box::new([0.0; 4096]) }
 	}
 }
 

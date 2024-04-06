@@ -1,6 +1,6 @@
 use crate::{camera::Camera, data::EdgeData, data::CELL_EDGE_MAP, data::CORNERS, data::EDGE_CORNER_MAP};
 use bytemuck::{cast_slice, Pod, Zeroable};
-use nalgebra::{Isometry3, Point3, Vector3};
+use nalgebra::{ArrayStorage, Const, Isometry3, Matrix, Point3, Vector3};
 use solarscape_shared::types::{ChunkData, GridCoordinates, Material};
 use std::{collections::HashMap, collections::HashSet, ops::Deref, ops::DerefMut};
 use wgpu::{
@@ -145,7 +145,7 @@ impl Voxject {
 				.map(|coordinates| self.chunks[grid_coordinates.level as usize + 1].get(&coordinates));
 		}
 
-		let mut densities = [0; 17 * 17 * 17];
+		let mut densities = [0.0; 17 * 17 * 17];
 		let mut materials = [Material::Nothing; 17 * 17 * 17];
 		let mut need_upleveled_chunks = false;
 
@@ -282,7 +282,7 @@ impl Chunk {
 	pub fn rebuild_mesh(
 		&mut self,
 		device: &Device,
-		densities: [u8; 17 * 17 * 17],
+		densities: [f32; 17 * 17 * 17],
 		materials: [Material; 17 * 17 * 17],
 	) {
 		let mut vertices = vec![];
@@ -290,8 +290,6 @@ impl Chunk {
 		for x in 0..16 {
 			for y in 0..16 {
 				for z in 0..16 {
-					let material = materials[(x * 289) + (y * 17) + z];
-
 					let indexes = [
 						(x, y, z + 1),
 						(x + 1, y, z + 1),
@@ -304,7 +302,7 @@ impl Chunk {
 					]
 					.map(|(x, y, z)| (x * 289) + (y * 17) + z);
 
-					// let densities = indexes.map(|index| densities[index]);
+					let densities = indexes.map(|index| densities[index]);
 					let materials = indexes.map(|index| materials[index]);
 
 					#[allow(clippy::identity_op)]
@@ -323,20 +321,42 @@ impl Chunk {
 					for edge_index in &edge_indices[0..count as usize] {
 						let (a_index, b_index) = EDGE_CORNER_MAP[*edge_index as usize];
 
-						let a = interpolate(CORNERS[a_index], CORNERS[b_index]);
-						let b = interpolate(CORNERS[b_index], CORNERS[a_index]);
+						let a_density = densities[a_index];
+						let b_density = densities[b_index];
 
-						vertices.push(Vector3::new(
-							x as f32 + (a.x + b.x) / 2.0,
-							y as f32 + (a.y + b.y) / 2.0,
-							z as f32 + (a.z + b.z) / 2.0,
-						));
-						vertices.push(match material {
-							Material::Nothing => Vector3::new(0.0, 0.0, 0.0),
-							Material::Corium => Vector3::new(0.1, 0.1, 0.1),
-							Material::Ground => Vector3::new(0.5, 0.25, 0.1),
-							Material::Stone => Vector3::new(0.6, 0.6, 0.6),
-						})
+						let weight = if (b_density - a_density).abs() > 1.0 {
+							(0.0 - a_density) / (b_density - a_density)
+						} else {
+							0.5
+						};
+
+						let a = CORNERS[a_index];
+						let b = CORNERS[b_index];
+
+						let vertex = a + weight * (b - a);
+
+						let a_color = match materials[a_index] {
+							Material::Nothing => None,
+							Material::Corium => Some(Vector3::new(0.01, 0.01, 0.01)),
+							Material::Ground => Some(Vector3::new(0.5, 0.25, 0.1)),
+							Material::Stone => Some(Vector3::new(0.05, 0.05, 0.05)),
+						};
+						let b_color = match materials[b_index] {
+							Material::Nothing => None,
+							Material::Corium => Some(Vector3::new(0.01, 0.01, 0.01)),
+							Material::Ground => Some(Vector3::new(0.5, 0.25, 0.1)),
+							Material::Stone => Some(Vector3::new(0.05, 0.05, 0.05)),
+						};
+
+						let color = match (a_color, b_color) {
+							(None, None) => Vector3::new(1.00, 0.0, 1.0),
+							(Some(color), None) => color,
+							(None, Some(color)) => color,
+							(Some(a), Some(b)) => a + weight * (b - a),
+						};
+
+						vertices.push(Vector3::new(x as f32, y as f32, z as f32) + vertex);
+						vertices.push(color)
 					}
 				}
 			}
@@ -386,13 +406,4 @@ impl Chunk {
 			render_pass.draw(0..*vertex_count, 0..1);
 		}
 	}
-}
-
-#[must_use]
-fn interpolate(a: Point3<f32>, b: Point3<f32>) -> Point3<f32> {
-	Point3::new(
-		1.0_f32.mul_add(b.x - a.x, a.x),
-		1.0_f32.mul_add(b.y - a.y, a.y),
-		1.0_f32.mul_add(b.z - a.z, a.z),
-	)
 }

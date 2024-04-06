@@ -1,4 +1,4 @@
-use nalgebra::Point3;
+use nalgebra::Vector3;
 
 pub struct EdgeData {
 	pub count: u8,
@@ -280,13 +280,13 @@ pub const EDGE_CORNER_MAP: [(usize, usize); 12] = [
 	(3, 7),
 ];
 
-pub const CORNERS: [Point3<f32>; 8] = [
-	Point3::new(0.0, 0.0, 1.0),
-	Point3::new(1.0, 0.0, 1.0),
-	Point3::new(1.0, 0.0, 0.0),
-	Point3::new(0.0, 0.0, 0.0),
-	Point3::new(0.0, 1.0, 1.0),
-	Point3::new(1.0, 1.0, 1.0),
-	Point3::new(1.0, 1.0, 0.0),
-	Point3::new(0.0, 1.0, 0.0),
+pub const CORNERS: [Vector3<f32>; 8] = [
+	Vector3::new(0.0, 0.0, 1.0),
+	Vector3::new(1.0, 0.0, 1.0),
+	Vector3::new(1.0, 0.0, 0.0),
+	Vector3::new(0.0, 0.0, 0.0),
+	Vector3::new(0.0, 1.0, 1.0),
+	Vector3::new(1.0, 1.0, 1.0),
+	Vector3::new(1.0, 1.0, 0.0),
+	Vector3::new(0.0, 1.0, 0.0),
 ];
