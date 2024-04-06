@@ -3,6 +3,7 @@ use bytemuck::{cast_slice, Pod, Zeroable};
 use nalgebra::{Isometry3, Point3, Vector3};
 use solarscape_shared::types::{ChunkData, GridCoordinates};
 use std::collections::{HashMap, HashSet};
+use std::ops::{Deref, DerefMut};
 use wgpu::{
 	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, BlendState, Buffer, BufferUsages, ColorTargetState,
 	ColorWrites, Device, FragmentState, FrontFace, MultisampleState, PipelineLayoutDescriptor, PolygonMode,
@@ -152,7 +153,7 @@ impl Voxject {
 					if let Some(chunk) = dependency_chunks[chunk_index] {
 						// Data expands a little bit further than chunk data, so we can't just copy the chunk data array
 						// instead we have to map it to the data
-						data[(x * 289) + (y * 17) + z] = chunk.data[(x & 0x0F) << 8 | (y & 0x0F) << 4 | z & 0x0F];
+						data[(x * 289) + (y * 17) + z] = chunk.densities[(x & 0x0F) << 8 | (y & 0x0F) << 4 | z & 0x0F];
 						continue;
 					}
 
@@ -171,7 +172,7 @@ impl Voxject {
 
 						if let Some(chunk) = upleveled_dependency_chunks[upleveled_chunk_index] {
 							data[(x * 289) + (y * 17) + z] =
-								chunk.data[(u_x & 0x0F) << 8 | (u_y & 0x0F) << 4 | u_z & 0x0F];
+								chunk.densities[(u_x & 0x0F) << 8 | (u_y & 0x0F) << 4 | u_z & 0x0F];
 							continue;
 						}
 
@@ -243,9 +244,22 @@ impl Voxject {
 }
 
 pub struct Chunk {
-	pub grid_coordinates: GridCoordinates,
 	pub data: ChunkData,
 	pub mesh: Option<ChunkMesh>,
+}
+
+impl Deref for Chunk {
+	type Target = ChunkData;
+
+	fn deref(&self) -> &Self::Target {
+		&self.data
+	}
+}
+
+impl DerefMut for Chunk {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.data
+	}
 }
 
 pub struct ChunkMesh {

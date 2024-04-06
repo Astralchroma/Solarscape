@@ -172,7 +172,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		},
 		UserEvent(event) => match event {
 			Event::Message(message) => match message {
-				ClientboundMessage::AddVoxject(AddVoxject { voxject_index, name }) => {
+				ClientboundMessage::AddVoxject(AddVoxject { voxject: voxject_index, name }) => {
 					info!("Added Voxject {voxject_index} {name:?}");
 					sector.voxjects.insert(
 						voxject_index,
@@ -184,12 +184,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 						},
 					);
 				}
-				ClientboundMessage::SyncVoxject(SyncVoxject { voxject_index, location }) => {
+				ClientboundMessage::SyncVoxject(SyncVoxject { voxject: voxject_index, location }) => {
 					sector.voxjects[voxject_index].location = location;
 				}
-				ClientboundMessage::SyncChunk(SyncChunk { voxject_index, grid_coordinates, data }) => {
-					let chunk = Chunk { grid_coordinates, data, mesh: None };
-					let voxject = &mut sector.voxjects[voxject_index];
+				ClientboundMessage::SyncChunk(SyncChunk { voxject, data }) => {
+					let chunk = Chunk { data, mesh: None };
+					let voxject = &mut sector.voxjects[voxject];
 					voxject.add_chunk(&device, chunk);
 				}
 			},

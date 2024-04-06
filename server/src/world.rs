@@ -3,7 +3,8 @@ use log::{error, warn};
 use nalgebra::{Isometry3, Vector3};
 use solarscape_shared::types::{ChunkData, GridCoordinates};
 use std::collections::{HashMap, HashSet};
-use std::{array, cell::Cell, cell::RefCell, sync::Arc, thread, time::Duration, time::Instant};
+use std::time::{Duration, Instant};
+use std::{array, cell::Cell, cell::RefCell, ops::Deref, ops::DerefMut, sync::Arc, thread};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 
@@ -180,13 +181,26 @@ impl Voxject {
 
 #[must_use]
 pub struct Chunk {
-	pub grid_coordinates: GridCoordinates,
 	pub data: ChunkData,
 	pub locks: HashSet<Arc<str>>,
 }
 
 impl Chunk {
 	pub fn new(grid_coordinates: GridCoordinates) -> Self {
-		Self { grid_coordinates, data: ChunkData::new(), locks: HashSet::new() }
+		Self { data: ChunkData::from(grid_coordinates), locks: HashSet::new() }
+	}
+}
+
+impl Deref for Chunk {
+	type Target = ChunkData;
+
+	fn deref(&self) -> &Self::Target {
+		&self.data
+	}
+}
+
+impl DerefMut for Chunk {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.data
 	}
 }

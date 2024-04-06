@@ -51,7 +51,7 @@ impl Chunk {
 				for z in 0..16 {
 					let level_coordinates = chunk_origin_level_coordinates + vector![x as f32, y as f32, z as f32];
 					let distance = level_coordinates.metric_distance(&zero::<Vector3<_>>());
-					self.data[x << 8 | y << 4 | z] = (256.0 * (level_radius - distance)) as u8;
+					self.densities[x << 8 | y << 4 | z] = (256.0 * (level_radius - distance)) as u8;
 				}
 			}
 		}

@@ -14,8 +14,8 @@ pub struct Player {
 impl Player {
 	pub fn accept(connection: Connection, sector: &Sector) -> Self {
 		for (voxject_index, voxject) in sector.voxjects().iter().enumerate() {
-			connection.send(AddVoxject { voxject_index, name: Box::from(voxject.name()) });
-			connection.send(SyncVoxject { voxject_index, location: voxject.location.get() });
+			connection.send(AddVoxject { voxject: voxject_index, name: Box::from(voxject.name()) });
+			connection.send(SyncVoxject { voxject: voxject_index, location: voxject.location.get() });
 		}
 
 		Self {
@@ -33,8 +33,7 @@ impl Player {
 	/// immediately after the `Player` locks the chunk, otherwise it is called once the chunk is loaded.
 	pub fn on_lock_chunk(&self, chunk: &Chunk) {
 		self.connection.borrow().send(SyncChunk {
-			voxject_index: 0, // TODO
-			grid_coordinates: chunk.grid_coordinates,
+			voxject: 0, // TODO
 			data: chunk.data.clone(),
 		})
 	}
