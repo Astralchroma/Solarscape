@@ -25,7 +25,7 @@ fn main() -> io::Result<()> {
 	if env::var_os("CARGO").is_some() {
 		warn!("Running in development environment! Changing working directory to avoid contaminating repository");
 		let mut working_directory = env::current_dir()?;
-		working_directory.push("run");
+		working_directory.push("server/run");
 		fs::create_dir_all(&working_directory)?;
 		env::set_current_dir(working_directory)?;
 	}
