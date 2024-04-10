@@ -1,9 +1,10 @@
 use crate::{camera::Camera, data::EdgeData, data::CELL_EDGE_MAP, data::CORNERS, data::EDGE_CORNER_MAP};
 use bytemuck::{cast_slice, Pod, Zeroable};
 use image::GenericImageView;
-use nalgebra::{vector, Isometry3, Vector3};
+use nalgebra::{vector, Isometry3, Vector2, Vector3};
 use solarscape_shared::types::{ChunkData, GridCoordinates, Material};
 use std::{collections::HashMap, collections::HashSet, ops::Deref, ops::DerefMut};
+use wgpu::VertexFormat::Uint8x2;
 use wgpu::{
 	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, BindGroup, BindGroupDescriptor, BindGroupEntry,
 	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferUsages,
@@ -106,20 +107,22 @@ impl Sector {
 				entry_point: "vertex",
 				buffers: &[
 					VertexBufferLayout {
-						array_stride: 20,
+						array_stride: 32,
 						step_mode: Vertex,
 						attributes: &[
 							VertexAttribute { offset: 0, shader_location: 0, format: Float32x3 },
-							VertexAttribute { offset: 12, shader_location: 1, format: Uint8x4 },
-							VertexAttribute { offset: 16, shader_location: 2, format: Float32 },
+							VertexAttribute { offset: 12, shader_location: 1, format: Float32x3 },
+							VertexAttribute { offset: 24, shader_location: 2, format: Uint8x2 },
+							VertexAttribute { offset: 26, shader_location: 3, format: Uint8x2 },
+							VertexAttribute { offset: 28, shader_location: 4, format: Float32 },
 						],
 					},
 					VertexBufferLayout {
 						array_stride: 16,
 						step_mode: Instance,
 						attributes: &[
-							VertexAttribute { offset: 0, shader_location: 3, format: Float32x3 },
-							VertexAttribute { offset: 12, shader_location: 4, format: Float32 },
+							VertexAttribute { offset: 0, shader_location: 5, format: Float32x3 },
+							VertexAttribute { offset: 12, shader_location: 6, format: Float32 },
 						],
 					},
 				],
@@ -357,8 +360,21 @@ impl Chunk {
 		densities: [f32; 17 * 17 * 17],
 		materials: [Material; 17 * 17 * 17],
 	) {
-		let mut vertex_count = 0;
 		let mut vertex_data = vec![];
+
+		#[allow(unused)]
+		#[derive(Clone, Copy)]
+		#[repr(packed)]
+		struct VertexData {
+			position: Vector3<f32>,
+			normal: Vector3<f32>,
+			material_a: Vector2<u8>,
+			material_b: Vector2<u8>,
+			weight: f32,
+		}
+
+		unsafe impl Zeroable for VertexData {}
+		unsafe impl Pod for VertexData {}
 
 		for x in 0..16 {
 			for y in 0..16 {
@@ -391,47 +407,62 @@ impl Chunk {
 
 					let EdgeData { count, edge_indices } = CELL_EDGE_MAP[case_index];
 
-					for edge_index in &edge_indices[0..count as usize] {
-						let (a_index, b_index) = EDGE_CORNER_MAP[*edge_index as usize];
+					for edge_indices in edge_indices.chunks(3).take(count as usize) {
+						let mut vertices = edge_indices
+							.iter()
+							.map(|edge_index| {
+								let (a_index, b_index) = EDGE_CORNER_MAP[*edge_index as usize];
 
-						let a_density = densities[a_index];
-						let b_density = densities[b_index];
+								let a_density = densities[a_index];
+								let b_density = densities[b_index];
 
-						let weight = if (b_density - a_density).abs() > 1.0 {
-							(0.0 - a_density) / (b_density - a_density)
-						} else {
-							0.5
-						};
+								let weight = if (b_density - a_density).abs() > 1.0 {
+									(0.0 - a_density) / (b_density - a_density)
+								} else {
+									0.5
+								};
 
-						let a = CORNERS[a_index];
-						let b = CORNERS[b_index];
+								let a = CORNERS[a_index];
+								let b = CORNERS[b_index];
 
-						let vertex = a + weight * (b - a);
+								let vertex = a + weight * (b - a);
 
-						let a_material = if matches!(materials[a_index], Material::Nothing) {
-							materials[b_index]
-						} else {
-							materials[a_index]
-						};
-						let b_material = if matches!(materials[b_index], Material::Nothing) {
-							materials[a_index]
-						} else {
-							materials[b_index]
-						};
+								let a_material = if matches!(materials[a_index], Material::Nothing) {
+									materials[b_index]
+								} else {
+									materials[a_index]
+								};
+								let b_material = if matches!(materials[b_index], Material::Nothing) {
+									materials[a_index]
+								} else {
+									materials[b_index]
+								};
 
-						vertex_count += 1;
-						vertex_data.extend_from_slice(cast_slice(&[vector![x as f32, y as f32, z as f32] + vertex]));
-						vertex_data.push((a_material as u8 & 0xC) >> 2);
-						vertex_data.push(a_material as u8 & 0x3);
-						vertex_data.push((b_material as u8 & 0xC) >> 2);
-						vertex_data.push(b_material as u8 & 0x3);
-						vertex_data.extend_from_slice(cast_slice(&[weight]))
+								VertexData {
+									position: vector![x as f32, y as f32, z as f32] + vertex,
+									normal: Vector3::default(),
+									material_a: vector![(a_material as u8 & 0xC) >> 2, a_material as u8 & 0x2],
+									material_b: vector![(b_material as u8 & 0xC) >> 2, b_material as u8 & 0x2],
+									weight,
+								}
+							})
+							.collect::<Vec<_>>();
+
+						let normal = (vertices[1].position - vertices[0].position)
+							.cross(&(vertices[2].position - vertices[0].position))
+							.normalize();
+
+						vertices[0].normal = normal;
+						vertices[1].normal = normal;
+						vertices[2].normal = normal;
+
+						vertex_data.extend_from_slice(&vertices);
 					}
 				}
 			}
 		}
 
-		if vertex_count == 0 {
+		if vertex_data.is_empty() {
 			self.mesh = None;
 			return;
 		}
@@ -447,7 +478,7 @@ impl Chunk {
 		unsafe impl Pod for InstanceData {}
 
 		self.mesh = Some(ChunkMesh {
-			vertex_count,
+			vertex_count: vertex_data.len() as u32,
 			vertex_buffer: device.create_buffer_init(&BufferInitDescriptor {
 				label: Some("chunk.mesh.vertex_buffer"),
 				contents: cast_slice(&vertex_data),
