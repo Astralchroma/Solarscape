@@ -4,7 +4,6 @@ use image::GenericImageView;
 use nalgebra::{vector, Isometry3, Vector2, Vector3};
 use solarscape_shared::types::{ChunkData, GridCoordinates, Material};
 use std::{collections::HashMap, collections::HashSet, ops::Deref, ops::DerefMut};
-use wgpu::VertexFormat::Uint8x2;
 use wgpu::{
 	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, BindGroup, BindGroupDescriptor, BindGroupEntry,
 	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferUsages,
@@ -14,7 +13,7 @@ use wgpu::{
 	SamplerBindingType::NonFiltering, SamplerDescriptor, ShaderStages, SurfaceConfiguration, TextureAspect::All,
 	TextureDescriptor, TextureDimension, TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb, TextureSampleType,
 	TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout,
-	VertexFormat::Float32, VertexFormat::Float32x3, VertexFormat::Uint8x4, VertexState, VertexStepMode::Instance,
+	VertexFormat::Float32, VertexFormat::Float32x3, VertexFormat::Uint8x2, VertexState, VertexStepMode::Instance,
 	VertexStepMode::Vertex,
 };
 
