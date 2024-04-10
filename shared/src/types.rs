@@ -54,8 +54,9 @@ impl From<GridCoordinates> for ChunkData {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[repr(u8)]
 pub enum Material {
-	Nothing = 0,
-	Corium = 1,
-	Ground = 2,
-	Stone = 3,
+	Corium = 0b1100,
+	Stone = 0b1101,
+	Ground = 0b1110,
+
+	Nothing = 0b1111,
 }

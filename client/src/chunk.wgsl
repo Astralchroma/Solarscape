@@ -33,8 +33,8 @@ struct Vertex {
 }
 
 @fragment fn fragment(vertex: Vertex) -> @location(0) vec4<f32> {
-	let texture_a = (vec2<f32>(vertex.materials.xy) + fract(vertex.chunk_position)) / 2;
-	let texture_b = (vec2<f32>(vertex.materials.zw) + fract(vertex.chunk_position)) / 2;
+	let texture_a = (vec2<f32>(vertex.materials.xy) + fract(vertex.chunk_position)) / 4;
+	let texture_b = (vec2<f32>(vertex.materials.zw) + fract(vertex.chunk_position)) / 4;
 
 	let color_a = textureSample(texture, texture_sampler, texture_a);
 	let color_b = textureSample(texture, texture_sampler, texture_b);

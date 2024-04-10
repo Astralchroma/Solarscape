@@ -380,14 +380,14 @@ impl Chunk {
 
 					#[allow(clippy::identity_op)]
 					#[rustfmt::skip]
-					let case_index = ((materials[0] as u8 != 0) as usize) << 0
-					               | ((materials[1] as u8 != 0) as usize) << 1
-					               | ((materials[2] as u8 != 0) as usize) << 2
-					               | ((materials[3] as u8 != 0) as usize) << 3
-					               | ((materials[4] as u8 != 0) as usize) << 4
-					               | ((materials[5] as u8 != 0) as usize) << 5
-					               | ((materials[6] as u8 != 0) as usize) << 6
-					               | ((materials[7] as u8 != 0) as usize) << 7;
+					let case_index = (!matches!(materials[0], Material::Nothing) as usize) << 0
+					               | (!matches!(materials[1], Material::Nothing) as usize) << 1
+					               | (!matches!(materials[2], Material::Nothing) as usize) << 2
+					               | (!matches!(materials[3], Material::Nothing) as usize) << 3
+					               | (!matches!(materials[4], Material::Nothing) as usize) << 4
+					               | (!matches!(materials[5], Material::Nothing) as usize) << 5
+					               | (!matches!(materials[6], Material::Nothing) as usize) << 6
+					               | (!matches!(materials[7], Material::Nothing) as usize) << 7;
 
 					let EdgeData { count, edge_indices } = CELL_EDGE_MAP[case_index];
 
@@ -421,10 +421,10 @@ impl Chunk {
 
 						vertex_count += 1;
 						vertex_data.extend_from_slice(cast_slice(&[vector![x as f32, y as f32, z as f32] + vertex]));
-						vertex_data.push(a_material as u8 & 0x1);
-						vertex_data.push((a_material as u8 & 0x2) >> 1);
-						vertex_data.push(b_material as u8 & 0x1);
-						vertex_data.push((b_material as u8 & 0x2) >> 1);
+						vertex_data.push((a_material as u8 & 0xC) >> 2);
+						vertex_data.push(a_material as u8 & 0x3);
+						vertex_data.push((b_material as u8 & 0xC) >> 2);
+						vertex_data.push(b_material as u8 & 0x3);
 						vertex_data.extend_from_slice(cast_slice(&[weight]))
 					}
 				}
