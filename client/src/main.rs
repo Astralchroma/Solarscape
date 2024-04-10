@@ -4,7 +4,7 @@ use crate::connection::{Connection, Event};
 use crate::{camera::Camera, types::Degrees, world::Chunk, world::Sector, world::Voxject};
 use log::{info, LevelFilter::Trace};
 use nalgebra::{Isometry3, IsometryMatrix3, Point3, Vector3};
-use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncChunk, SyncVoxject};
+use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, RemoveChunk, SyncChunk, SyncVoxject};
 use solarscape_shared::StdLogger;
 use std::{borrow::Cow, env, error::Error, iter::once, time::Instant};
 use thiserror::Error;
@@ -129,7 +129,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let mut camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
 
 	camera.set_view(IsometryMatrix3::look_at_rh(
-		&Point3::new(16.0, 16.0, 16.0),
+		&Point3::new(8.0, 8.0, 8.0),
 		&Point3::origin(),
 		&Vector3::y(),
 	));
@@ -215,6 +215,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 					let chunk = Chunk { data, mesh: None };
 					let voxject = &mut sector.voxjects[voxject];
 					voxject.add_chunk(&device, chunk);
+				}
+				ClientboundMessage::RemoveChunk(RemoveChunk { voxject, grid_coordinates }) => {
+					let voxject = &mut sector.voxjects[voxject];
+					voxject.remove_chunk(&device, grid_coordinates);
 				}
 			},
 		},

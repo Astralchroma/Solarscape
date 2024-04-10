@@ -196,6 +196,16 @@ impl Voxject {
 		self.try_build_chunk(device, grid_coordinates);
 	}
 
+	pub fn remove_chunk(&mut self, device: &Device, grid_coordinates: GridCoordinates) {
+		self.chunks[grid_coordinates.level as usize].remove(&grid_coordinates.coordinates);
+
+		if let Some(dependent_chunks) = self.dependent_chunks.get(&grid_coordinates).cloned() {
+			for dependent_chunk in dependent_chunks {
+				self.try_build_chunk(device, dependent_chunk);
+			}
+		}
+	}
+
 	pub fn try_build_chunk(&mut self, device: &Device, grid_coordinates: GridCoordinates) {
 		let dependency_grid_coordinates = [
 			grid_coordinates.coordinates + Vector3::new(0, 0, 0),

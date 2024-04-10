@@ -1,4 +1,4 @@
-use crate::types::ChunkData;
+use crate::types::{ChunkData, GridCoordinates};
 use nalgebra::Isometry3;
 use serde::{Deserialize, Serialize};
 
@@ -21,10 +21,17 @@ pub struct SyncChunk {
 }
 
 #[derive(Deserialize, Serialize)]
+pub struct RemoveChunk {
+	pub voxject: usize,
+	pub grid_coordinates: GridCoordinates,
+}
+
+#[derive(Deserialize, Serialize)]
 pub enum ClientboundMessage {
 	AddVoxject(AddVoxject),
 	SyncVoxject(SyncVoxject),
 	SyncChunk(SyncChunk),
+	RemoveChunk(RemoveChunk),
 }
 
 impl From<AddVoxject> for ClientboundMessage {
@@ -42,5 +49,11 @@ impl From<SyncVoxject> for ClientboundMessage {
 impl From<SyncChunk> for ClientboundMessage {
 	fn from(value: SyncChunk) -> Self {
 		Self::SyncChunk(value)
+	}
+}
+
+impl From<RemoveChunk> for ClientboundMessage {
+	fn from(value: RemoveChunk) -> Self {
+		Self::RemoveChunk(value)
 	}
 }

@@ -1,6 +1,6 @@
 use crate::{connection::Connection, connection::Event, world::Chunk, world::Sector};
 use nalgebra::{convert, convert_unchecked, Isometry3, Vector3};
-use solarscape_shared::messages::clientbound::{AddVoxject, SyncChunk, SyncVoxject};
+use solarscape_shared::messages::clientbound::{AddVoxject, RemoveChunk, SyncChunk, SyncVoxject};
 use solarscape_shared::{messages::serverbound::ServerboundMessage, types::GridCoordinates};
 use std::{array, cell::Cell, cell::RefCell, collections::HashSet, iter::repeat, iter::zip, mem};
 
@@ -80,6 +80,11 @@ impl Player {
 										level,
 										*chunk,
 									);
+
+									self.connection.borrow().send(RemoveChunk {
+										voxject,
+										grid_coordinates: GridCoordinates { coordinates: *chunk, level: level as u8 },
+									})
 								}
 							}
 						}
