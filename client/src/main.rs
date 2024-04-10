@@ -135,7 +135,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	));
 
 	let connection = runtime.block_on(connection_task).unwrap().unwrap();
-	let mut sector = Sector::new(&config, &camera, &device);
+	let mut sector = Sector::new(&config, &camera, &device, &queue);
 
 	let end_time = Instant::now();
 	let load_time = end_time - start_time;

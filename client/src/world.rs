@@ -1,30 +1,100 @@
 use crate::{camera::Camera, data::EdgeData, data::CELL_EDGE_MAP, data::CORNERS, data::EDGE_CORNER_MAP};
 use bytemuck::{cast_slice, Pod, Zeroable};
-use nalgebra::{ArrayStorage, Const, Isometry3, Matrix, Point3, Vector3};
+use image::GenericImageView;
+use nalgebra::{vector, Isometry3, Vector3};
 use solarscape_shared::types::{ChunkData, GridCoordinates, Material};
 use std::{collections::HashMap, collections::HashSet, ops::Deref, ops::DerefMut};
 use wgpu::{
-	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, BlendState, Buffer, BufferUsages, ColorTargetState,
-	ColorWrites, CompareFunction::GreaterEqual, DepthStencilState, Device, Face::Back, FragmentState, FrontFace,
-	MultisampleState, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass,
-	RenderPipeline, RenderPipelineDescriptor, SurfaceConfiguration, TextureFormat::Depth32Float, VertexAttribute,
-	VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, BindGroup, BindGroupDescriptor, BindGroupEntry,
+	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferUsages,
+	ColorTargetState, ColorWrites, CompareFunction::GreaterEqual, DepthStencilState, Device, Extent3d, Face::Back,
+	FragmentState, FrontFace, ImageCopyTexture, ImageDataLayout, MultisampleState, Origin3d, PipelineLayoutDescriptor,
+	PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
+	SamplerBindingType::NonFiltering, SamplerDescriptor, ShaderStages, SurfaceConfiguration, TextureAspect::All,
+	TextureDescriptor, TextureDimension, TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb, TextureSampleType,
+	TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout,
+	VertexFormat::Float32, VertexFormat::Float32x3, VertexFormat::Uint8x4, VertexState, VertexStepMode::Instance,
+	VertexStepMode::Vertex,
 };
 
 pub struct Sector {
 	pub voxjects: Vec<Voxject>,
 
+	terrain_textures_bind_group: BindGroup,
 	chunk_pipeline: RenderPipeline,
 }
 
 impl Sector {
 	#[must_use]
-	pub fn new(config: &SurfaceConfiguration, camera: &Camera, device: &Device) -> Self {
+	pub fn new(config: &SurfaceConfiguration, camera: &Camera, device: &Device, queue: &Queue) -> Self {
+		let terrain_textures_image = image::load_from_memory(include_bytes!("terrain_textures.png"))
+			.expect("terrain_textures.png must be valid");
+		let terrain_textures_rgba8 = terrain_textures_image.to_rgba8();
+		let (terrain_textures_width, terrain_textures_height) = terrain_textures_image.dimensions();
+		let terrain_textures_size =
+			Extent3d { width: terrain_textures_width, height: terrain_textures_height, depth_or_array_layers: 1 };
+
+		let terrain_textures = device.create_texture(&TextureDescriptor {
+			label: Some("sector.terrain_textures"),
+			size: terrain_textures_size,
+			mip_level_count: 1,
+			sample_count: 1,
+			dimension: TextureDimension::D2,
+			format: Rgba8UnormSrgb,
+			usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+			view_formats: &[],
+		});
+
+		queue.write_texture(
+			ImageCopyTexture { texture: &terrain_textures, mip_level: 0, origin: Origin3d::ZERO, aspect: All },
+			&terrain_textures_rgba8,
+			ImageDataLayout {
+				offset: 0,
+				bytes_per_row: Some(4 * terrain_textures_width),
+				rows_per_image: Some(terrain_textures_height),
+			},
+			terrain_textures_size,
+		);
+
+		let terrain_textures_view = terrain_textures.create_view(&TextureViewDescriptor::default());
+		let terrain_textures_sampler = device.create_sampler(&SamplerDescriptor::default());
+
+		let terrain_textures_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+			label: Some("sector.terrain_textures_bind_group_layout"),
+			entries: &[
+				BindGroupLayoutEntry {
+					binding: 0,
+					visibility: ShaderStages::FRAGMENT,
+					ty: BindingType::Texture {
+						sample_type: TextureSampleType::Float { filterable: false },
+						view_dimension: TextureViewDimension::D2,
+						multisampled: false,
+					},
+					count: None,
+				},
+				BindGroupLayoutEntry {
+					binding: 1,
+					visibility: ShaderStages::FRAGMENT,
+					ty: BindingType::Sampler(NonFiltering),
+					count: None,
+				},
+			],
+		});
+
+		let terrain_textures_bind_group = device.create_bind_group(&BindGroupDescriptor {
+			label: Some("sector.terrain_textures_bind_group"),
+			layout: &terrain_textures_bind_group_layout,
+			entries: &[
+				BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&terrain_textures_view) },
+				BindGroupEntry { binding: 1, resource: BindingResource::Sampler(&terrain_textures_sampler) },
+			],
+		});
+
 		let chunk_shader = device.create_shader_module(include_wgsl!("chunk.wgsl"));
 
 		let chunk_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
 			label: Some("sector.chunk_pipeline_layout"),
-			bind_group_layouts: &[camera.bind_group_layout()],
+			bind_group_layouts: &[camera.bind_group_layout(), &terrain_textures_bind_group_layout],
 			push_constant_ranges: &[],
 		});
 
@@ -36,19 +106,20 @@ impl Sector {
 				entry_point: "vertex",
 				buffers: &[
 					VertexBufferLayout {
-						array_stride: 24,
-						step_mode: VertexStepMode::Vertex,
+						array_stride: 20,
+						step_mode: Vertex,
 						attributes: &[
-							VertexAttribute { offset: 0, shader_location: 0, format: VertexFormat::Float32x3 },
-							VertexAttribute { offset: 12, shader_location: 1, format: VertexFormat::Float32x3 },
+							VertexAttribute { offset: 0, shader_location: 0, format: Float32x3 },
+							VertexAttribute { offset: 12, shader_location: 1, format: Uint8x4 },
+							VertexAttribute { offset: 16, shader_location: 2, format: Float32 },
 						],
 					},
 					VertexBufferLayout {
 						array_stride: 16,
-						step_mode: VertexStepMode::Instance,
+						step_mode: Instance,
 						attributes: &[
-							VertexAttribute { offset: 0, shader_location: 2, format: VertexFormat::Float32x3 },
-							VertexAttribute { offset: 12, shader_location: 3, format: VertexFormat::Float32 },
+							VertexAttribute { offset: 0, shader_location: 3, format: Float32x3 },
+							VertexAttribute { offset: 12, shader_location: 4, format: Float32 },
 						],
 					},
 				],
@@ -82,11 +153,12 @@ impl Sector {
 			multiview: None,
 		});
 
-		Self { voxjects: vec![], chunk_pipeline }
+		Self { voxjects: vec![], chunk_pipeline, terrain_textures_bind_group }
 	}
 
 	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
 		render_pass.set_pipeline(&self.chunk_pipeline);
+		render_pass.set_bind_group(1, &self.terrain_textures_bind_group, &[]);
 
 		self.voxjects
 			.iter()
@@ -285,7 +357,8 @@ impl Chunk {
 		densities: [f32; 17 * 17 * 17],
 		materials: [Material; 17 * 17 * 17],
 	) {
-		let mut vertices = vec![];
+		let mut vertex_count = 0;
+		let mut vertex_data = vec![];
 
 		for x in 0..16 {
 			for y in 0..16 {
@@ -335,34 +408,30 @@ impl Chunk {
 
 						let vertex = a + weight * (b - a);
 
-						let a_color = match materials[a_index] {
-							Material::Nothing => None,
-							Material::Corium => Some(Vector3::new(0.01, 0.01, 0.01)),
-							Material::Ground => Some(Vector3::new(0.5, 0.25, 0.1)),
-							Material::Stone => Some(Vector3::new(0.05, 0.05, 0.05)),
+						let a_material = if matches!(materials[a_index], Material::Nothing) {
+							materials[b_index]
+						} else {
+							materials[a_index]
 						};
-						let b_color = match materials[b_index] {
-							Material::Nothing => None,
-							Material::Corium => Some(Vector3::new(0.01, 0.01, 0.01)),
-							Material::Ground => Some(Vector3::new(0.5, 0.25, 0.1)),
-							Material::Stone => Some(Vector3::new(0.05, 0.05, 0.05)),
+						let b_material = if matches!(materials[b_index], Material::Nothing) {
+							materials[a_index]
+						} else {
+							materials[b_index]
 						};
 
-						let color = match (a_color, b_color) {
-							(None, None) => Vector3::new(1.00, 0.0, 1.0),
-							(Some(color), None) => color,
-							(None, Some(color)) => color,
-							(Some(a), Some(b)) => a + weight * (b - a),
-						};
-
-						vertices.push(Vector3::new(x as f32, y as f32, z as f32) + vertex);
-						vertices.push(color)
+						vertex_count += 1;
+						vertex_data.extend_from_slice(cast_slice(&[vector![x as f32, y as f32, z as f32] + vertex]));
+						vertex_data.push(a_material as u8 & 0x1);
+						vertex_data.push((a_material as u8 & 0x2) >> 1);
+						vertex_data.push(b_material as u8 & 0x1);
+						vertex_data.push((b_material as u8 & 0x2) >> 1);
+						vertex_data.extend_from_slice(cast_slice(&[weight]))
 					}
 				}
 			}
 		}
 
-		if vertices.is_empty() {
+		if vertex_count == 0 {
 			self.mesh = None;
 			return;
 		}
@@ -378,10 +447,10 @@ impl Chunk {
 		unsafe impl Pod for InstanceData {}
 
 		self.mesh = Some(ChunkMesh {
-			vertex_count: vertices.len() as u32 / 2,
+			vertex_count,
 			vertex_buffer: device.create_buffer_init(&BufferInitDescriptor {
 				label: Some("chunk.mesh.vertex_buffer"),
-				contents: cast_slice(&vertices),
+				contents: cast_slice(&vertex_data),
 				usage: BufferUsages::VERTEX,
 			}),
 			instance_buffer: device.create_buffer_init(&BufferInitDescriptor {

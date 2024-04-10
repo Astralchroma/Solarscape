@@ -21,3 +21,4 @@ tokio-util = "0.7"
 winit = "0.29"
 
 wgpu = { version = "0.19", default-features = false, features = ["wgsl"] }
+image = { version = "0.25", default-features = false, features = ["png", "rayon"] }
