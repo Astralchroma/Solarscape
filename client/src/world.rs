@@ -425,10 +425,10 @@ impl Chunk {
 								let a_density = densities[a_index];
 								let b_density = densities[b_index];
 
-								let weight = if (b_density - a_density).abs() > 1.0 {
-									(0.0 - a_density) / (b_density - a_density)
-								} else {
+								let weight = if a_density == b_density {
 									0.5
+								} else {
+									(0.0 - a_density) / (b_density - a_density)
 								};
 
 								let a = CORNERS[a_index];
