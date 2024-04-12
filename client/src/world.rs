@@ -450,8 +450,8 @@ impl Chunk {
 								VertexData {
 									position: vector![x as f32, y as f32, z as f32] + vertex,
 									normal: Vector3::default(),
-									material_a: vector![(a_material as u8 & 0xC) >> 2, a_material as u8 & 0x2],
-									material_b: vector![(b_material as u8 & 0xC) >> 2, b_material as u8 & 0x2],
+									material_a: vector![(a_material as u8 & 0xC) >> 2, a_material as u8 & 0x3],
+									material_b: vector![(b_material as u8 & 0xC) >> 2, b_material as u8 & 0x3],
 									weight,
 								}
 							})
