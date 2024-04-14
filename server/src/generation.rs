@@ -44,12 +44,12 @@ impl Generator {
 impl Chunk {
 	pub fn sphere(mut self, radius: f32, material_map: impl Fn(f32) -> Material) -> Self {
 		// temporary missing chunk so you can see the materials inside
-		if self.grid_coordinates.coordinates == zero::<Vector3<_>>() {
+		if self.coordinates.coordinates == zero::<Vector3<_>>() {
 			return self;
 		}
 
-		let level_radius = radius / f32::powi(2.0, self.grid_coordinates.level as i32);
-		let chunk_origin_level_coordinates = self.grid_coordinates.coordinates.cast() * 16.0;
+		let level_radius = radius / f32::powi(2.0, self.coordinates.level as i32);
+		let chunk_origin_level_coordinates = self.coordinates.coordinates.cast() * 16.0;
 
 		for x in 0..16 {
 			for y in 0..16 {

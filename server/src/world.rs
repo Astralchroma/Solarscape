@@ -1,10 +1,9 @@
 use crate::{connection::Connection, generation::sphere_generator, generation::Generator, player::Player};
 use log::{error, warn};
-use nalgebra::{Isometry3, Vector3};
+use nalgebra::Isometry3;
 use solarscape_shared::types::{ChunkData, GridCoordinates};
 use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
-use std::{array, cell::Cell, cell::RefCell, ops::Deref, ops::DerefMut, sync::Arc, thread};
+use std::{cell::Cell, cell::RefCell, ops::Deref, ops::DerefMut, sync::Arc, thread, time::Duration, time::Instant};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 
@@ -27,7 +26,7 @@ impl Sector {
 				completed_chunks: RefCell::new(completed_chunks),
 				completed_chunks_sender,
 				pending_chunk_locks: RefCell::new(HashMap::new()),
-				chunks: RefCell::new(array::from_fn(|_| HashMap::new())),
+				chunks: RefCell::new(HashMap::new()),
 			}]),
 		}
 	}
@@ -66,10 +65,8 @@ impl Sector {
 					for (voxject, levels) in player.loaded_chunks.take().iter().enumerate() {
 						let voxject = &self.voxjects[voxject];
 
-						for (level, chunks) in levels.iter().enumerate() {
-							for chunk in chunks {
-								voxject.release_chunk(&player_name, level, *chunk);
-							}
+						for coordinates in levels {
+							voxject.release_chunk(&player_name, coordinates);
 						}
 					}
 				}
@@ -109,7 +106,7 @@ pub struct Voxject {
 	completed_chunks_sender: Sender<Chunk>,
 	pending_chunk_locks: RefCell<HashMap<GridCoordinates, Vec<Arc<str>>>>,
 
-	chunks: RefCell<[HashMap<Vector3<i32>, Chunk>; 31]>,
+	chunks: RefCell<HashMap<GridCoordinates, Chunk>>,
 }
 
 impl Voxject {
@@ -127,7 +124,7 @@ impl Voxject {
 				Ok(chunk) => chunk,
 			};
 
-			if let Some(chunk_locks) = pending_chunk_locks.remove(&chunk.grid_coordinates) {
+			if let Some(chunk_locks) = pending_chunk_locks.remove(&chunk.coordinates) {
 				for player_name in chunk_locks {
 					if let Some(player) = sector_players.get(&player_name) {
 						player.on_lock_chunk(&chunk);
@@ -135,40 +132,40 @@ impl Voxject {
 					}
 				}
 
-				chunks[chunk.grid_coordinates.level as usize].insert(chunk.grid_coordinates.coordinates, chunk);
+				chunks.insert(chunk.coordinates, chunk);
 			}
 		}
 	}
 
-	pub fn lock_and_load_chunk(&self, sector: &Sector, player_name: &Arc<str>, grid_coordinates: GridCoordinates) {
+	pub fn lock_and_load_chunk(&self, sector: &Sector, player_name: &Arc<str>, coordinates: GridCoordinates) {
 		let mut pending_chunk_locks = self.pending_chunk_locks.borrow_mut();
 		let mut chunks = self.chunks.borrow_mut();
 
-		match pending_chunk_locks.get_mut(&grid_coordinates) {
+		match pending_chunk_locks.get_mut(&coordinates) {
 			Some(pending_chunk_lock) => pending_chunk_lock.push(player_name.clone()),
-			None => match chunks[grid_coordinates.level as usize].get_mut(&grid_coordinates.coordinates) {
+			None => match chunks.get_mut(&coordinates) {
 				Some(chunk) => {
 					let player = &sector.players.borrow()[player_name];
 					player.on_lock_chunk(chunk);
 					chunk.locks.insert(player_name.clone());
 				}
 				None => {
-					self.generator.generate(grid_coordinates, &self.completed_chunks_sender);
-					pending_chunk_locks.insert(grid_coordinates, vec![player_name.clone()]);
+					self.generator.generate(coordinates, &self.completed_chunks_sender);
+					pending_chunk_locks.insert(coordinates, vec![player_name.clone()]);
 				}
 			},
 		};
 	}
 
-	pub fn release_chunk(&self, player_name: &Arc<str>, level: usize, level_coordinates: Vector3<i32>) {
-		let level_chunks = &mut self.chunks.borrow_mut()[level];
-		if let Some(chunk) = level_chunks.get_mut(&level_coordinates) {
+	pub fn release_chunk(&self, player_name: &Arc<str>, coordinates: &GridCoordinates) {
+		let chunks = &mut self.chunks.borrow_mut();
+		if let Some(chunk) = chunks.get_mut(coordinates) {
 			if chunk.locks.contains(player_name) {
 				chunk.locks.remove(player_name);
 			}
 
 			if chunk.locks.is_empty() {
-				level_chunks.remove(&level_coordinates);
+				chunks.remove(coordinates);
 			}
 		}
 	}

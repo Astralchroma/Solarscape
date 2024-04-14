@@ -181,7 +181,7 @@ pub struct Voxject {
 // This code is admittedly absolutely fucking terrible, it just needs to work
 impl Voxject {
 	pub fn add_chunk(&mut self, device: &Device, chunk: Chunk) {
-		let grid_coordinates = chunk.grid_coordinates;
+		let grid_coordinates = chunk.coordinates;
 		self.chunks[grid_coordinates.level as usize].insert(grid_coordinates.coordinates, chunk);
 
 		// Rebuild any chunks that need this chunk
@@ -280,12 +280,11 @@ impl Voxject {
 			}
 		}
 
-		let upleveled_grid_coordinates = grid_coordinates.uplevel();
+		let upleveled_grid_coordinates = grid_coordinates.upleveled();
 
 		// Make sure we are rebuilt if any chunks we depend on are changed
 		for level_coordinates in dependency_grid_coordinates {
-			let dependency_grid_coordinates =
-				GridCoordinates { coordinates: level_coordinates, level: grid_coordinates.level };
+			let dependency_grid_coordinates = GridCoordinates::new(level_coordinates, grid_coordinates.level);
 			match self.dependent_chunks.get_mut(&dependency_grid_coordinates) {
 				None => {
 					self.dependent_chunks
@@ -301,7 +300,7 @@ impl Voxject {
 			// Now either add or remove our dependency on upleveled chunks
 			for level_coordinates in upleveled_dependency_grid_coordinates {
 				let upleveled_dependency_grid_coordinates =
-					GridCoordinates { coordinates: level_coordinates, level: upleveled_grid_coordinates.level };
+					GridCoordinates::new(level_coordinates, upleveled_grid_coordinates.level);
 				match self.dependent_chunks.get_mut(&upleveled_dependency_grid_coordinates) {
 					None if need_upleveled_chunks => {
 						self.dependent_chunks.insert(
@@ -496,8 +495,8 @@ impl Chunk {
 			instance_buffer: device.create_buffer_init(&BufferInitDescriptor {
 				label: Some("chunk.mesh.instance_buffer"),
 				contents: cast_slice(&[InstanceData {
-					position: self.grid_coordinates.coordinates.cast() * (16u64 << self.grid_coordinates.level) as f32,
-					scale: (self.grid_coordinates.level + 1) as f32,
+					position: self.coordinates.coordinates.cast() * (16u64 << self.coordinates.level) as f32,
+					scale: (self.coordinates.level + 1) as f32,
 				}]),
 				usage: BufferUsages::VERTEX,
 			}),
@@ -505,7 +504,7 @@ impl Chunk {
 	}
 
 	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
-		if self.grid_coordinates.level != 0 {
+		if self.coordinates.level != 0 {
 			return;
 		}
 

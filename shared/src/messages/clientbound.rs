@@ -23,7 +23,7 @@ pub struct SyncChunk {
 #[derive(Deserialize, Serialize)]
 pub struct RemoveChunk {
 	pub voxject: usize,
-	pub grid_coordinates: GridCoordinates,
+	pub coordinates: GridCoordinates,
 }
 
 #[derive(Deserialize, Serialize)]

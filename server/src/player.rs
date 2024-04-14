@@ -1,14 +1,14 @@
 use crate::{connection::Connection, connection::Event, world::Chunk, world::Sector};
-use nalgebra::{convert, convert_unchecked, Isometry3, Vector3};
+use nalgebra::{convert_unchecked, vector, Isometry3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, RemoveChunk, SyncChunk, SyncVoxject};
 use solarscape_shared::{messages::serverbound::ServerboundMessage, types::GridCoordinates};
-use std::{array, cell::Cell, cell::RefCell, collections::HashSet, iter::repeat, iter::zip, mem};
+use std::{cell::Cell, cell::RefCell, collections::HashSet, iter::repeat, iter::zip};
 
 pub struct Player {
 	connection: RefCell<Connection>,
 	location: Cell<Isometry3<f32>>,
 
-	pub loaded_chunks: RefCell<Box<[[HashSet<Vector3<i32>>; 31]]>>,
+	pub loaded_chunks: RefCell<Box<[HashSet<GridCoordinates>]>>,
 }
 
 impl Player {
@@ -21,11 +21,7 @@ impl Player {
 		Self {
 			connection: RefCell::new(connection),
 			location: Default::default(),
-			loaded_chunks: RefCell::new(
-				repeat(array::from_fn(|_| HashSet::new()))
-					.take(sector.voxjects().len())
-					.collect(),
-			),
+			loaded_chunks: RefCell::new(repeat(HashSet::new()).take(sector.voxjects().len()).collect()),
 		}
 	}
 
@@ -56,36 +52,26 @@ impl Player {
 						let old_chunk_list = self.loaded_chunks.replace(self.generate_chunk_list(sector));
 						let new_chunk_list = self.loaded_chunks.borrow();
 
-						for (voxject, (new_levels, old_levels)) in
+						for (voxject, (new_chunks, old_chunks)) in
 							zip(new_chunk_list.iter(), old_chunk_list.iter()).enumerate()
 						{
-							for (level, (new_chunks, old_chunks)) in
-								zip(new_levels.iter(), old_levels.iter()).enumerate()
-							{
-								let added_chunks = new_chunks.difference(old_chunks);
+							let added_chunks = new_chunks.difference(old_chunks);
 
-								for chunk in added_chunks {
-									sector.voxjects()[voxject].lock_and_load_chunk(
-										sector,
-										self.connection.borrow().name(),
-										GridCoordinates { coordinates: *chunk, level: level as u8 },
-									);
-								}
+							for coordinates in added_chunks {
+								sector.voxjects()[voxject].lock_and_load_chunk(
+									sector,
+									self.connection.borrow().name(),
+									*coordinates,
+								);
+							}
 
-								let removed_chunks = old_chunks.difference(new_chunks);
+							let removed_chunks = old_chunks.difference(new_chunks);
 
-								for chunk in removed_chunks {
-									sector.voxjects()[voxject].release_chunk(
-										self.connection.borrow().name(),
-										level,
-										*chunk,
-									);
-
-									self.connection.borrow().send(RemoveChunk {
-										voxject,
-										grid_coordinates: GridCoordinates { coordinates: *chunk, level: level as u8 },
-									})
-								}
+							for coordinates in removed_chunks {
+								sector.voxjects()[voxject].release_chunk(self.connection.borrow().name(), coordinates);
+								self.connection
+									.borrow()
+									.send(RemoveChunk { voxject, coordinates: *coordinates })
 							}
 						}
 					}
@@ -94,49 +80,46 @@ impl Player {
 		}
 	}
 
-	pub fn generate_chunk_list(&self, sector: &Sector) -> Box<[[HashSet<Vector3<i32>>; 31]]> {
-		let mut chunk_list = vec![];
+	pub fn generate_chunk_list(&self, sector: &Sector) -> Box<[HashSet<GridCoordinates>]> {
+		let mut chunk_list: Box<_> = repeat(HashSet::new()).take(sector.voxjects().len()).collect();
 
-		for voxject in sector.voxjects().iter() {
-			let mut voxject_chunk_list = array::from_fn(|_| HashSet::new());
-
+		for (voxject, voxject_chunks) in sector.voxjects().iter().zip(chunk_list.iter_mut()) {
 			// These values are local to the level they are on. So a 0.5, 0.5, 0.5 player position on level 0 means in
 			// chunk 0, 0, 0 on the next level that becomes 0.25, 0.25, 0.25 in chunk 0, 0, 0.
-			let mut p_pos = voxject
+			let mut player_position = voxject
 				.location
 				.get()
 				.inverse_transform_vector(&self.location.get().translation.vector)
 				/ 16.0;
-			let mut p_chunk: Vector3<i32> = convert_unchecked(p_pos);
-			let mut chunks: HashSet<Vector3<i32>> = HashSet::new();
-			let mut next_chunks = HashSet::new();
+			let mut player_chunk = GridCoordinates::new(convert_unchecked(player_position), 0);
+			let mut chunks = HashSet::<GridCoordinates>::new();
+			let mut upleveled_chunks = HashSet::new();
 
-			for level in 0..31 {
-				let l_radius = ((level + 1) * 2) >> level;
+			for level in 0..31u8 {
+				let radius = ((level as i32 + 1) * 2) >> level;
 
 				for chunk in &chunks {
-					next_chunks.insert(chunk.map(|value| value >> 1));
+					upleveled_chunks.insert(chunk.upleveled());
 				}
 
-				for c_x in p_chunk.x - l_radius..=p_chunk.x + l_radius {
-					for c_y in p_chunk.y - l_radius..=p_chunk.y + l_radius {
-						for c_z in p_chunk.z - l_radius..=p_chunk.z + l_radius {
-							let c_chunk = Vector3::new(c_x, c_y, c_z);
+				for x in player_chunk.coordinates.x - radius..=player_chunk.coordinates.x + radius {
+					for y in player_chunk.coordinates.y - radius..=player_chunk.coordinates.y + radius {
+						for z in player_chunk.coordinates.z - radius..=player_chunk.coordinates.z + radius {
+							let chunk = GridCoordinates::new(vector![x, y, z], level);
 
 							// circles look nicer
-							let c_center = convert::<_, Vector3<f32>>(c_chunk) + Vector3::repeat(0.5);
-
-							if p_chunk != c_chunk && p_pos.metric_distance(&c_center) as i32 > l_radius {
+							let chunk_center = vector![x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5];
+							if player_chunk != chunk && player_position.metric_distance(&chunk_center) as i32 > radius {
 								continue;
 							}
 
-							next_chunks.insert(c_chunk.map(|value| value >> 1));
+							upleveled_chunks.insert(chunk.upleveled());
 						}
 					}
 				}
 
-				for upleveled_chunk in &next_chunks {
-					let chunk = upleveled_chunk.map(|value| value << 1);
+				for upleveled_chunk in &upleveled_chunks {
+					let chunk = upleveled_chunk.downleveled();
 					chunks.insert(chunk + Vector3::new(0, 0, 0));
 					chunks.insert(chunk + Vector3::new(0, 0, 1));
 					chunks.insert(chunk + Vector3::new(0, 1, 0));
@@ -147,16 +130,15 @@ impl Player {
 					chunks.insert(chunk + Vector3::new(1, 1, 1));
 				}
 
-				p_pos /= 2.0;
-				p_chunk.apply(|value| *value >>= 1);
+				player_position /= 2.0;
+				player_chunk = player_chunk.upleveled();
 
-				mem::swap(&mut chunks, &mut next_chunks);
-				mem::swap(&mut next_chunks, &mut voxject_chunk_list[level as usize]);
+				voxject_chunks.extend(chunks);
+				chunks = upleveled_chunks;
+				upleveled_chunks = HashSet::new();
 			}
-
-			chunk_list.push(voxject_chunk_list);
 		}
 
-		chunk_list.into_boxed_slice()
+		chunk_list
 	}
 }

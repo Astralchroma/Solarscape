@@ -216,7 +216,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 					let voxject = &mut sector.voxjects[voxject];
 					voxject.add_chunk(&device, chunk);
 				}
-				ClientboundMessage::RemoveChunk(RemoveChunk { voxject, grid_coordinates }) => {
+				ClientboundMessage::RemoveChunk(RemoveChunk { voxject, coordinates: grid_coordinates }) => {
 					let voxject = &mut sector.voxjects[voxject];
 					voxject.remove_chunk(&device, grid_coordinates);
 				}
