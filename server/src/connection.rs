@@ -4,10 +4,10 @@
 
 use crate::Sectors;
 use axum::extract::ws::{close_code, CloseFrame, Message as Frame, WebSocket};
-use axum::extract::{Path, State, WebSocketUpgrade};
+use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::{http::StatusCode, response::IntoResponse, response::Response};
 use log::{error, info, warn};
-use rand::distributions::{Alphanumeric, DistString};
+use serde::Deserialize;
 use solarscape_shared::messages::{clientbound::ClientboundMessage, serverbound::ServerboundMessage};
 use std::{borrow::Cow, sync::atomic::AtomicU64, sync::atomic::Ordering::Relaxed, sync::Arc, time::Duration};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
@@ -27,6 +27,11 @@ pub struct Connection {
 	outgoing: Sender<ClientboundMessage>,
 
 	incoming: Receiver<Event>,
+}
+
+#[derive(Deserialize)]
+pub struct UsernameQuery {
+	username: Arc<str>,
 }
 
 impl Connection {
@@ -53,13 +58,23 @@ impl Connection {
 		)
 	}
 
-	#[must_use]
 	pub async fn await_connections(
 		State(sectors): State<Sectors>,
 		Path(sector): Path<String>,
+		Query(UsernameQuery { username }): Query<UsernameQuery>,
 		socket: WebSocketUpgrade,
 	) -> Response {
-		let name: Arc<str> = Arc::from(Alphanumeric.sample_string(&mut rand::thread_rng(), 16));
+		// These username checks are pretty simple check to implement, no need to pull in an entire regex library for it
+		if username.len() < 3 || username.len() > 32 {
+			return (StatusCode::BAD_REQUEST, "Username must match `[-.\\w]{3,32}`").into_response();
+		}
+		for character in username.chars() {
+			match character {
+				'-' | '.' | '0'..='9' | 'A'..='Z' | '_' | 'a'..='z' => continue,
+				_ => return (StatusCode::BAD_REQUEST, "Username must match `[-.\\w]{3,32}`").into_response(),
+			}
+		}
+
 		sectors.get(&sector).map_or_else(
 			|| StatusCode::NOT_FOUND.into_response(),
 			|sector_handle| {
@@ -71,7 +86,7 @@ impl Connection {
 					let (incoming_send, incoming_recv) = channel();
 
 					let connection = Self {
-						name: name.clone(),
+						name: username.clone(),
 						close: close_send,
 						latency: latency.clone(),
 						outgoing: outgoing_send,
@@ -82,7 +97,7 @@ impl Connection {
 						return;
 					}
 
-					Self::connection_handler(name, socket, close_recv, latency, outgoing_recv, incoming_send).await;
+					Self::connection_handler(username, socket, close_recv, latency, outgoing_recv, incoming_send).await;
 				})
 			},
 		)

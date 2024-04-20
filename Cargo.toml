@@ -16,6 +16,7 @@ nalgebra = "0.32"
 thiserror = "1"
 
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "sync"] }
 
 [profile.dev.package."*"]

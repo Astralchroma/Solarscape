@@ -39,6 +39,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 	info!("Command Line: {:?}", env::args().collect::<Vec<_>>().join(" "));
 	info!("Working Directory: {:?}", env::current_dir()?);
 
+	let username = env::args().nth(1).expect("username").into_boxed_str();
+
+	info!("Setting username to {username:?}");
+
 	let runtime = Builder::new_multi_thread()
 		.thread_name("io-worker")
 		.worker_threads(1)
@@ -51,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let event_loop = EventLoopBuilder::with_user_event().build()?;
 
 	let connection_task = runtime.spawn(Connection::new(
-		"ws://localhost:8000/example",
+		format!("ws://localhost:8000/example?username={username}"),
 		event_loop.create_proxy(),
 	));
 

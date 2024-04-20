@@ -6,9 +6,8 @@ edition.workspace = true
 [dependencies]
 chrono.workspace = true
 log.workspace = true
+serde.workspace = true
 
 nalgebra = { workspace = true, features = ["serde-serialize"] }
 
 serde_with = "3"
-
-serde = { version = "1", features = ["derive"] }
