@@ -1,26 +1,33 @@
-use crate::{connection::Connection, generation::sphere_generator, generation::Generator, player::Player};
+use crate::{generation::sphere_generator, generation::Generator, player::ConnectingPlayer, player::Player};
 use log::{error, warn};
 use nalgebra::Isometry3;
-use solarscape_shared::types::{ChunkData, GridCoordinates};
+use solarscape_shared::{messages::clientbound::SyncChunk, types::ChunkData, types::GridCoordinates};
 use std::collections::{HashMap, HashSet};
 use std::{cell::Cell, cell::RefCell, ops::Deref, ops::DerefMut, sync::Arc, thread, time::Duration, time::Instant};
+use thiserror::Error;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 
 pub struct Sector {
 	voxjects: Box<[Voxject]>,
 	players: RefCell<HashMap<Arc<str>, Player>>,
+
+	connecting_players: Receiver<ConnectingPlayer>,
 }
 
 impl Sector {
+	pub const fn voxjects(&self) -> &[Voxject] {
+		&self.voxjects
+	}
+
 	#[must_use]
-	pub fn load() -> Self {
+	pub fn load(connecting_players: Receiver<ConnectingPlayer>) -> Self {
 		let (completed_chunks_sender, completed_chunks) = channel();
 
 		Self {
 			players: RefCell::new(HashMap::new()),
 			voxjects: Box::new([Voxject {
-				name: Box::from("example_voxject"),
+				_name: Box::from("example_voxject"),
 				location: Cell::new(Isometry3::default()),
 				generator: Generator::new(&sphere_generator),
 				completed_chunks: RefCell::new(completed_chunks),
@@ -28,53 +35,21 @@ impl Sector {
 				pending_chunk_locks: RefCell::new(HashMap::new()),
 				chunks: RefCell::new(HashMap::new()),
 			}]),
+
+			connecting_players,
 		}
 	}
 
-	pub fn run(self, mut incoming_connections: Receiver<Connection>) {
+	pub fn run(mut self) {
 		let target_tick_time = Duration::from_secs(1) / 30;
 
 		loop {
 			let tick_start = Instant::now();
 
-			// Accept one connection, any other connections will simply be handled on the next tick
-			match incoming_connections.try_recv() {
-				Ok(connection) => {
-					let name = connection.name().clone();
-					self.players
-						.borrow_mut()
-						.insert(name, Player::accept(connection, &self));
-				}
-				Err(TryRecvError::Disconnected) => {
-					error!("Connection Channel was dropped!");
-					return self.stop();
-				}
-				_ => {}
-			}
-
-			// Process all players
-			let mut disconnected_players = HashSet::new();
-			for (player_name, player) in self.players.borrow().iter() {
-				if player.process_player(&self) {
-					disconnected_players.insert(player_name.clone());
-				}
-			}
-
-			for player_name in disconnected_players {
-				if let Some(player) = self.players.borrow_mut().remove(&player_name) {
-					for (voxject, levels) in player.loaded_chunks.take().iter().enumerate() {
-						let voxject = &self.voxjects[voxject];
-
-						for coordinates in levels {
-							voxject.release_chunk(&player_name, coordinates);
-						}
-					}
-				}
-			}
-
-			// Tick Voxjects
-			for voxject in self.voxjects.iter() {
-				voxject.tick(&self)
+			if let Err(error) = self.tick() {
+				error!("Fatal error occurred while ticking sector, stopping.\n{error}");
+				self.stop();
+				break;
 			}
 
 			let tick_end = Instant::now();
@@ -87,17 +62,68 @@ impl Sector {
 		}
 	}
 
+	fn tick(&mut self) -> Result<(), SectorTickError> {
+		{
+			let mut players = self.players.borrow_mut();
+
+			// Remove disconnected players
+			let disconnected_players = players
+				.iter()
+				.filter(|(_, player)| player.is_disconnected())
+				.map(|(name, _)| name.clone())
+				.collect::<Vec<_>>();
+
+			for player_name in disconnected_players {
+				if let Some(player) = players.remove(&player_name) {
+					for (voxject, levels) in player.loaded_chunks.take().iter().enumerate() {
+						let voxject = &self.voxjects[voxject];
+
+						for coordinates in levels {
+							voxject.release_chunk(&player_name, coordinates);
+						}
+					}
+				}
+			}
+		}
+
+		// Handle connecting players
+		loop {
+			match self.connecting_players.try_recv() {
+				Err(TryRecvError::Empty) => break,
+				Err(TryRecvError::Disconnected) => return Err(SectorTickError::Dropped),
+				Ok(connecting_player) => {
+					let player = Player::accept(connecting_player);
+					self.players.borrow_mut().insert(player.name().clone(), player);
+				}
+			}
+		}
+
+		// Process all players
+		for player in self.players.borrow().values() {
+			player.process_player(self)
+		}
+
+		// Tick Voxjects
+		for voxject in self.voxjects.iter() {
+			voxject.tick(self)
+		}
+
+		Ok(())
+	}
+
 	fn stop(self) {
 		drop(self);
 	}
+}
 
-	pub const fn voxjects(&self) -> &[Voxject] {
-		&self.voxjects
-	}
+#[derive(Debug, Error)]
+enum SectorTickError {
+	#[error("sector handle was dropped")]
+	Dropped,
 }
 
 pub struct Voxject {
-	name: Box<str>,
+	_name: Box<str>,
 	pub location: Cell<Isometry3<f32>>,
 
 	generator: Generator,
@@ -110,6 +136,11 @@ pub struct Voxject {
 }
 
 impl Voxject {
+	#[must_use]
+	pub const fn _name(&self) -> &str {
+		&self._name
+	}
+
 	fn tick(&self, sector: &Sector) {
 		// Handle completed chunks
 		let mut completed_chunks = self.completed_chunks.borrow_mut();
@@ -127,7 +158,7 @@ impl Voxject {
 			if let Some(chunk_locks) = pending_chunk_locks.remove(&chunk.coordinates) {
 				for player_name in chunk_locks {
 					if let Some(player) = sector_players.get(&player_name) {
-						player.on_lock_chunk(&chunk);
+						player.send(SyncChunk { voxject: 0, data: chunk.data.clone() });
 						chunk.locks.insert(player_name.clone());
 					}
 				}
@@ -146,7 +177,7 @@ impl Voxject {
 			None => match chunks.get_mut(&coordinates) {
 				Some(chunk) => {
 					let player = &sector.players.borrow()[player_name];
-					player.on_lock_chunk(chunk);
+					player.send(SyncChunk { voxject: 0, data: chunk.data.clone() });
 					chunk.locks.insert(player_name.clone());
 				}
 				None => {
@@ -168,11 +199,6 @@ impl Voxject {
 				chunks.remove(coordinates);
 			}
 		}
-	}
-
-	#[must_use]
-	pub const fn name(&self) -> &str {
-		&self.name
 	}
 }
 

@@ -1,18 +1,17 @@
 #![warn(clippy::nursery)]
 
-mod connection;
 mod generation;
 mod player;
 mod world;
 
-use crate::{connection::Connection, world::Sector};
+use crate::{player::ConnectingPlayer, player::Player, world::Sector};
 use axum::{http::StatusCode, routing::get};
 use log::{info, warn, LevelFilter::Trace};
-use std::{env, fs, io, sync::Arc, sync::Barrier, thread, time::Instant};
+use std::{env, fs, io, net::SocketAddr, sync::Arc, sync::Barrier, thread, time::Instant};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedSender as Sender};
 use tokio::{net::TcpListener, runtime::Builder};
 
-type Sectors = Arc<dashmap::DashMap<String, Sender<Connection>>>;
+type Sectors = Arc<dashmap::DashMap<String, Sender<ConnectingPlayer>>>;
 
 fn main() -> io::Result<()> {
 	let start_time = Instant::now();
@@ -42,12 +41,14 @@ fn main() -> io::Result<()> {
 	info!("Server Name: {server_name:?}");
 	info!("Static Sectors: {static_sectors:?}");
 
-	let runtime = Builder::new_multi_thread()
-		.thread_name("io-worker")
-		.worker_threads(1)
-		.enable_io()
-		.enable_time()
-		.build()?;
+	let runtime = Arc::new(
+		Builder::new_multi_thread()
+			.thread_name("io-worker")
+			.worker_threads(1)
+			.enable_io()
+			.enable_time()
+			.build()?,
+	);
 
 	info!("Started Async Runtime with 1 worker thread");
 	info!("Loading sectors");
@@ -60,10 +61,13 @@ fn main() -> io::Result<()> {
 		sectors.insert(sector_name.clone(), send);
 
 		let barrier = barrier.clone();
+		let runtime = runtime.clone();
 		thread::Builder::new().name(sector_name.clone()).spawn(move || {
+			let _guard = runtime.enter();
+
 			let start_time = Instant::now();
 
-			let sector = Sector::load();
+			let sector = Sector::load(receiver);
 
 			let end_time = Instant::now();
 			let load_time = end_time - start_time;
@@ -71,14 +75,14 @@ fn main() -> io::Result<()> {
 
 			barrier.wait();
 
-			sector.run(receiver);
+			sector.run();
 		})?;
 	}
 
 	barrier.wait();
 
 	let router = axum::Router::new()
-		.route("/:sector", get(Connection::await_connections))
+		.route("/:sector", get(Player::connect))
 		.fallback(|| async { StatusCode::NOT_FOUND })
 		.with_state(sectors);
 
@@ -89,7 +93,7 @@ fn main() -> io::Result<()> {
 	runtime.block_on(async {
 		let listener = TcpListener::bind("[::]:8000").await?;
 
-		axum::serve(listener, router).await?;
+		axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await?;
 		Ok::<(), io::Error>(())
 	})
 }

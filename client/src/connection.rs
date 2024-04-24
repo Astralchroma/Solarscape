@@ -1,14 +1,10 @@
-//! Largely the same as the server Connection, except specific to the client, like using `tokio-tungstenite`'s
-//! `WebSocket`s, and handling events through the `winit` `EventLoop`. If you make a change here, check if that change
-//! is needed on the server.
-
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use solarscape_shared::messages::{clientbound::ClientboundMessage, serverbound::ServerboundMessage};
-use std::{borrow::Cow, sync::atomic::AtomicU64, sync::atomic::Ordering::Relaxed, sync::Arc, time::Duration};
+use std::{borrow::Cow, sync::Arc, time::Duration};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tokio::sync::oneshot::{channel as oneshot, Receiver as OneshotReceiver, Sender as OneshotSender};
-use tokio::{net::TcpStream, pin, select, time::interval, time::Instant};
+use tokio::{net::TcpStream, pin, select, sync::RwLock, time::interval, time::Instant};
 use tokio_tungstenite::{connect_async, tungstenite, MaybeTlsStream, WebSocketStream};
 use tungstenite::protocol::{frame::coding::CloseCode, CloseFrame};
 use tungstenite::{client::IntoClientRequest, Message as Frame};
@@ -17,24 +13,19 @@ use winit::event_loop::EventLoopProxy;
 type WebSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 pub struct Connection {
-	close: OneshotSender<Option<CloseFrame<'static>>>,
-
-	// Not a Arc<RwLock<Duration>> because std::sync::RwLock sucks and I don't want to use tokio::Sync::RwLock because
-	// then I need separate async and sync functions, also doesn't really need to be a u64, however the
-	// std::time::Duration uses u64 for millis and I don't want to spam `as u64` everywhere.
-	latency: Arc<AtomicU64>,
-
+	latency: Arc<RwLock<Duration>>,
+	disconnect: OneshotSender<Option<CloseFrame<'static>>>,
 	outgoing: Sender<ServerboundMessage>,
 }
 
 impl Connection {
-	pub fn close(self, reason: Option<CloseFrame<'static>>) {
-		let _ = self.close.send(reason);
-	}
-
 	#[must_use]
 	pub fn latency(&self) -> Duration {
-		Duration::from_millis(self.latency.load(Relaxed))
+		*self.latency.blocking_read()
+	}
+
+	pub fn disconnect(self, reason: Option<CloseFrame<'static>>) {
+		let _ = self.disconnect.send(reason);
 	}
 
 	pub fn send(&self, message: impl Into<ServerboundMessage>) {
@@ -46,38 +37,38 @@ impl Connection {
 		incoming: EventLoopProxy<Event>,
 	) -> Result<Self, tungstenite::Error> {
 		let request = request.into_client_request()?;
-		let name = request.uri().to_string();
+		let name = Arc::from(request.uri().to_string());
 		let (socket, _) = connect_async(request).await?;
 
-		let latency = Arc::new(AtomicU64::default());
-		let (close_send, close_recv) = oneshot();
-		let (outgoing_send, outgoing_recv) = channel();
+		let latency: Arc<RwLock<_>> = Default::default();
+		let (disconnect, handler_disconnect) = oneshot();
+		let (outgoing, handler_outgoing) = channel();
 
-		let connection = Self { close: close_send, latency: latency.clone(), outgoing: outgoing_send };
+		let connection = Self { disconnect, latency: latency.clone(), outgoing };
 
-		tokio::spawn(Self::connection_handler(
+		tokio::spawn(Self::manage_connection_handler(
 			name,
-			socket,
-			close_recv,
 			latency,
-			outgoing_recv,
+			handler_disconnect,
 			incoming,
+			handler_outgoing,
+			socket,
 		));
 
 		Ok(connection)
 	}
 
-	async fn connection_handler(
-		name: String,
-		mut socket: WebSocket,
+	async fn manage_connection_handler(
+		name: Arc<str>,
+		latency: Arc<RwLock<Duration>>,
 		disconnect: OneshotReceiver<Option<CloseFrame<'static>>>,
-		latency: Arc<AtomicU64>,
-		outgoing: Receiver<ServerboundMessage>,
 		incoming: EventLoopProxy<Event>,
+		outgoing: Receiver<ServerboundMessage>,
+		mut socket: WebSocket,
 	) {
 		info!("Connected to {name:?}");
 
-		let reason = Self::connection(&mut socket, disconnect, latency, outgoing, incoming)
+		let reason = Self::connection_handler(latency, disconnect, incoming, outgoing, &mut socket)
 			.await
 			.unwrap_or_else(|error| match error {
 				Error::Dropped => {
@@ -87,7 +78,7 @@ impl Connection {
 						reason: Cow::Borrowed("Internal Error"),
 					}))
 				}
-				Error::InvalidData => Closed::Client(Some(CloseFrame {
+				Error::Invalid => Closed::Client(Some(CloseFrame {
 					code: CloseCode::Invalid,
 					reason: Cow::Borrowed("Invalid Data"),
 				})),
@@ -123,12 +114,12 @@ impl Connection {
 		};
 	}
 
-	async fn connection(
-		socket: &mut WebSocket,
+	async fn connection_handler(
+		latency: Arc<RwLock<Duration>>,
 		mut disconnect: OneshotReceiver<Option<CloseFrame<'static>>>,
-		latency: Arc<AtomicU64>,
-		mut outgoing: Receiver<ServerboundMessage>,
 		incoming: EventLoopProxy<Event>,
+		mut outgoing: Receiver<ServerboundMessage>,
+		socket: &mut WebSocket,
 	) -> Result<Closed, Error> {
 		let mut last_pings: [Duration; 12] = [Duration::default(); 12];
 		let mut pending_pong: Option<([u8; 32], Instant)> = None;
@@ -154,10 +145,8 @@ impl Connection {
 				}
 				message = outgoing.recv() => {
 					let message = message.ok_or(Error::Dropped)?;
-					socket.send(Frame::Binary(
-						bincode::serialize(&message)
-							.map_err(|error| Error::Unknown(error.into()))?
-					)).await?;
+					let bytes = bincode::serialize(&message).map_err(|error| Error::Unknown(error.into()))?;
+					socket.send(Frame::Binary(bytes)).await?;
 				}
 				message = socket.next() => {
 					let message = match message {
@@ -166,32 +155,27 @@ impl Connection {
 					};
 
 					match message? {
-						Frame::Text(_) => return Err(Error::InvalidData),
+						Frame::Text(_) => return Err(Error::Invalid),
 						Frame::Binary(data) => {
-							incoming.send_event(Event::Message(
-								bincode::deserialize(&data).map_err(|_| Error::InvalidData)?
-							)).map_err(|_| Error::Dropped)?;
+							let message = bincode::deserialize(&data).map_err(|_| Error::Invalid)?;
+							incoming.send_event(Event::Message(message)).map_err(|_| Error::Dropped)?;
 						},
 						Frame::Ping(data) => socket.send(Frame::Pong(data)).await?,
 						Frame::Pong(pong) => {
 							match pending_pong {
-								None => return Err(Error::InvalidData),
+								None => return Err(Error::Invalid),
 								Some((expected_pong, time)) => {
 									if pong != expected_pong {
-										return Err(Error::InvalidData);
+										return Err(Error::Invalid);
 									}
 
 									let round_trip_time = Instant::now() - time;
 									last_pings.copy_within(1.., 0);
 									last_pings[11] = round_trip_time;
 
-									latency.store(
-										(last_pings.iter().fold(
-											Duration::ZERO,
-											|total, ping| total + *ping) / 12
-										).as_millis() as u64,
-										Relaxed
-									);
+									*latency.write().await = last_pings.iter()
+										.fold(Duration::ZERO, |total, ping| total + *ping)
+										/ 12;
 
 									pending_pong = None;
 								}
@@ -213,7 +197,7 @@ enum Closed {
 
 pub enum Error {
 	Dropped,
-	InvalidData,
+	Invalid,
 	TimedOut,
 	Unknown(anyhow::Error),
 }
