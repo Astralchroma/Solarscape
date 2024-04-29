@@ -8,13 +8,13 @@ use wgpu::{
 	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, BindGroup, BindGroupDescriptor, BindGroupEntry,
 	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferUsages,
 	ColorTargetState, ColorWrites, CompareFunction::GreaterEqual, DepthStencilState, Device, Extent3d, Face::Back,
-	FragmentState, FrontFace, ImageCopyTexture, ImageDataLayout, MultisampleState, Origin3d, PipelineLayoutDescriptor,
-	PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor,
-	SamplerBindingType::NonFiltering, SamplerDescriptor, ShaderStages, SurfaceConfiguration, TextureAspect::All,
-	TextureDescriptor, TextureDimension, TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb, TextureSampleType,
-	TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout,
-	VertexFormat::Float32, VertexFormat::Float32x3, VertexFormat::Uint8x2, VertexState, VertexStepMode::Instance,
-	VertexStepMode::Vertex,
+	FragmentState, FrontFace, ImageCopyTexture, ImageDataLayout, MultisampleState, Origin3d,
+	PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, Queue,
+	RenderPass, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType::NonFiltering, SamplerDescriptor,
+	ShaderStages, SurfaceConfiguration, TextureAspect::All, TextureDescriptor, TextureDimension,
+	TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb, TextureSampleType, TextureUsages,
+	TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat::Float32,
+	VertexFormat::Float32x3, VertexFormat::Uint8x2, VertexState, VertexStepMode::Instance, VertexStepMode::Vertex,
 };
 
 pub struct Sector {
@@ -104,6 +104,7 @@ impl Sector {
 			vertex: VertexState {
 				module: &chunk_shader,
 				entry_point: "vertex",
+				compilation_options: PipelineCompilationOptions::default(),
 				buffers: &[
 					VertexBufferLayout {
 						array_stride: 32,
@@ -146,6 +147,7 @@ impl Sector {
 			fragment: Some(FragmentState {
 				module: &chunk_shader,
 				entry_point: "fragment",
+				compilation_options: PipelineCompilationOptions::default(),
 				targets: &[Some(ColorTargetState {
 					format: config.format,
 					blend: Some(BlendState::REPLACE),
