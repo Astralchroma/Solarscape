@@ -20,7 +20,7 @@ use wgpu::{
 };
 use winit::event::WindowEvent::{CloseRequested, Destroyed, RedrawRequested, Resized};
 use winit::event::{Event::AboutToWait, Event::UserEvent, Event::WindowEvent};
-use winit::{dpi::PhysicalSize, event_loop::EventLoopBuilder, window::WindowBuilder};
+use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::Window};
 
 mod camera;
 mod connection;
@@ -52,19 +52,20 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	info!("Started Async Runtime with 1 worker thread");
 
-	let event_loop = EventLoopBuilder::with_user_event().build()?;
+	let event_loop = EventLoop::with_user_event().build()?;
 
 	let connection_task = runtime.spawn(Connection::new(
 		format!("ws://localhost:8000/example?name={name}"),
 		event_loop.create_proxy(),
 	));
 
-	let window = WindowBuilder::new()
-		.with_active(true)
-		.with_inner_size(PhysicalSize::new(1280, 720))
-		.with_maximized(true)
-		.with_title("Solarscape")
-		.build(&event_loop)?;
+	let window = event_loop.create_window(
+		Window::default_attributes()
+			.with_active(true)
+			.with_inner_size(PhysicalSize::new(1280, 720))
+			.with_maximized(true)
+			.with_title("Solarscape"),
+	)?;
 
 	let instance = Instance::new(InstanceDescriptor {
 		backends: Backends::VULKAN | Backends::GL,
