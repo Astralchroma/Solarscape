@@ -18,4 +18,4 @@ dashmap = "5"
 rand = "0.8"
 rayon = "1"
 
-axum = { version = "0.7", default-features = false, features = ["http1", "http2", "query", "tokio", "ws"] }
+axum = { version = "0.7.5", default-features = false, features = ["http1", "http2", "query", "tokio", "ws"] }
