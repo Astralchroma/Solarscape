@@ -9,7 +9,7 @@ version = "0.0.0"
 [workspace.dependencies]
 solarscape-shared = { path = "shared" }
 
-anyhow = "1"
+anyhow = "1.0.82"
 bincode = "1"
 log = "0.4"
 nalgebra = "0.32"
