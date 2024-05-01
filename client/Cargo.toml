@@ -14,7 +14,7 @@ tokio.workspace = true
 nalgebra = { workspace = true, features = ["bytemuck"] }
 
 bytemuck = "1"
-futures-util = "0.3"
+futures-util = "0.3.30"
 rand = "0.8"
 tokio-tungstenite = "0.21"
 tokio-util = "0.7"
