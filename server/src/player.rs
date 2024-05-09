@@ -5,7 +5,7 @@ use axum::{http::StatusCode, response::IntoResponse, response::Response};
 use log::{error, info, warn};
 use nalgebra::{convert_unchecked, vector, Isometry3, Vector3};
 use serde::Deserialize;
-use solarscape_shared::messages::clientbound::{ClientboundMessage, RemoveChunk};
+use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, RemoveChunk, SyncVoxject};
 use solarscape_shared::{messages::serverbound::ServerboundMessage, types::GridCoordinates};
 use std::cell::{Cell, OnceCell, RefCell};
 use std::{borrow::Cow, collections::HashSet, iter::repeat, iter::zip, net::SocketAddr, sync::Arc};
@@ -96,7 +96,7 @@ impl Player {
 		)
 	}
 
-	pub fn accept(connecting_player: ConnectingPlayer) -> Self {
+	pub fn accept(sector: &Sector, connecting_player: ConnectingPlayer) -> Self {
 		let ConnectingPlayer { name, socket } = connecting_player;
 
 		let latency: Arc<RwLock<_>> = Default::default();
@@ -113,15 +113,22 @@ impl Player {
 			socket,
 		));
 
-		Self {
+		let connection = Self {
 			name,
 			location: Default::default(),
-			loaded_chunks: Default::default(),
+			loaded_chunks: RefCell::new(repeat(HashSet::new()).take(sector.voxjects().len()).collect()),
 			_latency: latency,
 			disconnect: OnceCell::from(disconnect),
 			incoming: RefCell::new(incoming),
 			outgoing,
+		};
+
+		for (voxject_index, voxject) in sector.voxjects().iter().enumerate() {
+			connection.send(AddVoxject { voxject: voxject_index, name: voxject.name().into() });
+			connection.send(SyncVoxject { voxject: voxject_index, location: voxject.location.get() });
 		}
+
+		connection
 	}
 
 	async fn manage_connection_handler(

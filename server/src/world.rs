@@ -27,7 +27,7 @@ impl Sector {
 		Self {
 			players: RefCell::new(HashMap::new()),
 			voxjects: Box::new([Voxject {
-				_name: Box::from("example_voxject"),
+				name: Box::from("example_voxject"),
 				location: Cell::new(Isometry3::default()),
 				generator: Generator::new(&sphere_generator),
 				completed_chunks: RefCell::new(completed_chunks),
@@ -92,7 +92,7 @@ impl Sector {
 				Err(TryRecvError::Empty) => break,
 				Err(TryRecvError::Disconnected) => return Err(SectorTickError::Dropped),
 				Ok(connecting_player) => {
-					let player = Player::accept(connecting_player);
+					let player = Player::accept(&self, connecting_player);
 					self.players.borrow_mut().insert(player.name().clone(), player);
 				}
 			}
@@ -123,7 +123,7 @@ enum SectorTickError {
 }
 
 pub struct Voxject {
-	_name: Box<str>,
+	name: Box<str>,
 	pub location: Cell<Isometry3<f32>>,
 
 	generator: Generator,
@@ -137,14 +137,14 @@ pub struct Voxject {
 
 impl Voxject {
 	#[must_use]
-	pub const fn _name(&self) -> &str {
-		&self._name
+	pub const fn name(&self) -> &str {
+		&self.name
 	}
 
 	fn tick(&self, sector: &Sector) {
 		let pending_chunks = self.pending_chunk_locks.borrow().len();
 		if pending_chunks != 0 {
-			info!("{} has {pending_chunks} pending chunks", self._name,);
+			info!("{} has {pending_chunks} pending chunks", self.name);
 		}
 
 		// Handle completed chunks
