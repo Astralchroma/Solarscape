@@ -1,5 +1,5 @@
 use crate::{generation::sphere_generator, generation::Generator, player::ConnectingPlayer, player::Player};
-use log::{error, warn};
+use log::{error, info, warn};
 use nalgebra::Isometry3;
 use solarscape_shared::{messages::clientbound::SyncChunk, types::ChunkData, types::GridCoordinates};
 use std::collections::{HashMap, HashSet};
@@ -142,6 +142,11 @@ impl Voxject {
 	}
 
 	fn tick(&self, sector: &Sector) {
+		let pending_chunks = self.pending_chunk_locks.borrow().len();
+		if pending_chunks != 0 {
+			info!("{} has {pending_chunks} pending chunks", self._name,);
+		}
+
 		// Handle completed chunks
 		let mut completed_chunks = self.completed_chunks.borrow_mut();
 		let mut pending_chunk_locks = self.pending_chunk_locks.borrow_mut();

@@ -1,6 +1,7 @@
+use crate::client::Event;
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
-use solarscape_shared::messages::{clientbound::ClientboundMessage, serverbound::ServerboundMessage};
+use solarscape_shared::messages::serverbound::ServerboundMessage;
 use std::{borrow::Cow, sync::Arc, time::Duration};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tokio::sync::oneshot::{channel as oneshot, Receiver as OneshotReceiver, Sender as OneshotSender};
@@ -206,8 +207,4 @@ impl From<tungstenite::Error> for Error {
 	fn from(error: tungstenite::Error) -> Self {
 		Self::Unknown(error.into())
 	}
-}
-
-pub enum Event {
-	Message(ClientboundMessage),
 }

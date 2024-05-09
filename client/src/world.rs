@@ -5,16 +5,16 @@ use nalgebra::{vector, Isometry3, Vector2, Vector3};
 use solarscape_shared::types::{ChunkData, GridCoordinates, Material};
 use std::{collections::HashMap, collections::HashSet, ops::Deref, ops::DerefMut};
 use wgpu::{
-	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, BindGroup, BindGroupDescriptor, BindGroupEntry,
-	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferUsages,
-	ColorTargetState, ColorWrites, CompareFunction::GreaterEqual, DepthStencilState, Device, Extent3d, Face::Back,
-	FragmentState, FrontFace, ImageCopyTexture, ImageDataLayout, MultisampleState, Origin3d,
+	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, vertex_attr_array, BindGroup, BindGroupDescriptor,
+	BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer,
+	BufferUsages, ColorTargetState, ColorWrites, CompareFunction::GreaterEqual, DepthStencilState, Device, Extent3d,
+	Face::Back, FragmentState, FrontFace, ImageCopyTexture, ImageDataLayout, MultisampleState, Origin3d,
 	PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, Queue,
 	RenderPass, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType::NonFiltering, SamplerDescriptor,
 	ShaderStages, SurfaceConfiguration, TextureAspect::All, TextureDescriptor, TextureDimension,
 	TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb, TextureSampleType, TextureUsages,
-	TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat::Float32,
-	VertexFormat::Float32x3, VertexFormat::Uint8x2, VertexState, VertexStepMode::Instance, VertexStepMode::Vertex,
+	TextureViewDescriptor, TextureViewDimension, VertexBufferLayout, VertexState, VertexStepMode::Instance,
+	VertexStepMode::Vertex,
 };
 
 pub struct Sector {
@@ -109,21 +109,12 @@ impl Sector {
 					VertexBufferLayout {
 						array_stride: 32,
 						step_mode: Vertex,
-						attributes: &[
-							VertexAttribute { offset: 0, shader_location: 0, format: Float32x3 },
-							VertexAttribute { offset: 12, shader_location: 1, format: Float32x3 },
-							VertexAttribute { offset: 24, shader_location: 2, format: Uint8x2 },
-							VertexAttribute { offset: 26, shader_location: 3, format: Uint8x2 },
-							VertexAttribute { offset: 28, shader_location: 4, format: Float32 },
-						],
+						attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Uint8x2, 3 => Uint8x2, 4 => Float32],
 					},
 					VertexBufferLayout {
 						array_stride: 16,
 						step_mode: Instance,
-						attributes: &[
-							VertexAttribute { offset: 0, shader_location: 5, format: Float32x3 },
-							VertexAttribute { offset: 12, shader_location: 6, format: Float32 },
-						],
+						attributes: &vertex_attr_array![5 => Float32x3, 6 => Float32],
 					},
 				],
 			},
