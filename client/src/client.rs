@@ -53,7 +53,7 @@ impl ApplicationHandler<Event> for Client {
 	}
 
 	// This should only ever be called on iOS, Android, and Web, none of which we support, so this is untested.
-	fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+	fn suspended(&mut self, _: &ActiveEventLoop) {
 		self.state = None;
 	}
 
@@ -85,7 +85,7 @@ pub struct State {
 }
 
 impl State {
-	pub fn new(client: &Client, event_loop: &ActiveEventLoop) -> Result<Self, RendererInitializationError> {
+	pub fn new(client: &Client, event_loop: &ActiveEventLoop) -> Result<Self, ClientError> {
 		let connection_task = spawn(Connection::new(
 			format!("ws://localhost:8000/example?name={}", client.name),
 			client.event_loop_proxy.clone(),
@@ -115,7 +115,7 @@ impl State {
 				compatible_surface: Some(&surface),
 				..RequestAdapterOptions::default()
 			}))
-			.ok_or(RendererInitializationError::Adapter)?;
+			.ok_or(ClientError::Adapter)?;
 
 		let (device, queue) = Handle::current().block_on(adapter.request_device(
 			&DeviceDescriptor { label: Some("device"), ..DeviceDescriptor::default() },
@@ -129,7 +129,7 @@ impl State {
 			.iter()
 			.copied()
 			.find(TextureFormat::is_srgb)
-			.ok_or(RendererInitializationError::SurfaceFormat)?;
+			.ok_or(ClientError::SurfaceFormat)?;
 
 		let PhysicalSize { width, height } = window.inner_size();
 
@@ -153,7 +153,7 @@ impl State {
 			let output = match surface.get_current_texture() {
 				Ok(output) => output,
 				Err(error) => {
-					return Err(RendererInitializationError::Surface(error));
+					return Err(ClientError::Surface(error));
 				}
 			};
 
@@ -326,7 +326,7 @@ impl State {
 
 #[derive(Debug, Error)]
 #[error(transparent)]
-enum RendererInitializationError {
+pub enum ClientError {
 	Os(#[from] OsError),
 
 	CreateSurface(#[from] CreateSurfaceError),

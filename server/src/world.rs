@@ -92,7 +92,7 @@ impl Sector {
 				Err(TryRecvError::Empty) => break,
 				Err(TryRecvError::Disconnected) => return Err(SectorTickError::Dropped),
 				Ok(connecting_player) => {
-					let player = Player::accept(&self, connecting_player);
+					let player = Player::accept(self, connecting_player);
 					self.players.borrow_mut().insert(player.name().clone(), player);
 				}
 			}
