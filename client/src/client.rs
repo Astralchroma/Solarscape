@@ -1,6 +1,6 @@
 use crate::{camera::Camera, connection::Connection, types::Degrees, world::Chunk, world::Sector, world::Voxject};
 use log::{error, info};
-use nalgebra::Isometry3;
+use nalgebra::{Isometry3, IsometryMatrix3, Point3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, RemoveChunk, SyncChunk, SyncVoxject};
 use std::{iter::once, sync::Arc, time::Instant};
 use thiserror::Error;
@@ -178,9 +178,6 @@ impl State {
 
 		info!("First frame in {:.0?}", Instant::now() - start_time);
 
-		let camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
-		let sector = Sector::new(&config, &camera, &device, &queue);
-
 		let depth_texture_descriptor = TextureDescriptor {
 			label: Some("depth_texture"),
 			size: Extent3d { width, height, depth_or_array_layers: 1 },
@@ -194,6 +191,16 @@ impl State {
 
 		let depth_texture_view_descriptor =
 			TextureViewDescriptor { label: Some("depth_texture_view"), ..TextureViewDescriptor::default() };
+
+		let mut camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
+
+		camera.set_view(IsometryMatrix3::look_at_rh(
+			&Point3::new(8.0, 8.0, 8.0),
+			&Point3::origin(),
+			&Vector3::y(),
+		));
+
+		let sector = Sector::new(&config, &camera, &device, &queue);
 
 		let depth_texture = device.create_texture(&depth_texture_descriptor);
 		let depth_texture_view = depth_texture.create_view(&depth_texture_view_descriptor);
@@ -231,6 +238,7 @@ impl State {
 		self.depth_texture_descriptor.size = Extent3d { width, height, depth_or_array_layers: 1 };
 		self.depth_texture = self.device.create_texture(&self.depth_texture_descriptor);
 		self.depth_texture_view = self.depth_texture.create_view(&TextureViewDescriptor::default());
+		self.camera.set_aspect(width as f32 / height as f32);
 	}
 
 	fn render(&mut self, event_loop: &ActiveEventLoop) {
