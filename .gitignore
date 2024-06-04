@@ -1,3 +1,7 @@
+/.direnv
 /.idea
-/target
+
+/.devenv*
 /Cargo.lock
+/devenv.local.nix
+/target
