@@ -14,7 +14,7 @@ tokio.workspace = true
 
 serde = { workspace = true, features = ["rc"] }
 
-dashmap = "6"
+dashmap = "5"
 rand = "0.8"
 rayon = "1"
 
