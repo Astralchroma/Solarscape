@@ -1,17 +1,18 @@
 #![warn(clippy::nursery)]
+#![allow(clippy::option_if_let_else)] // Looks dumb
 
 mod generation;
 mod player;
-mod world;
+mod sector;
 
-use crate::{player::ConnectingPlayer, player::Player, world::Sector};
+use crate::{player::Connection, sector::Sector};
 use axum::{http::StatusCode, routing::get};
 use log::{info, warn, LevelFilter::Trace};
 use std::{env, fs, io, net::SocketAddr, sync::Arc, sync::Barrier, thread, time::Instant};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedSender as Sender};
 use tokio::{net::TcpListener, runtime::Builder};
 
-type Sectors = Arc<dashmap::DashMap<String, Sender<ConnectingPlayer>>>;
+type Sectors = Arc<dashmap::DashMap<String, Sender<Arc<Connection>>>>;
 
 fn main() -> io::Result<()> {
 	let start_time = Instant::now();
@@ -82,7 +83,7 @@ fn main() -> io::Result<()> {
 	barrier.wait();
 
 	let router = axum::Router::new()
-		.route("/:sector", get(Player::connect))
+		.route("/:sector", get(Connection::connect))
 		.fallback(|| async { StatusCode::NOT_FOUND })
 		.with_state(sectors);
 

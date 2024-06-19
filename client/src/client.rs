@@ -282,11 +282,12 @@ impl State {
 	fn user_event(&mut self, _: &ActiveEventLoop, event: Event) {
 		match event {
 			Event::Message(message) => match message {
-				ClientboundMessage::AddVoxject(AddVoxject { voxject, name }) => {
-					info!("Added Voxject {voxject} {name:?}");
+				ClientboundMessage::AddVoxject(AddVoxject { id, name }) => {
+					info!("Added Voxject {id} {name:?}");
 					self.sector.voxjects.insert(
-						voxject,
+						id,
 						Voxject {
+							id,
 							name,
 							location: Isometry3::default(),
 							chunks: Default::default(),
@@ -294,16 +295,16 @@ impl State {
 						},
 					);
 				}
-				ClientboundMessage::SyncVoxject(SyncVoxject { voxject, location }) => {
-					self.sector.voxjects[voxject].location = location;
+				ClientboundMessage::SyncVoxject(SyncVoxject { id, location }) => {
+					self.sector.voxjects.get_mut(&id).unwrap().location = location;
 				}
-				ClientboundMessage::SyncChunk(SyncChunk { voxject, data }) => {
-					let chunk = Chunk { data, mesh: None };
-					let voxject = &mut self.sector.voxjects[voxject];
+				ClientboundMessage::SyncChunk(SyncChunk { coordinates, materials, densities }) => {
+					let chunk = Chunk { coordinates, materials, densities, mesh: None };
+					let voxject = self.sector.voxjects.get_mut(&coordinates.voxject).unwrap();
 					voxject.add_chunk(&self.device, chunk);
 				}
-				ClientboundMessage::RemoveChunk(RemoveChunk { voxject, coordinates }) => {
-					let voxject = &mut self.sector.voxjects[voxject];
+				ClientboundMessage::RemoveChunk(RemoveChunk(coordinates)) => {
+					let voxject = self.sector.voxjects.get_mut(&coordinates.voxject).unwrap();
 					voxject.remove_chunk(&self.device, coordinates);
 				}
 			},

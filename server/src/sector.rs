@@ -1,0 +1,228 @@
+use crate::{generation::sphere_generator, generation::Generator, player::Connection, player::Player};
+use dashmap::DashMap;
+use log::{error, warn};
+use solarscape_shared::messages::clientbound::{ClientboundMessage, SyncChunk};
+use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
+use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
+use std::{collections::HashMap, ops::Deref, thread, time::Duration, time::Instant};
+use thiserror::Error;
+use tokio::sync::RwLockReadGuard;
+use tokio::sync::{mpsc::error::TryRecvError, mpsc::UnboundedReceiver as Receiver, Mutex, RwLock};
+
+pub struct Sector {
+	voxjects: HashMap<VoxjectId, Voxject>,
+	chunks: DashMap<ChunkCoordinates, Arc<Chunk>>,
+
+	players: Mutex<Vec<Player>>,
+
+	connecting_players: Mutex<Receiver<Arc<Connection>>>,
+}
+
+impl Sector {
+	pub fn voxjects(&self) -> impl Iterator<Item = &Voxject> {
+		self.voxjects.values()
+	}
+
+	pub fn get_chunk(self: &Arc<Self>, coordinates: ChunkCoordinates) -> Arc<Chunk> {
+		match self.chunks.get(&coordinates) {
+			Some(chunk) => chunk.clone(),
+			None => {
+				let chunk = Chunk::new(self, coordinates);
+				self.chunks.insert(coordinates, chunk.clone());
+				chunk
+			}
+		}
+	}
+
+	#[must_use]
+	pub fn load(connecting_players: Receiver<Arc<Connection>>) -> Arc<Self> {
+		let voxject = Voxject::new("example_voxject");
+
+		Arc::new(Self {
+			voxjects: HashMap::from([(voxject.id, voxject)]),
+			chunks: DashMap::new(),
+			players: Mutex::new(Vec::new()),
+			connecting_players: Mutex::new(connecting_players),
+		})
+	}
+
+	pub fn run(self: Arc<Self>) {
+		let target_tick_time = Duration::from_secs(1) / 30;
+
+		loop {
+			let tick_start = Instant::now();
+
+			if let Err(error) = self.tick() {
+				error!("Fatal error occurred while ticking sector, stopping.\n{error}");
+				break;
+			}
+
+			let tick_end = Instant::now();
+			let tick_duration = tick_end - tick_start;
+
+			match target_tick_time.checked_sub(tick_duration) {
+				Some(time_until_next_tick) => thread::sleep(time_until_next_tick),
+				None => warn!("Tick took {tick_duration:.0?}, exceeding {target_tick_time:.0?} target"),
+			}
+		}
+	}
+
+	fn tick(self: &Arc<Self>) -> Result<(), SectorTickError> {
+		{
+			let mut players = self.players.blocking_lock();
+
+			// Remove disconnected players
+			players.retain(|player| !player.is_disconnected());
+		}
+
+		// Handle connecting players
+		loop {
+			match self.connecting_players.blocking_lock().try_recv() {
+				Err(TryRecvError::Empty) => break,
+				Err(TryRecvError::Disconnected) => return Err(SectorTickError::Dropped),
+				Ok(connecting_player) => {
+					let player = Player::accept(self, connecting_player);
+					self.players.blocking_lock().push(player);
+				}
+			}
+		}
+
+		// Process all players
+		for player in self.players.blocking_lock().iter() {
+			player.process_player(self)
+		}
+
+		Ok(())
+	}
+}
+
+#[derive(Debug, Error)]
+enum SectorTickError {
+	#[error("sector handle was dropped")]
+	Dropped,
+}
+
+pub struct Voxject {
+	pub id: VoxjectId,
+	pub name: Box<str>,
+	pub generator: Generator,
+}
+
+impl Voxject {
+	pub fn new(name: impl Into<Box<str>>) -> Self {
+		Self { id: VoxjectId::new(), name: name.into(), generator: sphere_generator }
+	}
+}
+
+#[non_exhaustive]
+pub struct Chunk {
+	pub sector: Weak<Sector>,
+	pub coordinates: ChunkCoordinates,
+
+	// This is deliberately a `Mutex<HashMap<K, V>>` instead of a `DashMap<K, V>` as when locking the chunk for a
+	// connection, we need to prevent another thread from syncing at the same time, otherwise it could cause a desync.
+	subscribers: Mutex<HashMap<usize, Arc<Connection>>>,
+
+	data: RwLock<Option<Data>>,
+}
+
+impl Chunk {
+	fn new(sector: &Arc<Sector>, coordinates: ChunkCoordinates) -> Arc<Self> {
+		let return_chunk = Arc::new(Self {
+			sector: Arc::downgrade(sector),
+			coordinates,
+			subscribers: Mutex::new(HashMap::new()),
+			data: RwLock::default(),
+		});
+
+		let generator = sector.voxjects[&coordinates.voxject].generator;
+		let chunk = return_chunk.clone();
+		rayon::spawn(move || {
+			let mut data = chunk.data.blocking_write();
+
+			if data.is_none() {
+				*data = Some(generator(&chunk.coordinates));
+			}
+
+			let data = data.downgrade();
+			let subscribers = chunk.subscribers.blocking_lock();
+
+			let message = ClientboundMessage::SyncChunk(SyncChunk {
+				coordinates,
+				materials: data.as_ref().unwrap().materials.clone(),
+				densities: data.as_ref().unwrap().densities.clone(),
+			});
+
+			for connection in subscribers.values() {
+				connection.send(message.clone())
+			}
+		});
+
+		return_chunk
+	}
+
+	pub fn try_read_data(&self) -> TryDataReadGuard {
+		self.data.blocking_read()
+	}
+
+	pub fn lock_and_sync(self: Arc<Self>, connection: Arc<Connection>) -> Lock {
+		static LOCK_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+		let id = LOCK_ID_COUNTER.fetch_add(1, Relaxed);
+
+		{
+			let mut subscribers = self.subscribers.blocking_lock();
+
+			if let Some(ref data) = *self.try_read_data() {
+				connection.send(SyncChunk {
+					coordinates: self.coordinates,
+					materials: data.materials.clone(),
+					densities: data.densities.clone(),
+				});
+			}
+
+			subscribers.insert(id, connection);
+		}
+
+		Lock { chunk: self, id }
+	}
+}
+
+impl Drop for Chunk {
+	fn drop(&mut self) {
+		if let Some(sector) = Weak::upgrade(&self.sector) {
+			sector.chunks.remove(&self.coordinates);
+		}
+	}
+}
+
+pub type TryDataReadGuard<'a> = RwLockReadGuard<'a, Option<Data>>;
+
+pub struct Data {
+	pub materials: Box<[Material; 4096]>,
+	pub densities: Box<[f32; 4096]>,
+}
+
+impl Default for Data {
+	fn default() -> Self {
+		Self { materials: Box::new([Material::Nothing; 4096]), densities: Box::new([0.0; 4096]) }
+	}
+}
+
+pub struct Lock {
+	chunk: Arc<Chunk>,
+	id: usize,
+}
+
+impl Deref for Lock {
+	type Target = Chunk;
+
+	fn deref(&self) -> &Self::Target {
+		&self.chunk
+	}
+}
+
+impl Drop for Lock {
+	fn drop(&mut self) {
+		self.chunk.subscribers.blocking_lock().remove(&self.id);
+	}
+}

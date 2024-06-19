@@ -1,59 +1,175 @@
-use crate::{world::Sector, Sectors};
+use crate::{sector::Lock, sector::Sector, Sectors};
 use axum::extract::ws::{close_code, CloseFrame, Message, WebSocket};
 use axum::extract::{ConnectInfo, Path, Query, State, WebSocketUpgrade};
 use axum::{http::StatusCode, response::IntoResponse, response::Response};
+use dashmap::{DashMap, DashSet};
 use log::{error, info, warn};
 use nalgebra::{convert_unchecked, vector, Isometry3, Vector3};
 use serde::Deserialize;
-use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, RemoveChunk, SyncVoxject};
-use solarscape_shared::{messages::serverbound::ServerboundMessage, types::GridCoordinates};
-use std::cell::{Cell, OnceCell, RefCell};
-use std::{borrow::Cow, collections::HashSet, iter::repeat, iter::zip, net::SocketAddr, sync::Arc};
+use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncVoxject};
+use solarscape_shared::{messages::serverbound::ServerboundMessage, types::ChunkCoordinates, types::Level};
+use std::{borrow::Cow, cell::Cell, collections::HashSet, net::SocketAddr, ops::Deref, sync::Arc};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tokio::sync::oneshot::{channel as oneshot, Receiver as OneshotReceiver, Sender as OneshotSender};
-use tokio::{pin, select, sync::mpsc::error::SendError, sync::RwLock, time::interval, time::Duration, time::Instant};
+use tokio::sync::{mpsc::error::SendError, mpsc::error::TryRecvError, Mutex, RwLock};
+use tokio::{pin, select, time::interval, time::Duration, time::Instant};
 
 pub struct Player {
-	name: Arc<str>,
+	pub connection: Arc<Connection>,
 
 	location: Cell<Isometry3<f32>>,
-	pub loaded_chunks: RefCell<Box<[HashSet<GridCoordinates>]>>,
+
+	chunk_locks: DashMap<ChunkCoordinates, Lock>,
+}
+
+impl Player {
+	pub fn accept(sector: &Sector, connection: Arc<Connection>) -> Self {
+		for voxject in sector.voxjects() {
+			let id = voxject.id;
+			connection.send(AddVoxject { id, name: voxject.name.clone() });
+			connection.send(SyncVoxject { id, location: Isometry3::default() });
+		}
+
+		Self { connection, location: Cell::default(), chunk_locks: DashMap::new() }
+	}
+
+	pub fn process_player(&self, sector: &Arc<Sector>) {
+		while let Ok(message) = self.try_recv() {
+			match message {
+				ServerboundMessage::PlayerLocation(location) => {
+					// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
+					self.location.set(location);
+
+					let new = self.generate_chunk_list(sector);
+
+					for row in &self.chunk_locks {
+						let key = row.key();
+						if !new.contains(key) {
+							self.chunk_locks.remove(key);
+						}
+					}
+
+					for key in new {
+						if !self.chunk_locks.contains_key(&key) {
+							self.chunk_locks
+								.insert(key, sector.get_chunk(key).lock_and_sync(self.connection.clone()));
+						}
+					}
+				}
+			}
+		}
+	}
+
+	pub fn generate_chunk_list(&self, sector: &Sector) -> DashSet<ChunkCoordinates> {
+		let mut chunk_list = DashSet::new();
+
+		for voxject in sector.voxjects() {
+			// These values are local to the level they are on. So a 0.5, 0.5, 0.5 player position on level 0 means in
+			// chunk 0, 0, 0 on the next level that becomes 0.25, 0.25, 0.25 in chunk 0, 0, 0.
+			//
+			// Voxjects temporarily do not have a position until we intograte Rapier
+			let mut player_position =
+				Isometry3::default().inverse_transform_vector(&self.location.get().translation.vector) / 16.0;
+			let mut player_chunk = ChunkCoordinates::new(voxject.id, convert_unchecked(player_position), Level::new(0));
+			let mut chunks = HashSet::<ChunkCoordinates>::new();
+			let mut upleveled_chunks = HashSet::new();
+
+			for level in 0..31u8 {
+				let level = Level::new(level);
+				let radius = ((*level as i32 + 1) * 2) >> *level;
+
+				for chunk in &chunks {
+					upleveled_chunks.insert(chunk.upleveled());
+				}
+
+				for x in player_chunk.coordinates.x - radius..=player_chunk.coordinates.x + radius {
+					for y in player_chunk.coordinates.y - radius..=player_chunk.coordinates.y + radius {
+						for z in player_chunk.coordinates.z - radius..=player_chunk.coordinates.z + radius {
+							let chunk = ChunkCoordinates::new(voxject.id, vector![x, y, z], level);
+
+							// circles look nicer
+							let chunk_center = vector![x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5];
+							if player_chunk != chunk && player_position.metric_distance(&chunk_center) as i32 > radius {
+								continue;
+							}
+
+							upleveled_chunks.insert(chunk.upleveled());
+						}
+					}
+				}
+
+				for upleveled_chunk in &upleveled_chunks {
+					let chunk = upleveled_chunk.downleveled();
+					chunks.insert(chunk + Vector3::new(0, 0, 0));
+					chunks.insert(chunk + Vector3::new(0, 0, 1));
+					chunks.insert(chunk + Vector3::new(0, 1, 0));
+					chunks.insert(chunk + Vector3::new(0, 1, 1));
+					chunks.insert(chunk + Vector3::new(1, 0, 0));
+					chunks.insert(chunk + Vector3::new(1, 0, 1));
+					chunks.insert(chunk + Vector3::new(1, 1, 0));
+					chunks.insert(chunk + Vector3::new(1, 1, 1));
+				}
+
+				player_position /= 2.0;
+				player_chunk = player_chunk.upleveled();
+
+				chunk_list.extend(chunks);
+				chunks = upleveled_chunks;
+				upleveled_chunks = HashSet::new();
+			}
+		}
+
+		chunk_list
+	}
+}
+
+impl Deref for Player {
+	type Target = Connection;
+
+	fn deref(&self) -> &Self::Target {
+		&self.connection
+	}
+}
+
+pub struct Connection {
+	pub name: Box<str>,
 
 	_latency: Arc<RwLock<Duration>>,
 
-	disconnect: OnceCell<OneshotSender<Option<CloseFrame<'static>>>>,
-	incoming: RefCell<Receiver<ServerboundMessage>>,
+	disconnect: RwLock<Option<OneshotSender<Option<CloseFrame<'static>>>>>,
 	outgoing: Sender<ClientboundMessage>,
-}
-
-pub struct ConnectingPlayer {
-	name: Arc<str>,
-
-	socket: WebSocket,
+	incoming: Mutex<Receiver<ServerboundMessage>>,
 }
 
 #[derive(Deserialize)]
 pub struct NameQuery {
-	name: Arc<str>,
+	name: Box<str>,
 }
 
-impl Player {
-	#[must_use]
-	pub const fn name(&self) -> &Arc<str> {
-		&self.name
-	}
-
+impl Connection {
 	#[must_use]
 	pub fn _latency(&self) -> Duration {
 		*self._latency.blocking_read()
 	}
 
 	pub fn is_disconnected(&self) -> bool {
-		self.disconnect.get().is_none()
+		self.disconnect.blocking_read().is_none()
+			|| self.outgoing.is_closed()
+			|| self.incoming.blocking_lock().is_closed()
+	}
+
+	pub fn _disconnect(&self, reason: Option<CloseFrame<'static>>) {
+		if let Some(disconnect) = self.disconnect.blocking_write().take() {
+			let _ = disconnect.send(reason);
+		}
 	}
 
 	pub fn send(&self, message: impl Into<ClientboundMessage>) {
 		let _ = self.outgoing.send(message.into());
+	}
+
+	pub fn try_recv(&self) -> Result<ServerboundMessage, TryRecvError> {
+		self.incoming.blocking_lock().try_recv()
 	}
 
 	pub async fn connect(
@@ -86,53 +202,38 @@ impl Player {
 				socket.on_upgrade(|socket| async move {
 					info!("[{name}] Connecting to {sector:?}");
 
-					let player = ConnectingPlayer { name: name.clone(), socket };
+					let latency: Arc<RwLock<Duration>> = Arc::default();
+					let (disconnect, handler_disconnect) = oneshot();
+					let (outgoing, handler_outgoing) = channel();
+					let (handler_incoming, incoming) = channel();
 
-					if sector_handle.send(player).is_err() {
+					let connection = Arc::new(Self {
+						name: name.clone(),
+						_latency: latency.clone(),
+						disconnect: RwLock::new(Some(disconnect)),
+						outgoing,
+						incoming: Mutex::new(incoming),
+					});
+
+					if sector_handle.send(connection).is_err() {
 						warn!("[{name}] Failed to connect to {sector:?}, sector handle has been dropped.")
 					}
+
+					tokio::spawn(Self::handle_connection(
+						name.clone(),
+						latency,
+						handler_disconnect,
+						handler_incoming,
+						handler_outgoing,
+						socket,
+					));
 				})
 			},
 		)
 	}
 
-	pub fn accept(sector: &Sector, connecting_player: ConnectingPlayer) -> Self {
-		let ConnectingPlayer { name, socket } = connecting_player;
-
-		let latency: Arc<RwLock<_>> = Default::default();
-		let (disconnect, handler_disconnect) = oneshot();
-		let (handler_incoming, incoming) = channel();
-		let (outgoing, handler_outgoing) = channel();
-
-		tokio::spawn(Self::manage_connection_handler(
-			name.clone(),
-			latency.clone(),
-			handler_disconnect,
-			handler_incoming,
-			handler_outgoing,
-			socket,
-		));
-
-		let connection = Self {
-			name,
-			location: Default::default(),
-			loaded_chunks: RefCell::new(repeat(HashSet::new()).take(sector.voxjects().len()).collect()),
-			_latency: latency,
-			disconnect: OnceCell::from(disconnect),
-			incoming: RefCell::new(incoming),
-			outgoing,
-		};
-
-		for (voxject_index, voxject) in sector.voxjects().iter().enumerate() {
-			connection.send(AddVoxject { voxject: voxject_index, name: voxject.name().into() });
-			connection.send(SyncVoxject { voxject: voxject_index, location: voxject.location.get() });
-		}
-
-		connection
-	}
-
-	async fn manage_connection_handler(
-		name: Arc<str>,
+	async fn handle_connection(
+		name: Box<str>,
 		latency: Arc<RwLock<Duration>>,
 		disconnect: OneshotReceiver<Option<CloseFrame<'static>>>,
 		incoming: Sender<ServerboundMessage>,
@@ -141,7 +242,7 @@ impl Player {
 	) {
 		info!("[{name}] Connected");
 
-		let reason = Self::connection_handler(latency, disconnect, incoming, outgoing, &mut socket)
+		let reason = Self::connection_loop(latency, disconnect, incoming, outgoing, &mut socket)
 			.await
 			.unwrap_or_else(|error| match error {
 				Error::Dropped => {
@@ -187,7 +288,7 @@ impl Player {
 		};
 	}
 
-	async fn connection_handler(
+	async fn connection_loop(
 		latency: Arc<RwLock<Duration>>,
 		mut disconnect: OneshotReceiver<Option<CloseFrame<'static>>>,
 		incoming: Sender<ServerboundMessage>,
@@ -259,97 +360,6 @@ impl Player {
 				}
 			}
 		}
-	}
-
-	pub fn process_player(&self, sector: &Sector) {
-		while let Ok(message) = self.incoming.borrow_mut().try_recv() {
-			match message {
-				ServerboundMessage::PlayerLocation(location) => {
-					// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
-					self.location.set(location);
-
-					let old = self.loaded_chunks.replace(self.generate_chunk_list(sector));
-					let new = self.loaded_chunks.borrow();
-
-					for (voxject, (new, old)) in zip(new.iter(), old.iter()).enumerate() {
-						let added_chunks = new.difference(old);
-
-						for coordinates in added_chunks {
-							sector.voxjects()[voxject].lock_and_load_chunk(sector, self.name(), *coordinates);
-						}
-
-						let removed_chunks = old.difference(new);
-
-						for coordinates in removed_chunks {
-							sector.voxjects()[voxject].release_chunk(self.name(), coordinates);
-							self.send(RemoveChunk { voxject, coordinates: *coordinates })
-						}
-					}
-				}
-			}
-		}
-	}
-
-	pub fn generate_chunk_list(&self, sector: &Sector) -> Box<[HashSet<GridCoordinates>]> {
-		let mut chunk_list: Box<_> = repeat(HashSet::new()).take(sector.voxjects().len()).collect();
-
-		for (voxject, voxject_chunks) in sector.voxjects().iter().zip(chunk_list.iter_mut()) {
-			// These values are local to the level they are on. So a 0.5, 0.5, 0.5 player position on level 0 means in
-			// chunk 0, 0, 0 on the next level that becomes 0.25, 0.25, 0.25 in chunk 0, 0, 0.
-			let mut player_position = voxject
-				.location
-				.get()
-				.inverse_transform_vector(&self.location.get().translation.vector)
-				/ 16.0;
-			let mut player_chunk = GridCoordinates::new(convert_unchecked(player_position), 0);
-			let mut chunks = HashSet::<GridCoordinates>::new();
-			let mut upleveled_chunks = HashSet::new();
-
-			for level in 0..31u8 {
-				let radius = ((level as i32 + 1) * 2) >> level;
-
-				for chunk in &chunks {
-					upleveled_chunks.insert(chunk.upleveled());
-				}
-
-				for x in player_chunk.coordinates.x - radius..=player_chunk.coordinates.x + radius {
-					for y in player_chunk.coordinates.y - radius..=player_chunk.coordinates.y + radius {
-						for z in player_chunk.coordinates.z - radius..=player_chunk.coordinates.z + radius {
-							let chunk = GridCoordinates::new(vector![x, y, z], level);
-
-							// circles look nicer
-							let chunk_center = vector![x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5];
-							if player_chunk != chunk && player_position.metric_distance(&chunk_center) as i32 > radius {
-								continue;
-							}
-
-							upleveled_chunks.insert(chunk.upleveled());
-						}
-					}
-				}
-
-				for upleveled_chunk in &upleveled_chunks {
-					let chunk = upleveled_chunk.downleveled();
-					chunks.insert(chunk + Vector3::new(0, 0, 0));
-					chunks.insert(chunk + Vector3::new(0, 0, 1));
-					chunks.insert(chunk + Vector3::new(0, 1, 0));
-					chunks.insert(chunk + Vector3::new(0, 1, 1));
-					chunks.insert(chunk + Vector3::new(1, 0, 0));
-					chunks.insert(chunk + Vector3::new(1, 0, 1));
-					chunks.insert(chunk + Vector3::new(1, 1, 0));
-					chunks.insert(chunk + Vector3::new(1, 1, 1));
-				}
-
-				player_position /= 2.0;
-				player_chunk = player_chunk.upleveled();
-
-				voxject_chunks.extend(chunks);
-				chunks = upleveled_chunks;
-				upleveled_chunks = HashSet::new();
-			}
-		}
-
-		chunk_list
 	}
 }
 

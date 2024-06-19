@@ -1,74 +1,36 @@
-// The future plan for world generation is to have a FFI plugin system and a library for writing world generation
-// plugins, for now though, we'll just do some basic world generation in here.
-//
-// When that happens, we'll probably start by just refactoring what's here into the library.
-//
-// Also should be noted that this module isn't really very well planned ahead, so current capabilities are likely
-// inadequate for any complicated generation.
-
-use crate::world::Chunk;
-use log::warn;
+use crate::sector::Data;
 use nalgebra::{vector, zero, Vector3};
-use solarscape_shared::types::{GridCoordinates, Material};
-use tokio::sync::mpsc::UnboundedSender as Sender;
+use solarscape_shared::types::{ChunkCoordinates, Material};
 
-type GeneratorFunction = (dyn (Fn(GridCoordinates) -> Chunk) + Send + Sync);
+pub type Generator = fn(&ChunkCoordinates) -> Data;
 
-// We plan to do some FFI stuff and put generators in an external library which gets loaded at runtime, so because of
-// this we make this a wrapper struct and not a trait. For convenience it also must be Send, Sync, and Clone so we can
-// share it between threads, the implications of that are up to generators to handle, although they shouldn't have any
-// shared mutable state anyway so this shouldn't cause any issues.
-#[derive(Clone, Copy)]
-pub struct Generator(&'static GeneratorFunction);
-
-impl Generator {
-	pub fn new(generator_function: &'static GeneratorFunction) -> Self {
-		Self(generator_function)
+pub fn sphere_chunk_data(coordinates: &ChunkCoordinates, radius: f32, material_map: impl Fn(f32) -> Material) -> Data {
+	// temporary missing chunk so you can see the materials inside
+	if ***coordinates == zero::<Vector3<_>>() {
+		return Data::default();
 	}
 
-	pub fn generate(&self, grid_coordinates: GridCoordinates, completion_channel: &Sender<Chunk>) {
-		let generator = *self;
-		let completion_channel = completion_channel.clone();
-		rayon::spawn_fifo(move || {
-			let chunk = generator.0(grid_coordinates);
-			if completion_channel.send(chunk).is_err() {
-				// TODO: Maybe we should have a "server stopping" flag
-				warn!("Failed to return completed chunk ({grid_coordinates}), either the server is stopping or something broke");
-			}
-		})
-	}
-}
+	let mut data = Data::default();
+	let level_radius = radius / f32::powi(2.0, *coordinates.level as i32);
+	let chunk_origin_level_coordinates = coordinates.cast() * 16.0;
 
-// While Chunk is defined in world.rs, the later chunk generation library will likely have it's own [Chunk] later, so
-// we'll keep all the generation specific functions here.
-impl Chunk {
-	pub fn sphere(mut self, radius: f32, material_map: impl Fn(f32) -> Material) -> Self {
-		// temporary missing chunk so you can see the materials inside
-		if self.coordinates.coordinates == zero::<Vector3<_>>() {
-			return self;
-		}
-
-		let level_radius = radius / f32::powi(2.0, self.coordinates.level as i32);
-		let chunk_origin_level_coordinates = self.coordinates.coordinates.cast() * 16.0;
-
-		for x in 0..16 {
-			for y in 0..16 {
-				for z in 0..16 {
-					let index = x << 8 | y << 4 | z;
-					let level_coordinates = chunk_origin_level_coordinates + vector![x as f32, y as f32, z as f32];
-					let distance = level_coordinates.metric_distance(&zero::<Vector3<_>>());
-					self.densities[index] = level_radius - distance;
-					self.materials[index] = material_map(distance);
-				}
+	for x in 0..16 {
+		for y in 0..16 {
+			for z in 0..16 {
+				let index = x << 8 | y << 4 | z;
+				let level_coordinates = chunk_origin_level_coordinates + vector![x as f32, y as f32, z as f32];
+				let distance = level_coordinates.metric_distance(&zero::<Vector3<_>>());
+				data.densities[index] = level_radius - distance;
+				data.materials[index] = material_map(distance);
 			}
 		}
-
-		self
 	}
+
+	data
 }
 
-pub fn sphere_generator(grid_coordinates: GridCoordinates) -> Chunk {
-	Chunk::new(grid_coordinates).sphere(8.0, |distance| {
+pub fn sphere_generator(coordinates: &ChunkCoordinates) -> Data {
+	sphere_chunk_data(coordinates, 8.0, |distance| {
 		if distance >= 8.0 {
 			Material::Nothing
 		} else if distance >= 6.0 {
