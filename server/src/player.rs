@@ -317,11 +317,6 @@ impl Connection {
 						Some(_) => return Err(Error::TimedOut),
 					}
 				}
-				message = outgoing.recv() => {
-					let message = message.ok_or(Error::Dropped)?;
-					let bytes = bincode::serialize(&message).map_err(|error| Error::Unknown(error.into()))?;
-					socket.send(Message::Binary(bytes)).await?;
-				}
 				message = socket.recv() => {
 					let message = match message {
 						None => return Ok(Closed::Client(None)),
@@ -357,6 +352,11 @@ impl Connection {
 						}
 						Message::Close(reason) => return Ok(Closed::Client(reason)),
 					}
+				}
+				message = outgoing.recv() => {
+					let message = message.ok_or(Error::Dropped)?;
+					let bytes = bincode::serialize(&message).map_err(|error| Error::Unknown(error.into()))?;
+					socket.send(Message::Binary(bytes)).await?;
 				}
 			}
 		}
