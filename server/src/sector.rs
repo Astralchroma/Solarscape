@@ -1,4 +1,4 @@
-use crate::{generation::sphere_generator, generation::Generator, player::Connection, player::Player};
+use crate::{config, generation::sphere_generator, generation::Generator, player::Connection, player::Player};
 use dashmap::DashMap;
 use log::{error, warn};
 use solarscape_shared::messages::clientbound::{ClientboundMessage, SyncChunk};
@@ -10,6 +10,8 @@ use tokio::sync::RwLockReadGuard;
 use tokio::sync::{mpsc::error::TryRecvError, mpsc::UnboundedReceiver as Receiver, Mutex, RwLock};
 
 pub struct Sector {
+	pub name: Box<str>,
+
 	voxjects: HashMap<VoxjectId, Voxject>,
 	chunks: DashMap<ChunkCoordinates, Arc<Chunk>>,
 
@@ -19,6 +21,22 @@ pub struct Sector {
 }
 
 impl Sector {
+	#[must_use]
+	pub fn new(
+		config::Sector { name, voxjects }: config::Sector,
+		connecting_players: Receiver<Arc<Connection>>,
+	) -> Arc<Self> {
+		let voxjects = voxjects.into_iter().map(Voxject::new).collect();
+
+		Arc::new(Self {
+			name,
+			voxjects,
+			chunks: DashMap::new(),
+			players: Mutex::new(Vec::new()),
+			connecting_players: Mutex::new(connecting_players),
+		})
+	}
+
 	pub fn voxjects(&self) -> impl Iterator<Item = &Voxject> {
 		self.voxjects.values()
 	}
@@ -32,18 +50,6 @@ impl Sector {
 				chunk
 			}
 		}
-	}
-
-	#[must_use]
-	pub fn load(connecting_players: Receiver<Arc<Connection>>) -> Arc<Self> {
-		let voxject = Voxject::new("example_voxject");
-
-		Arc::new(Self {
-			voxjects: HashMap::from([(voxject.id, voxject)]),
-			chunks: DashMap::new(),
-			players: Mutex::new(Vec::new()),
-			connecting_players: Mutex::new(connecting_players),
-		})
 	}
 
 	pub fn run(self: Arc<Self>) {
@@ -109,8 +115,10 @@ pub struct Voxject {
 }
 
 impl Voxject {
-	pub fn new(name: impl Into<Box<str>>) -> Self {
-		Self { id: VoxjectId::new(), name: name.into(), generator: sphere_generator }
+	pub fn new(config::Voxject { name }: config::Voxject) -> (VoxjectId, Self) {
+		let id = VoxjectId::new();
+		let voxject = Self { id, name, generator: sphere_generator };
+		(id, voxject)
 	}
 }
 

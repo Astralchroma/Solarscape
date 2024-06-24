@@ -5,14 +5,37 @@ mod generation;
 mod player;
 mod sector;
 
-use crate::{player::Connection, sector::Sector};
+use crate::{config::Config, player::Connection, sector::Sector};
 use axum::{http::StatusCode, routing::get};
 use log::{info, warn, LevelFilter::Trace};
-use std::{env, fs, io, net::SocketAddr, sync::Arc, sync::Barrier, thread, time::Instant};
+use std::{
+	env, fs, fs::File, io, io::Read, net::SocketAddr, path::PathBuf, sync::Arc, sync::Barrier, thread, time::Instant,
+};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedSender as Sender};
 use tokio::{net::TcpListener, runtime::Builder};
 
-type Sectors = Arc<dashmap::DashMap<String, Sender<Arc<Connection>>>>;
+type Sectors = Arc<dashmap::DashMap<Box<str>, Sender<Arc<Connection>>>>;
+
+pub mod config {
+	use serde::Deserialize;
+
+	#[derive(Deserialize)]
+	pub struct Config {
+		pub name: Box<str>,
+		pub sectors: Vec<Sector>,
+	}
+
+	#[derive(Deserialize)]
+	pub struct Sector {
+		pub name: Box<str>,
+		pub voxjects: Vec<Voxject>,
+	}
+
+	#[derive(Deserialize)]
+	pub struct Voxject {
+		pub name: Box<str>,
+	}
+}
 
 fn main() -> io::Result<()> {
 	let start_time = Instant::now();
@@ -21,6 +44,7 @@ fn main() -> io::Result<()> {
 	log::set_max_level(Trace);
 
 	info!("Solarscape (Server) v{}", env!("CARGO_PKG_VERSION"));
+	info!("Command Line: {:?}", env::args().collect::<Vec<_>>().join(" "));
 
 	if env::var_os("CARGO").is_some() {
 		warn!("Running in development environment! Changing working directory to avoid contaminating repository");
@@ -30,17 +54,26 @@ fn main() -> io::Result<()> {
 		env::set_current_dir(working_directory)?;
 	}
 
-	let server_name = env::var("SOLARSCAPE_SERVER_NAME").expect("SOLARSCAPE_SERVER_NAME must be set and valid");
-
-	let static_sectors: Vec<String> = fs::read_to_string(format!("{server_name}.sectors"))?
-		.split_whitespace()
-		.map(String::from)
-		.collect();
-
-	info!("Command Line: {:?}", env::args().collect::<Vec<_>>().join(" "));
 	info!("Working Directory: {:?}", env::current_dir()?);
-	info!("Server Name: {server_name:?}");
-	info!("Static Sectors: {static_sectors:?}");
+
+	let config: Config = {
+		let path: PathBuf = env::var("SOLARSCAPE_CONFIG")
+			.expect("environment variable 'SOLARSCAPE_CONFIG' must be set")
+			.into();
+
+		info!("Configuration File: {path:?}");
+
+		let mut string = String::new();
+
+		File::open(path)
+			.expect("configuration file must exist")
+			.read_to_string(&mut string)
+			.expect("configuration file must be readable");
+
+		hocon::de::from_str(&string).expect("configuration file must be valid")
+	};
+
+	info!("Server Name: {:?}", config.name);
 
 	let runtime = Arc::new(
 		Builder::new_multi_thread()
@@ -56,23 +89,23 @@ fn main() -> io::Result<()> {
 
 	let sectors = Sectors::default();
 
-	let barrier = Arc::new(Barrier::new(static_sectors.len() + 1));
-	for sector_name in static_sectors {
+	let barrier = Arc::new(Barrier::new(config.sectors.len() + 1));
+	for sector in config.sectors.into_iter() {
 		let (send, receiver) = channel();
-		sectors.insert(sector_name.clone(), send);
+		sectors.insert(sector.name.clone(), send);
 
 		let barrier = barrier.clone();
 		let runtime = runtime.clone();
-		thread::Builder::new().name(sector_name.clone()).spawn(move || {
+		thread::Builder::new().name(sector.name.to_string()).spawn(move || {
 			let _guard = runtime.enter();
 
 			let start_time = Instant::now();
 
-			let sector = Sector::load(receiver);
+			let sector = Sector::new(sector, receiver);
 
 			let end_time = Instant::now();
 			let load_time = end_time - start_time;
-			info!("{sector_name:?} ready! {load_time:.0?}");
+			info!("{:?} ready! {load_time:.0?}", sector.name);
 
 			barrier.wait();
 

@@ -175,7 +175,7 @@ impl Connection {
 	pub async fn connect(
 		ConnectInfo(address): ConnectInfo<SocketAddr>,
 		State(sectors): State<Sectors>,
-		Path(sector): Path<String>,
+		Path(sector): Path<Box<str>>,
 		Query(NameQuery { name }): Query<NameQuery>,
 		socket: WebSocketUpgrade,
 	) -> Response {
