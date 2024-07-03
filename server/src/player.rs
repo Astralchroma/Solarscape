@@ -40,7 +40,7 @@ impl Player {
 					// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
 					self.location.set(location);
 
-					let new = self.generate_chunk_list(sector);
+					let new = self.compute_loaded_chunks(sector);
 
 					for row in &self.chunk_locks {
 						let key = row.key();
@@ -60,46 +60,47 @@ impl Player {
 		}
 	}
 
-	pub fn generate_chunk_list(&self, sector: &Sector) -> DashSet<ChunkCoordinates> {
-		let mut chunk_list = DashSet::new();
+	pub fn compute_loaded_chunks(&self, sector: &Sector) -> DashSet<ChunkCoordinates> {
+		const MULTIPLIER: i32 = 1;
+
+		let chunks = DashSet::new();
 
 		for voxject in sector.voxjects() {
-			// These values are local to the level they are on. So a 0.5, 0.5, 0.5 player position on level 0 means in
-			// chunk 0, 0, 0 on the next level that becomes 0.25, 0.25, 0.25 in chunk 0, 0, 0.
-			//
+			// These values are relative to the current level. So a player position of
+			// (0.5 0.5 0.5, Chunk 0 0 0, Level 0) is the same as (0.25 0.25 0.25, Chunk 0, 0, 0, Level 1).
+
 			// Voxjects temporarily do not have a position until we intograte Rapier
 			let mut player_position =
 				Isometry3::default().inverse_transform_vector(&self.location.get().translation.vector) / 16.0;
 			let mut player_chunk = ChunkCoordinates::new(voxject.id, convert_unchecked(player_position), Level::new(0));
-			let mut chunks = HashSet::<ChunkCoordinates>::new();
-			let mut upleveled_chunks = HashSet::new();
+			let mut level_chunks = HashSet::new();
 
 			for level in 0..31u8 {
 				let level = Level::new(level);
-				let radius = ((*level as i32 + 1) * 2) >> *level;
+				let radius = ((*level as i32 / 32) * MULTIPLIER + MULTIPLIER) >> *level;
 
-				for chunk in &chunks {
-					upleveled_chunks.insert(chunk.upleveled());
-				}
+				if radius > 0 {
+					for x in player_chunk.coordinates.x - radius..=player_chunk.coordinates.x + radius {
+						for y in player_chunk.coordinates.y - radius..=player_chunk.coordinates.y + radius {
+							for z in player_chunk.coordinates.z - radius..=player_chunk.coordinates.z + radius {
+								let chunk = ChunkCoordinates::new(voxject.id, vector![x, y, z], level);
 
-				for x in player_chunk.coordinates.x - radius..=player_chunk.coordinates.x + radius {
-					for y in player_chunk.coordinates.y - radius..=player_chunk.coordinates.y + radius {
-						for z in player_chunk.coordinates.z - radius..=player_chunk.coordinates.z + radius {
-							let chunk = ChunkCoordinates::new(voxject.id, vector![x, y, z], level);
+								// circles look nicer
+								let chunk_center = vector![x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5];
+								if player_chunk != chunk
+									&& player_position.metric_distance(&chunk_center) as i32 > radius
+								{
+									continue;
+								}
 
-							// circles look nicer
-							let chunk_center = vector![x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5];
-							if player_chunk != chunk && player_position.metric_distance(&chunk_center) as i32 > radius {
-								continue;
+								level_chunks.insert(chunk.upleveled());
 							}
-
-							upleveled_chunks.insert(chunk.upleveled());
 						}
 					}
 				}
 
-				for upleveled_chunk in &upleveled_chunks {
-					let chunk = upleveled_chunk.downleveled();
+				for chunk in &level_chunks {
+					let chunk = chunk.downleveled();
 					chunks.insert(chunk + Vector3::new(0, 0, 0));
 					chunks.insert(chunk + Vector3::new(0, 0, 1));
 					chunks.insert(chunk + Vector3::new(0, 1, 0));
@@ -113,13 +114,13 @@ impl Player {
 				player_position /= 2.0;
 				player_chunk = player_chunk.upleveled();
 
-				chunk_list.extend(chunks);
-				chunks = upleveled_chunks;
-				upleveled_chunks = HashSet::new();
+				if *level < 30 {
+					level_chunks = level_chunks.into_iter().map(|chunk| chunk.upleveled()).collect();
+				}
 			}
 		}
 
-		chunk_list
+		chunks
 	}
 }
 
