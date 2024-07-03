@@ -13,7 +13,7 @@ pub struct Sector {
 	pub name: Box<str>,
 
 	voxjects: HashMap<VoxjectId, Voxject>,
-	chunks: DashMap<ChunkCoordinates, Arc<Chunk>>,
+	chunks: DashMap<ChunkCoordinates, Weak<Chunk>>,
 
 	players: Mutex<Vec<Player>>,
 
@@ -42,14 +42,15 @@ impl Sector {
 	}
 
 	pub fn get_chunk(self: &Arc<Self>, coordinates: ChunkCoordinates) -> Arc<Chunk> {
-		match self.chunks.get(&coordinates) {
-			Some(chunk) => chunk.clone(),
-			None => {
+		self.chunks
+			.get(&coordinates)
+			.as_deref()
+			.and_then(Weak::upgrade)
+			.unwrap_or_else(|| {
 				let chunk = Chunk::new(self, coordinates);
-				self.chunks.insert(coordinates, chunk.clone());
+				self.chunks.insert(coordinates, Arc::downgrade(&chunk));
 				chunk
-			}
-		}
+			})
 	}
 
 	pub fn run(self: Arc<Self>) {
