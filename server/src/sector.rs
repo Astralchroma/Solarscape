@@ -147,23 +147,25 @@ impl Chunk {
 		let generator = sector.voxjects[&coordinates.voxject].generator;
 		let chunk = return_chunk.clone();
 		rayon::spawn(move || {
-			let mut data = chunk.data.blocking_write();
+			if let Err(chunk) = Arc::try_unwrap(chunk) {
+				let mut data = chunk.data.blocking_write();
 
-			if data.is_none() {
-				*data = Some(generator(&chunk.coordinates));
-			}
+				if data.is_none() {
+					*data = Some(generator(&chunk.coordinates));
+				}
 
-			let data = data.downgrade();
-			let subscribers = chunk.subscribers.blocking_lock();
+				let data = data.downgrade();
+				let subscribers = chunk.subscribers.blocking_lock();
 
-			let message = ClientboundMessage::SyncChunk(SyncChunk {
-				coordinates,
-				materials: data.as_ref().unwrap().materials.clone(),
-				densities: data.as_ref().unwrap().densities.clone(),
-			});
+				let message = ClientboundMessage::SyncChunk(SyncChunk {
+					coordinates,
+					materials: data.as_ref().unwrap().materials.clone(),
+					densities: data.as_ref().unwrap().densities.clone(),
+				});
 
-			for connection in subscribers.values() {
-				connection.send(message.clone())
+				for connection in subscribers.values() {
+					connection.send(message.clone())
+				}
 			}
 		});
 
