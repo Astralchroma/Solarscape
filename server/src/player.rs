@@ -1,4 +1,4 @@
-use crate::{sector::Lock, sector::Sector, Sectors};
+use crate::{sector::ClientLock, sector::Sector, Sectors};
 use axum::extract::ws::{close_code, CloseFrame, Message, WebSocket};
 use axum::extract::{ConnectInfo, Path, Query, State, WebSocketUpgrade};
 use axum::{http::StatusCode, response::IntoResponse, response::Response};
@@ -19,7 +19,7 @@ pub struct Player {
 
 	location: Cell<Isometry3<f32>>,
 
-	chunk_locks: DashMap<ChunkCoordinates, Lock>,
+	client_locks: DashMap<ChunkCoordinates, ClientLock>,
 }
 
 impl Player {
@@ -30,7 +30,7 @@ impl Player {
 			connection.send(SyncVoxject { id, location: Isometry3::default() });
 		}
 
-		Self { connection, location: Cell::default(), chunk_locks: DashMap::new() }
+		Self { connection, location: Cell::default(), client_locks: DashMap::new() }
 	}
 
 	pub fn process_player(&self, sector: &Arc<Sector>) {
@@ -42,17 +42,18 @@ impl Player {
 
 					let new = self.compute_loaded_chunks(sector);
 
-					for row in &self.chunk_locks {
+					for row in &self.client_locks {
 						let key = row.key();
 						if !new.contains(key) {
-							self.chunk_locks.remove(key);
+							self.client_locks.remove(key);
 						}
 					}
 
 					for key in new {
-						if !self.chunk_locks.contains_key(&key) {
-							self.chunk_locks
-								.insert(key, sector.get_chunk(key).lock_and_sync(self.connection.clone()));
+						if !self.client_locks.contains_key(&key) {
+							let chunk = sector.get_chunk(key);
+							self.client_locks
+								.insert(key, ClientLock::new(chunk, self.connection.clone()));
 						}
 					}
 				}

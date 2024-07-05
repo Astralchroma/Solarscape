@@ -175,27 +175,6 @@ impl Chunk {
 	pub fn try_read_data(&self) -> TryDataReadGuard {
 		self.data.blocking_read()
 	}
-
-	pub fn lock_and_sync(self: Arc<Self>, connection: Arc<Connection>) -> Lock {
-		static LOCK_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
-		let id = LOCK_ID_COUNTER.fetch_add(1, Relaxed);
-
-		{
-			let mut subscribers = self.subscribers.blocking_lock();
-
-			if let Some(ref data) = *self.try_read_data() {
-				connection.send(SyncChunk {
-					coordinates: self.coordinates,
-					materials: data.materials.clone(),
-					densities: data.densities.clone(),
-				});
-			}
-
-			subscribers.insert(id, connection);
-		}
-
-		Lock { chunk: self, id }
-	}
 }
 
 impl Drop for Chunk {
@@ -219,12 +198,35 @@ impl Default for Data {
 	}
 }
 
-pub struct Lock {
+pub struct ClientLock {
 	chunk: Arc<Chunk>,
 	id: usize,
 }
 
-impl Deref for Lock {
+impl ClientLock {
+	pub fn new(chunk: Arc<Chunk>, connection: Arc<Connection>) -> Self {
+		static COUNTER: AtomicUsize = AtomicUsize::new(0);
+		let id = COUNTER.fetch_add(1, Relaxed);
+
+		{
+			let mut subscribers = chunk.subscribers.blocking_lock();
+
+			if let Some(ref data) = *chunk.try_read_data() {
+				connection.send(SyncChunk {
+					coordinates: chunk.coordinates,
+					materials: data.materials.clone(),
+					densities: data.densities.clone(),
+				});
+			}
+
+			subscribers.insert(id, connection);
+		}
+
+		Self { chunk, id }
+	}
+}
+
+impl Deref for ClientLock {
 	type Target = Chunk;
 
 	fn deref(&self) -> &Self::Target {
@@ -232,7 +234,7 @@ impl Deref for Lock {
 	}
 }
 
-impl Drop for Lock {
+impl Drop for ClientLock {
 	fn drop(&mut self) {
 		self.chunk.subscribers.blocking_lock().remove(&self.id);
 	}
