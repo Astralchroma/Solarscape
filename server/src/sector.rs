@@ -1,10 +1,11 @@
 use crate::{config, generation::sphere_generator, generation::Generator, player::Connection, player::Player};
 use dashmap::DashMap;
 use log::{error, warn};
+use nalgebra::vector;
 use solarscape_shared::messages::clientbound::{ClientboundMessage, SyncChunk};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
-use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
-use std::{collections::HashMap, ops::Deref, thread, time::Duration, time::Instant};
+use std::time::{Duration, Instant};
+use std::{array, collections::HashMap, mem, mem::MaybeUninit, sync::Arc, sync::Weak, thread};
 use thiserror::Error;
 use tokio::sync::RwLockReadGuard;
 use tokio::sync::{mpsc::error::TryRecvError, mpsc::UnboundedReceiver as Receiver, Mutex, RwLock};
@@ -130,7 +131,7 @@ pub struct Chunk {
 
 	// This is deliberately a `Mutex<HashMap<K, V>>` instead of a `DashMap<K, V>` as when locking the chunk for a
 	// connection, we need to prevent another thread from syncing at the same time, otherwise it could cause a desync.
-	subscribers: Mutex<HashMap<usize, Arc<Connection>>>,
+	subscribed_clients: Mutex<HashMap<usize, Arc<Connection>>>,
 
 	data: RwLock<Option<Data>>,
 }
@@ -140,22 +141,25 @@ impl Chunk {
 		let return_chunk = Arc::new(Self {
 			sector: Arc::downgrade(sector),
 			coordinates,
-			subscribers: Mutex::new(HashMap::new()),
+			subscribed_clients: Mutex::new(HashMap::new()),
 			data: RwLock::default(),
 		});
 
 		let generator = sector.voxjects[&coordinates.voxject].generator;
 		let chunk = return_chunk.clone();
 		rayon::spawn(move || {
+			// If try_unwrap returns Ok then nothing else wanted the chunk, so to avoid doing work that will be
+			// immidately discarded, we only generate the chunk if we cannot take exclusive ownership of it.
 			if let Err(chunk) = Arc::try_unwrap(chunk) {
 				let mut data = chunk.data.blocking_write();
 
+				// Another thread may synchronously generate chunks instead of waiting if the chunk is needed
+				// immediately. So if that has happened, don't re-generate the chunk.
 				if data.is_none() {
 					*data = Some(generator(&chunk.coordinates));
 				}
 
 				let data = data.downgrade();
-				let subscribers = chunk.subscribers.blocking_lock();
 
 				let message = ClientboundMessage::SyncChunk(SyncChunk {
 					coordinates,
@@ -163,16 +167,22 @@ impl Chunk {
 					densities: data.as_ref().unwrap().densities.clone(),
 				});
 
-				for connection in subscribers.values() {
-					connection.send(message.clone())
-				}
+				chunk
+					.subscribed_clients
+					.blocking_lock()
+					.values()
+					.for_each(|connection| connection.send(message.clone()));
+
+				// Manually drop as to make the intentional late drop obvious. If we release data before sending to all
+				// other clients, we risk a race condition in resyncing the chunk to the client.
+				drop(data);
 			}
 		});
 
 		return_chunk
 	}
 
-	pub fn try_read_data(&self) -> TryDataReadGuard {
+	pub fn try_read_data(&self) -> DataTryReadGuard {
 		self.data.blocking_read()
 	}
 }
@@ -185,7 +195,7 @@ impl Drop for Chunk {
 	}
 }
 
-pub type TryDataReadGuard<'a> = RwLockReadGuard<'a, Option<Data>>;
+pub type DataTryReadGuard<'a> = RwLockReadGuard<'a, Option<Data>>;
 
 pub struct Data {
 	pub materials: Box<[Material; 4096]>,
@@ -199,43 +209,51 @@ impl Default for Data {
 }
 
 pub struct ClientLock {
-	chunk: Arc<Chunk>,
+	chunks: [Arc<Chunk>; 27],
 	id: usize,
 }
 
 impl ClientLock {
-	pub fn new(chunk: Arc<Chunk>, connection: Arc<Connection>) -> Self {
-		static COUNTER: AtomicUsize = AtomicUsize::new(0);
-		let id = COUNTER.fetch_add(1, Relaxed);
-
-		{
-			let mut subscribers = chunk.subscribers.blocking_lock();
-
-			if let Some(ref data) = *chunk.try_read_data() {
-				connection.send(SyncChunk {
-					coordinates: chunk.coordinates,
-					materials: data.materials.clone(),
-					densities: data.densities.clone(),
-				});
+	pub fn new(sector: &Arc<Sector>, coordinates: ChunkCoordinates, connection: Arc<Connection>) -> Self {
+		// Build a list of chunks that we need to subscribe to
+		let chunks: [Arc<Chunk>; 27] = {
+			let mut chunks: [_; 27] = array::from_fn(|_| MaybeUninit::uninit());
+			let mut index = 0;
+			for x in -1..=1 {
+				for y in -1..=1 {
+					for z in -1..=1 {
+						let coordinates = coordinates + vector![x, y, z];
+						chunks[index] = MaybeUninit::new(sector.get_chunk(coordinates));
+						index += 1;
+					}
+				}
 			}
+			unsafe { mem::transmute(chunks) }
+		};
 
-			subscribers.insert(id, connection);
+		for chunk in &chunks {
+			let mut subscribed_clients = chunk.subscribed_clients.blocking_lock();
+
+			// is_none check to avoid duplicate chunk syncs
+			if subscribed_clients.insert(connection.id, connection.clone()).is_none() {
+				if let Some(ref data) = *chunk.try_read_data() {
+					connection.send(SyncChunk {
+						coordinates: chunk.coordinates,
+						materials: data.materials.clone(),
+						densities: data.densities.clone(),
+					});
+				}
+			}
 		}
 
-		Self { chunk, id }
-	}
-}
-
-impl Deref for ClientLock {
-	type Target = Chunk;
-
-	fn deref(&self) -> &Self::Target {
-		&self.chunk
+		Self { chunks, id: connection.id }
 	}
 }
 
 impl Drop for ClientLock {
 	fn drop(&mut self) {
-		self.chunk.subscribers.blocking_lock().remove(&self.id);
+		for chunk in &self.chunks {
+			chunk.subscribed_clients.blocking_lock().remove(&self.id);
+		}
 	}
 }

@@ -8,7 +8,8 @@ use nalgebra::{convert_unchecked, vector, Isometry3, Vector3};
 use serde::Deserialize;
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncVoxject};
 use solarscape_shared::{messages::serverbound::ServerboundMessage, types::ChunkCoordinates, types::Level};
-use std::{borrow::Cow, cell::Cell, collections::HashSet, net::SocketAddr, ops::Deref, sync::Arc};
+use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc};
+use std::{borrow::Cow, cell::Cell, collections::HashSet, net::SocketAddr, ops::Deref};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tokio::sync::oneshot::{channel as oneshot, Receiver as OneshotReceiver, Sender as OneshotSender};
 use tokio::sync::{mpsc::error::SendError, mpsc::error::TryRecvError, Mutex, RwLock};
@@ -43,17 +44,18 @@ impl Player {
 					let new = self.compute_loaded_chunks(sector);
 
 					for row in &self.client_locks {
-						let key = row.key();
-						if !new.contains(key) {
-							self.client_locks.remove(key);
+						let coordinates = row.key();
+						if !new.contains(coordinates) {
+							self.client_locks.remove(coordinates);
 						}
 					}
 
-					for key in new {
-						if !self.client_locks.contains_key(&key) {
-							let chunk = sector.get_chunk(key);
-							self.client_locks
-								.insert(key, ClientLock::new(chunk, self.connection.clone()));
+					for coordinates in new {
+						if !self.client_locks.contains_key(&coordinates) {
+							self.client_locks.insert(
+								coordinates,
+								ClientLock::new(sector, coordinates, self.connection.clone()),
+							);
 						}
 					}
 				}
@@ -134,6 +136,7 @@ impl Deref for Player {
 }
 
 pub struct Connection {
+	pub id: usize,
 	pub name: Box<str>,
 
 	_latency: Arc<RwLock<Duration>>,
@@ -209,7 +212,11 @@ impl Connection {
 					let (outgoing, handler_outgoing) = channel();
 					let (handler_incoming, incoming) = channel();
 
+					static COUNTER: AtomicUsize = AtomicUsize::new(0);
+					let id = COUNTER.fetch_add(1, Relaxed);
+
 					let connection = Arc::new(Self {
+						id,
 						name: name.clone(),
 						_latency: latency.clone(),
 						disconnect: RwLock::new(Some(disconnect)),
