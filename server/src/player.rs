@@ -1,8 +1,7 @@
-use crate::{sector::ClientLock, sector::Sector, Sectors};
+use crate::{sector::ClientLock, sector::Sector, sector::TickLock, Sectors};
 use axum::extract::ws::{close_code, CloseFrame, Message, WebSocket};
 use axum::extract::{ConnectInfo, Path, Query, State, WebSocketUpgrade};
 use axum::{http::StatusCode, response::IntoResponse, response::Response};
-use dashmap::{DashMap, DashSet};
 use log::{error, info, warn};
 use nalgebra::{convert_unchecked, vector, Isometry3, Vector3};
 use serde::Deserialize;
@@ -20,7 +19,8 @@ pub struct Player {
 
 	location: Cell<Isometry3<f32>>,
 
-	client_locks: DashMap<ChunkCoordinates, ClientLock>,
+	client_locks: Cell<Vec<ClientLock>>,
+	tick_locks: Cell<Vec<TickLock>>,
 }
 
 impl Player {
@@ -31,7 +31,7 @@ impl Player {
 			connection.send(SyncVoxject { id, location: Isometry3::default() });
 		}
 
-		Self { connection, location: Cell::default(), client_locks: DashMap::new() }
+		Self { connection, location: Cell::default(), client_locks: Cell::default(), tick_locks: Cell::default() }
 	}
 
 	pub fn process_player(&self, sector: &Arc<Sector>) {
@@ -41,32 +41,31 @@ impl Player {
 					// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
 					self.location.set(location);
 
-					let new = self.compute_loaded_chunks(sector);
+					let (new_client_locks, new_tick_locks) = self.compute_locks(sector);
 
-					for row in &self.client_locks {
-						let coordinates = row.key();
-						if !new.contains(coordinates) {
-							self.client_locks.remove(coordinates);
-						}
-					}
+					let client_locks = new_client_locks
+						.into_iter()
+						.map(|coordinates| ClientLock::new(sector, coordinates, self.connection.clone()))
+						.collect();
 
-					for coordinates in new {
-						if !self.client_locks.contains_key(&coordinates) {
-							self.client_locks.insert(
-								coordinates,
-								ClientLock::new(sector, coordinates, self.connection.clone()),
-							);
-						}
-					}
+					self.client_locks.set(client_locks);
+
+					let tick_locks = new_tick_locks
+						.into_iter()
+						.map(|coordinates| TickLock::new(sector, coordinates))
+						.collect();
+
+					self.tick_locks.set(tick_locks);
 				}
 			}
 		}
 	}
 
-	pub fn compute_loaded_chunks(&self, sector: &Sector) -> DashSet<ChunkCoordinates> {
+	pub fn compute_locks(&self, sector: &Sector) -> (HashSet<ChunkCoordinates>, Vec<ChunkCoordinates>) {
 		const MULTIPLIER: i32 = 1;
 
-		let chunks = DashSet::new();
+		let mut client_locks = HashSet::new();
+		let mut tick_locks = Vec::new();
 
 		for voxject in sector.voxjects() {
 			// These values are relative to the current level. So a player position of
@@ -77,6 +76,8 @@ impl Player {
 				Isometry3::default().inverse_transform_vector(&self.location.get().translation.vector) / 16.0;
 			let mut player_chunk = ChunkCoordinates::new(voxject.id, convert_unchecked(player_position), Level::new(0));
 			let mut level_chunks = HashSet::new();
+
+			tick_locks.push(player_chunk);
 
 			for level in 0..31u8 {
 				let level = Level::new(level);
@@ -104,14 +105,14 @@ impl Player {
 
 				for chunk in &level_chunks {
 					let chunk = chunk.downleveled();
-					chunks.insert(chunk + Vector3::new(0, 0, 0));
-					chunks.insert(chunk + Vector3::new(0, 0, 1));
-					chunks.insert(chunk + Vector3::new(0, 1, 0));
-					chunks.insert(chunk + Vector3::new(0, 1, 1));
-					chunks.insert(chunk + Vector3::new(1, 0, 0));
-					chunks.insert(chunk + Vector3::new(1, 0, 1));
-					chunks.insert(chunk + Vector3::new(1, 1, 0));
-					chunks.insert(chunk + Vector3::new(1, 1, 1));
+					client_locks.insert(chunk + Vector3::new(0, 0, 0));
+					client_locks.insert(chunk + Vector3::new(0, 0, 1));
+					client_locks.insert(chunk + Vector3::new(0, 1, 0));
+					client_locks.insert(chunk + Vector3::new(0, 1, 1));
+					client_locks.insert(chunk + Vector3::new(1, 0, 0));
+					client_locks.insert(chunk + Vector3::new(1, 0, 1));
+					client_locks.insert(chunk + Vector3::new(1, 1, 0));
+					client_locks.insert(chunk + Vector3::new(1, 1, 1));
 				}
 
 				player_position /= 2.0;
@@ -123,7 +124,7 @@ impl Player {
 			}
 		}
 
-		chunks
+		(client_locks, tick_locks)
 	}
 }
 

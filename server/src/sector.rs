@@ -1,11 +1,12 @@
 use crate::{config, generation::sphere_generator, generation::Generator, player::Connection, player::Player};
 use dashmap::DashMap;
-use log::{error, warn};
+use log::{debug, error, warn};
 use nalgebra::vector;
 use solarscape_shared::messages::clientbound::{ClientboundMessage, SyncChunk};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
-use std::time::{Duration, Instant};
-use std::{array, collections::HashMap, mem, mem::MaybeUninit, sync::Arc, sync::Weak, thread};
+use std::marker::PhantomData;
+use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
+use std::{array, collections::HashMap, mem, mem::MaybeUninit, thread, time::Duration, time::Instant};
 use thiserror::Error;
 use tokio::sync::RwLockReadGuard;
 use tokio::sync::{mpsc::error::TryRecvError, mpsc::UnboundedReceiver as Receiver, Mutex, RwLock};
@@ -15,6 +16,7 @@ pub struct Sector {
 
 	voxjects: HashMap<VoxjectId, Voxject>,
 	chunks: DashMap<ChunkCoordinates, Weak<Chunk>>,
+	ticking_chunks: DashMap<usize, Arc<Chunk>>,
 
 	players: Mutex<Vec<Player>>,
 
@@ -31,9 +33,13 @@ impl Sector {
 
 		Arc::new(Self {
 			name,
+
 			voxjects,
 			chunks: DashMap::new(),
+			ticking_chunks: DashMap::new(),
+
 			players: Mutex::new(Vec::new()),
+
 			connecting_players: Mutex::new(connecting_players),
 		})
 	}
@@ -126,6 +132,7 @@ impl Voxject {
 
 #[non_exhaustive]
 pub struct Chunk {
+	pub id: usize,
 	pub sector: Weak<Sector>,
 	pub coordinates: ChunkCoordinates,
 
@@ -133,15 +140,27 @@ pub struct Chunk {
 	// connection, we need to prevent another thread from syncing at the same time, otherwise it could cause a desync.
 	subscribed_clients: Mutex<HashMap<usize, Arc<Connection>>>,
 
+	// Multiple tick locks may exist, we need to avoid removing a chunk from the ticking list if its tick locked
+	// elsewhere.
+	tick_lock_count: AtomicUsize,
+
 	data: RwLock<Option<Data>>,
 }
 
 impl Chunk {
 	fn new(sector: &Arc<Sector>, coordinates: ChunkCoordinates) -> Arc<Self> {
+		static COUNTER: AtomicUsize = AtomicUsize::new(0);
+		let id = COUNTER.fetch_add(1, Relaxed);
+
 		let return_chunk = Arc::new(Self {
+			id,
 			sector: Arc::downgrade(sector),
 			coordinates,
+
 			subscribed_clients: Mutex::new(HashMap::new()),
+
+			tick_lock_count: AtomicUsize::new(0),
+
 			data: RwLock::default(),
 		});
 
@@ -254,6 +273,48 @@ impl Drop for ClientLock {
 	fn drop(&mut self) {
 		for chunk in &self.chunks {
 			chunk.subscribed_clients.blocking_lock().remove(&self.id);
+		}
+	}
+}
+
+pub struct TickLock([Arc<Chunk>; 27]);
+
+impl TickLock {
+	pub fn new(sector: &Arc<Sector>, coordinates: ChunkCoordinates) -> Self {
+		// Build a list of chunks that we need to lock
+		let chunks: [Arc<Chunk>; 27] = {
+			let mut chunks: [_; 27] = array::from_fn(|_| MaybeUninit::uninit());
+			let mut index = 0;
+			for x in -1..=1 {
+				for y in -1..=1 {
+					for z in -1..=1 {
+						let coordinates = coordinates + vector![x, y, z];
+						chunks[index] = MaybeUninit::new(sector.get_chunk(coordinates));
+						index += 1;
+					}
+				}
+			}
+			unsafe { mem::transmute(chunks) }
+		};
+
+		for chunk in &chunks {
+			if chunk.tick_lock_count.fetch_add(1, Relaxed) == 0 {
+				sector.ticking_chunks.insert(chunk.id, chunk.clone());
+			}
+		}
+
+		Self(chunks)
+	}
+}
+
+impl Drop for TickLock {
+	fn drop(&mut self) {
+		for chunk in &self.0 {
+			if chunk.tick_lock_count.fetch_sub(1, Relaxed) == 1 {
+				if let Some(sector) = Weak::upgrade(&chunk.sector) {
+					sector.ticking_chunks.remove(&chunk.id);
+				}
+			}
 		}
 	}
 }
