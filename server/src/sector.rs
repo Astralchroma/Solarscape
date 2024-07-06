@@ -1,10 +1,9 @@
 use crate::{config, generation::sphere_generator, generation::Generator, player::Connection, player::Player};
 use dashmap::DashMap;
-use log::{debug, error, warn};
+use log::{error, warn};
 use nalgebra::vector;
 use solarscape_shared::messages::clientbound::{ClientboundMessage, SyncChunk};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
-use std::marker::PhantomData;
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
 use std::{array, collections::HashMap, mem, mem::MaybeUninit, thread, time::Duration, time::Instant};
 use thiserror::Error;
