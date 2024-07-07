@@ -1,14 +1,15 @@
 use crate::{config, generation::sphere_generator, generation::Generator, player::Connection, player::Player};
 use dashmap::DashMap;
 use log::{error, warn};
-use nalgebra::vector;
+use nalgebra::{point, vector, Point3};
 use solarscape_shared::messages::clientbound::{ClientboundMessage, SyncChunk};
+use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
 use std::{array, collections::HashMap, mem, mem::MaybeUninit, thread, time::Duration, time::Instant};
 use thiserror::Error;
-use tokio::sync::RwLockReadGuard;
-use tokio::sync::{mpsc::error::TryRecvError, mpsc::UnboundedReceiver as Receiver, Mutex, RwLock};
+use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver as Receiver};
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub struct Sector {
 	pub name: Box<str>,
@@ -144,6 +145,7 @@ pub struct Chunk {
 	tick_lock_count: AtomicUsize,
 
 	data: RwLock<Option<Data>>,
+	collision: RwLock<Option<Collision>>,
 }
 
 impl Chunk {
@@ -161,43 +163,187 @@ impl Chunk {
 			tick_lock_count: AtomicUsize::new(0),
 
 			data: RwLock::default(),
+			collision: RwLock::default(),
 		});
 
-		let generator = sector.voxjects[&coordinates.voxject].generator;
 		let chunk = return_chunk.clone();
 		rayon::spawn(move || {
 			// If try_unwrap returns Ok then nothing else wanted the chunk, so to avoid doing work that will be
 			// immidately discarded, we only generate the chunk if we cannot take exclusive ownership of it.
 			if let Err(chunk) = Arc::try_unwrap(chunk) {
-				let mut data = chunk.data.blocking_write();
-
-				// Another thread may synchronously generate chunks instead of waiting if the chunk is needed
-				// immediately. So if that has happened, don't re-generate the chunk.
-				if data.is_none() {
-					*data = Some(generator(&chunk.coordinates));
-				}
-
-				let data = data.downgrade();
-
-				let message = ClientboundMessage::SyncChunk(SyncChunk {
-					coordinates,
-					materials: data.as_ref().unwrap().materials.clone(),
-					densities: data.as_ref().unwrap().densities.clone(),
-				});
-
-				chunk
-					.subscribed_clients
-					.blocking_lock()
-					.values()
-					.for_each(|connection| connection.send(message.clone()));
-
-				// Manually drop as to make the intentional late drop obvious. If we release data before sending to all
-				// other clients, we risk a race condition in resyncing the chunk to the client.
-				drop(data);
+				let data = chunk.data.blocking_write();
+				let _ = chunk.generate_chunk_data(data);
 			}
 		});
 
 		return_chunk
+	}
+
+	fn generate_chunk_data<'a>(
+		&'a self,
+		mut data: RwLockWriteGuard<'a, Option<Data>>,
+	) -> RwLockReadGuard<'a, Option<Data>> {
+		// Another thread may synchronously generate chunks instead of waiting if the chunk is needed
+		// immediately. So if that has happened, don't re-generate the chunk.
+		if data.is_some() {
+			return data.downgrade();
+		}
+
+		let generator = self
+			.sector
+			.upgrade()
+			.expect("Chunk should not be used after Sector has been dropped")
+			.voxjects[&self.coordinates.voxject]
+			.generator;
+
+		*data = Some(generator(&self.coordinates));
+
+		let data = data.downgrade();
+
+		let message = ClientboundMessage::SyncChunk(SyncChunk {
+			coordinates: self.coordinates,
+			materials: data.as_ref().unwrap().materials.clone(),
+			densities: data.as_ref().unwrap().densities.clone(),
+		});
+
+		self.subscribed_clients
+			.blocking_lock()
+			.values()
+			.for_each(|connection| connection.send(message.clone()));
+
+		data
+	}
+
+	pub fn generate_collision_mesh(self: Arc<Self>) {
+		rayon::spawn(move || {
+			// If try_unwrap returns Ok then nothing else wanted the chunk, so to avoid doing work that will be
+			// immidately discarded, we only generate the chunk's collision mesh if we cannot take exclusive ownership of it.
+			if let Err(chunk) = Arc::try_unwrap(self) {
+				let mut collision = chunk.collision.blocking_write();
+
+				if collision.is_some() {
+					return;
+				}
+
+				let sector = chunk
+					.sector
+					.upgrade()
+					.expect("Chunk should not be used after Sector has been dropped");
+
+				let chunks = [
+					chunk.clone(),
+					sector.get_chunk(chunk.coordinates + vector![0, 0, 1]),
+					sector.get_chunk(chunk.coordinates + vector![0, 1, 0]),
+					sector.get_chunk(chunk.coordinates + vector![0, 1, 1]),
+					sector.get_chunk(chunk.coordinates + vector![1, 0, 0]),
+					sector.get_chunk(chunk.coordinates + vector![1, 0, 1]),
+					sector.get_chunk(chunk.coordinates + vector![1, 1, 0]),
+					sector.get_chunk(chunk.coordinates + vector![1, 1, 1]),
+				];
+
+				let chunk_data_guards = chunks.each_ref().map(|chunk| chunk.read_data_immediately());
+
+				let mut densities = [0f32; usize::pow(17, 3)];
+				let mut materials = [Material::Nothing; usize::pow(17, 3)];
+
+				for x in 0..17 {
+					for y in 0..17 {
+						for z in 0..17 {
+							let chunk_index = ((x & 0x10) >> 2) | ((y & 0x10) >> 3) | ((z & 0x10) >> 4);
+							let cell_index = (x * 17 * 17) + (y * 17) + z;
+							let chunk_cell_index = (x & 0x0F) << 8 | (y & 0x0F) << 4 | z & 0x0F;
+
+							densities[cell_index] = chunk_data_guards[chunk_index].densities[chunk_cell_index];
+							materials[cell_index] = chunk_data_guards[chunk_index].materials[chunk_cell_index];
+						}
+					}
+				}
+
+				let mut new_collision = Collision::default();
+
+				for x in 0..16 {
+					for y in 0..16 {
+						for z in 0..16 {
+							let indexes = [
+								(x, y, z + 1),
+								(x + 1, y, z + 1),
+								(x + 1, y, z),
+								(x, y, z),
+								(x, y + 1, z + 1),
+								(x + 1, y + 1, z + 1),
+								(x + 1, y + 1, z),
+								(x, y + 1, z),
+							]
+							.map(|(x, y, z)| (x * 289) + (y * 17) + z);
+
+							let densities = indexes.map(|index| densities[index]);
+							let materials = indexes.map(|index| materials[index]);
+
+							#[allow(clippy::identity_op)]
+							#[rustfmt::skip]
+							let case_index = (!matches!(materials[0], Material::Nothing) as usize) << 0
+								| (!matches!(materials[1], Material::Nothing) as usize) << 1
+								| (!matches!(materials[2], Material::Nothing) as usize) << 2
+								| (!matches!(materials[3], Material::Nothing) as usize) << 3
+								| (!matches!(materials[4], Material::Nothing) as usize) << 4
+								| (!matches!(materials[5], Material::Nothing) as usize) << 5
+								| (!matches!(materials[6], Material::Nothing) as usize) << 6
+								| (!matches!(materials[7], Material::Nothing) as usize) << 7;
+
+							let EdgeData { count, edge_indices } = CELL_EDGE_MAP[case_index];
+
+							for edge_indices in edge_indices.chunks(3).take(count as usize) {
+								let vertices = edge_indices
+									.iter()
+									.map(|edge_index| {
+										let (a_index, b_index) = EDGE_CORNER_MAP[*edge_index as usize];
+
+										let a_density = densities[a_index];
+										let b_density = densities[b_index];
+
+										let weight = if a_density == b_density {
+											0.5
+										} else {
+											(0.0 - a_density) / (b_density - a_density)
+										};
+
+										let a = CORNERS[a_index];
+										let b = CORNERS[b_index];
+
+										let vertex = a + weight * (b - a);
+
+										point![x as f32, y as f32, z as f32] + vertex
+									})
+									.collect::<Vec<_>>();
+
+								new_collision.vertices.extend_from_slice(&vertices);
+							}
+						}
+					}
+				}
+
+				new_collision.indices = (0..new_collision.vertices.len() as u32)
+					.collect::<Vec<_>>()
+					.chunks_exact(3)
+					.map(|chunk| [chunk[0], chunk[1], chunk[2]])
+					.collect();
+
+				*collision = Some(new_collision);
+			}
+		});
+	}
+
+	pub fn read_data_immediately(&self) -> DataReadGuard {
+		{
+			let data = self.data.blocking_read();
+
+			if data.is_some() {
+				return RwLockReadGuard::map(data, |v| v.as_ref().unwrap());
+			}
+		}
+
+		let data = self.generate_chunk_data(self.data.blocking_write());
+		RwLockReadGuard::map(data, |v| v.as_ref().unwrap())
 	}
 
 	pub fn try_read_data(&self) -> DataTryReadGuard {
@@ -214,7 +360,9 @@ impl Drop for Chunk {
 }
 
 pub type DataTryReadGuard<'a> = RwLockReadGuard<'a, Option<Data>>;
+pub type DataReadGuard<'a> = RwLockReadGuard<'a, Data>;
 
+#[non_exhaustive]
 pub struct Data {
 	pub materials: Box<[Material; 4096]>,
 	pub densities: Box<[f32; 4096]>,
@@ -224,6 +372,13 @@ impl Default for Data {
 	fn default() -> Self {
 		Self { materials: Box::new([Material::Nothing; 4096]), densities: Box::new([0.0; 4096]) }
 	}
+}
+
+#[derive(Default)]
+#[non_exhaustive]
+pub struct Collision {
+	pub vertices: Vec<Point3<f32>>,
+	pub indices: Vec<[u32; 3]>,
 }
 
 pub struct ClientLock {
@@ -299,6 +454,7 @@ impl TickLock {
 		for chunk in &chunks {
 			if chunk.tick_lock_count.fetch_add(1, Relaxed) == 0 {
 				sector.ticking_chunks.insert(chunk.id, chunk.clone());
+				chunk.clone().generate_collision_mesh();
 			}
 		}
 

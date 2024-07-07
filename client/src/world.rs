@@ -1,7 +1,8 @@
-use crate::{camera::Camera, data::EdgeData, data::CELL_EDGE_MAP, data::CORNERS, data::EDGE_CORNER_MAP};
+use crate::camera::Camera;
 use bytemuck::{cast_slice, Pod, Zeroable};
 use image::GenericImageView;
 use nalgebra::{vector, Isometry3, Vector2, Vector3};
+use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
 use std::{collections::HashMap, collections::HashSet};
 use wgpu::{

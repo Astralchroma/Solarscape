@@ -5,6 +5,7 @@ pub mod messages {
 	pub mod serverbound;
 }
 
+pub mod triangulation_table;
 pub mod types;
 
 use chrono::{Local, SubsecRound};

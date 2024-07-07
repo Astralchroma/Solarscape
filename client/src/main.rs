@@ -10,7 +10,6 @@ use winit::event_loop::EventLoop;
 mod camera;
 mod client;
 mod connection;
-mod data;
 mod types;
 mod world;
 
