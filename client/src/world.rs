@@ -147,6 +147,7 @@ impl Sector {
 				})],
 			}),
 			multiview: None,
+			cache: None,
 		});
 
 		Self { voxjects: HashMap::new(), chunk_pipeline, terrain_textures_bind_group }

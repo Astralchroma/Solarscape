@@ -20,5 +20,5 @@ tokio-tungstenite = "0.23"
 tokio-util = "0.7"
 winit = "0.30"
 
-wgpu = { version = "0.20", default-features = false, features = ["wgsl"] }
+wgpu = { version = "22", default-features = false, features = ["wgsl"] }
 image = { version = "0.25", default-features = false, features = ["png", "rayon"] }
