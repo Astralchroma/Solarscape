@@ -7,10 +7,13 @@ mod sector;
 
 use crate::{config::Config, player::Connection, sector::Sector};
 use axum::{http::StatusCode, routing::get};
+use log::error;
 use log::{info, warn, LevelFilter::Trace};
+use rayon::spawn_broadcast;
 use std::{
 	env, fs, fs::File, io, io::Read, net::SocketAddr, path::PathBuf, sync::Arc, sync::Barrier, thread, time::Instant,
 };
+use thread_priority::ThreadPriority;
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedSender as Sender};
 use tokio::{net::TcpListener, runtime::Builder};
 
@@ -85,6 +88,14 @@ fn main() -> io::Result<()> {
 	);
 
 	info!("Started Async Runtime with 1 worker thread");
+
+	info!("Setting Rayon Thread Priority");
+	spawn_broadcast(|_| {
+		if let Err(error) = ThreadPriority::Min.set_for_current() {
+			error!("Failed to set Rayon Thread Priority to minimum: {error}")
+		}
+	});
+
 	info!("Loading sectors");
 
 	let sectors = Sectors::default();
