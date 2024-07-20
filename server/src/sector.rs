@@ -125,7 +125,11 @@ pub struct Voxject {
 impl Voxject {
 	pub fn new(config::Voxject { name }: config::Voxject) -> (VoxjectId, Self) {
 		let id = VoxjectId::new();
-		let voxject = Self { id, name, generator: sphere_generator };
+		let voxject = Self {
+			id,
+			name,
+			generator: sphere_generator,
+		};
 		(id, voxject)
 	}
 }
@@ -370,7 +374,10 @@ pub struct Data {
 
 impl Default for Data {
 	fn default() -> Self {
-		Self { materials: Box::new([Material::Nothing; 4096]), densities: Box::new([0.0; 4096]) }
+		Self {
+			materials: Box::new([Material::Nothing; 4096]),
+			densities: Box::new([0.0; 4096]),
+		}
 	}
 }
 
@@ -419,7 +426,10 @@ impl ClientLock {
 			}
 		}
 
-		Self { chunks, id: connection.id }
+		Self {
+			chunks,
+			id: connection.id,
+		}
 	}
 }
 

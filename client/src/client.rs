@@ -102,7 +102,10 @@ impl State {
 			event_loop.create_window(
 				Window::default_attributes()
 					.with_maximized(true)
-					.with_inner_size(PhysicalSize { width: 854, height: 480 })
+					.with_inner_size(PhysicalSize {
+						width: 854,
+						height: 480,
+					})
 					.with_title("Solarscape"),
 			)?,
 		);
@@ -118,7 +121,10 @@ impl State {
 			.ok_or(ClientError::Adapter)?;
 
 		let (device, queue) = Handle::current().block_on(adapter.request_device(
-			&DeviceDescriptor { label: Some("device"), ..DeviceDescriptor::default() },
+			&DeviceDescriptor {
+				label: Some("device"),
+				..DeviceDescriptor::default()
+			},
 			None,
 		))?;
 
@@ -163,7 +169,10 @@ impl State {
 			encoder.begin_render_pass(&RenderPassDescriptor {
 				label: Some("render_pass"),
 				color_attachments: &[Some(RenderPassColorAttachment {
-					ops: Operations { load: Clear(Color::BLACK), store: Store },
+					ops: Operations {
+						load: Clear(Color::BLACK),
+						store: Store,
+					},
 					resolve_target: None,
 					view: &view,
 				})],
@@ -180,7 +189,11 @@ impl State {
 
 		let depth_texture_descriptor = TextureDescriptor {
 			label: Some("depth_texture"),
-			size: Extent3d { width, height, depth_or_array_layers: 1 },
+			size: Extent3d {
+				width,
+				height,
+				depth_or_array_layers: 1,
+			},
 			mip_level_count: 1,
 			sample_count: 1,
 			dimension: D2,
@@ -189,8 +202,10 @@ impl State {
 			view_formats: &[],
 		};
 
-		let depth_texture_view_descriptor =
-			TextureViewDescriptor { label: Some("depth_texture_view"), ..TextureViewDescriptor::default() };
+		let depth_texture_view_descriptor = TextureViewDescriptor {
+			label: Some("depth_texture_view"),
+			..TextureViewDescriptor::default()
+		};
 
 		let mut camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
 
@@ -235,7 +250,11 @@ impl State {
 		self.config.width = width;
 		self.config.height = height;
 		self.surface.configure(&self.device, &self.config);
-		self.depth_texture_descriptor.size = Extent3d { width, height, depth_or_array_layers: 1 };
+		self.depth_texture_descriptor.size = Extent3d {
+			width,
+			height,
+			depth_or_array_layers: 1,
+		};
 		self.depth_texture = self.device.create_texture(&self.depth_texture_descriptor);
 		self.depth_texture_view = self.depth_texture.create_view(&TextureViewDescriptor::default());
 		self.camera.set_aspect(width as f32 / height as f32);
@@ -256,13 +275,19 @@ impl State {
 
 		let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
 			color_attachments: &[Some(RenderPassColorAttachment {
-				ops: Operations { load: Clear(Color::BLACK), store: Store },
+				ops: Operations {
+					load: Clear(Color::BLACK),
+					store: Store,
+				},
 				resolve_target: None,
 				view: &view,
 			})],
 			depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
 				view: &self.depth_texture_view,
-				depth_ops: Some(Operations { load: Clear(0.0), store: Store }),
+				depth_ops: Some(Operations {
+					load: Clear(0.0),
+					store: Store,
+				}),
 				stencil_ops: None,
 			}),
 			..Default::default()
@@ -298,8 +323,17 @@ impl State {
 				ClientboundMessage::SyncVoxject(SyncVoxject { id, location }) => {
 					self.sector.voxjects.get_mut(&id).unwrap().location = location;
 				}
-				ClientboundMessage::SyncChunk(SyncChunk { coordinates, materials, densities }) => {
-					let chunk = Chunk { coordinates, materials, densities, mesh: None };
+				ClientboundMessage::SyncChunk(SyncChunk {
+					coordinates,
+					materials,
+					densities,
+				}) => {
+					let chunk = Chunk {
+						coordinates,
+						materials,
+						densities,
+						mesh: None,
+					};
 					let voxject = self.sector.voxjects.get_mut(&coordinates.voxject).unwrap();
 					voxject.add_chunk(&self.device, chunk);
 				}

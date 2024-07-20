@@ -29,7 +29,11 @@ impl Camera {
 			entries: &[BindGroupLayoutEntry {
 				binding: 0,
 				visibility: ShaderStages::VERTEX,
-				ty: BindingType::Buffer { ty: Uniform, has_dynamic_offset: false, min_binding_size: None },
+				ty: BindingType::Buffer {
+					ty: Uniform,
+					has_dynamic_offset: false,
+					min_binding_size: None,
+				},
 				count: None,
 			}],
 		});
@@ -44,10 +48,20 @@ impl Camera {
 		let bind_group = device.create_bind_group(&BindGroupDescriptor {
 			label: Some("camera.bind_group"),
 			layout: &bind_group_layout,
-			entries: &[BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }],
+			entries: &[BindGroupEntry {
+				binding: 0,
+				resource: buffer.as_entire_binding(),
+			}],
 		});
 
-		Self { perspective, view, changed: true, bind_group_layout, buffer, bind_group }
+		Self {
+			perspective,
+			view,
+			changed: true,
+			bind_group_layout,
+			buffer,
+			bind_group,
+		}
 	}
 
 	#[must_use]

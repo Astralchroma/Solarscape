@@ -32,8 +32,11 @@ impl Sector {
 			.expect("terrain_textures.png must be valid");
 		let terrain_textures_rgba8 = terrain_textures_image.to_rgba8();
 		let (terrain_textures_width, terrain_textures_height) = terrain_textures_image.dimensions();
-		let terrain_textures_size =
-			Extent3d { width: terrain_textures_width, height: terrain_textures_height, depth_or_array_layers: 1 };
+		let terrain_textures_size = Extent3d {
+			width: terrain_textures_width,
+			height: terrain_textures_height,
+			depth_or_array_layers: 1,
+		};
 
 		let terrain_textures = device.create_texture(&TextureDescriptor {
 			label: Some("sector.terrain_textures"),
@@ -47,7 +50,12 @@ impl Sector {
 		});
 
 		queue.write_texture(
-			ImageCopyTexture { texture: &terrain_textures, mip_level: 0, origin: Origin3d::ZERO, aspect: All },
+			ImageCopyTexture {
+				texture: &terrain_textures,
+				mip_level: 0,
+				origin: Origin3d::ZERO,
+				aspect: All,
+			},
 			&terrain_textures_rgba8,
 			ImageDataLayout {
 				offset: 0,
@@ -86,8 +94,14 @@ impl Sector {
 			label: Some("sector.terrain_textures_bind_group"),
 			layout: &terrain_textures_bind_group_layout,
 			entries: &[
-				BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&terrain_textures_view) },
-				BindGroupEntry { binding: 1, resource: BindingResource::Sampler(&terrain_textures_sampler) },
+				BindGroupEntry {
+					binding: 0,
+					resource: BindingResource::TextureView(&terrain_textures_view),
+				},
+				BindGroupEntry {
+					binding: 1,
+					resource: BindingResource::Sampler(&terrain_textures_sampler),
+				},
 			],
 		});
 
@@ -135,7 +149,11 @@ impl Sector {
 				stencil: Default::default(),
 				bias: Default::default(),
 			}),
-			multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
+			multisample: MultisampleState {
+				count: 1,
+				mask: !0,
+				alpha_to_coverage_enabled: false,
+			},
 			fragment: Some(FragmentState {
 				module: &chunk_shader,
 				entry_point: "fragment",
@@ -150,7 +168,11 @@ impl Sector {
 			cache: None,
 		});
 
-		Self { voxjects: HashMap::new(), chunk_pipeline, terrain_textures_bind_group }
+		Self {
+			voxjects: HashMap::new(),
+			chunk_pipeline,
+			terrain_textures_bind_group,
+		}
 	}
 
 	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
@@ -493,7 +515,12 @@ impl Chunk {
 			return;
 		}
 
-		if let Some(ChunkMesh { vertex_count, vertex_buffer, instance_buffer }) = &self.mesh {
+		if let Some(ChunkMesh {
+			vertex_count,
+			vertex_buffer,
+			instance_buffer,
+		}) = &self.mesh
+		{
 			render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
 			render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
 			render_pass.draw(0..*vertex_count, 0..1);

@@ -27,11 +27,22 @@ impl Player {
 	pub fn accept(sector: &Sector, connection: Arc<Connection>) -> Self {
 		for voxject in sector.voxjects() {
 			let id = voxject.id;
-			connection.send(AddVoxject { id, name: voxject.name.clone() });
-			connection.send(SyncVoxject { id, location: Isometry3::default() });
+			connection.send(AddVoxject {
+				id,
+				name: voxject.name.clone(),
+			});
+			connection.send(SyncVoxject {
+				id,
+				location: Isometry3::default(),
+			});
 		}
 
-		Self { connection, location: Cell::default(), client_locks: Cell::default(), tick_locks: Cell::default() }
+		Self {
+			connection,
+			location: Cell::default(),
+			client_locks: Cell::default(),
+			tick_locks: Cell::default(),
+		}
 	}
 
 	pub fn process_player(&self, sector: &Arc<Sector>) {
@@ -281,16 +292,18 @@ impl Connection {
 
 		match reason {
 			Closed::Client(frame) => {
-				let frame = frame
-					.as_ref()
-					.unwrap_or(&CloseFrame { code: close_code::ABNORMAL, reason: Cow::Borrowed("Abnormal") });
+				let frame = frame.as_ref().unwrap_or(&CloseFrame {
+					code: close_code::ABNORMAL,
+					reason: Cow::Borrowed("Abnormal"),
+				});
 				info!("[{name}] Disconnected by Client: {} {}", frame.code, frame.reason);
 			}
 			Closed::Server(frame) => {
 				{
-					let frame = frame
-						.as_ref()
-						.unwrap_or(&CloseFrame { code: close_code::ERROR, reason: Cow::Borrowed("Unknown") });
+					let frame = frame.as_ref().unwrap_or(&CloseFrame {
+						code: close_code::ERROR,
+						reason: Cow::Borrowed("Unknown"),
+					});
 					info!("[{name}] Disconnected by Server: {} {}", frame.code, frame.reason);
 				}
 				let _ = socket.send(Message::Close(frame)).await;

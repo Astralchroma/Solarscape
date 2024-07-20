@@ -40,7 +40,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 	info!("Started Async Runtime with 1 worker thread");
 
 	let event_loop = EventLoop::with_user_event().build()?;
-	let mut client = Client { name, event_loop_proxy: event_loop.create_proxy(), state: None };
+	let mut client = Client {
+		name,
+		event_loop_proxy: event_loop.create_proxy(),
+		state: None,
+	};
 
 	info!("Event loop ready in {:.0?}", Instant::now() - start_time);
 

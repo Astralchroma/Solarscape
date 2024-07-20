@@ -45,7 +45,11 @@ impl Connection {
 		let (disconnect, handler_disconnect) = oneshot();
 		let (outgoing, handler_outgoing) = channel();
 
-		let connection = Self { disconnect, latency: latency.clone(), outgoing };
+		let connection = Self {
+			disconnect,
+			latency: latency.clone(),
+			outgoing,
+		};
 
 		tokio::spawn(Self::manage_connection_handler(
 			name,
@@ -99,17 +103,19 @@ impl Connection {
 		match reason {
 			Closed::Client(frame) => {
 				{
-					let frame = frame
-						.as_ref()
-						.unwrap_or(&CloseFrame { code: CloseCode::Error, reason: Cow::Borrowed("Unknown") });
+					let frame = frame.as_ref().unwrap_or(&CloseFrame {
+						code: CloseCode::Error,
+						reason: Cow::Borrowed("Unknown"),
+					});
 					info!("Disconnected by Client: {} {}", frame.code, frame.reason);
 				}
 				let _ = socket.send(Frame::Close(frame)).await;
 			}
 			Closed::Server(frame) => {
-				let frame = frame
-					.as_ref()
-					.unwrap_or(&CloseFrame { code: CloseCode::Abnormal, reason: Cow::Borrowed("Abnormal") });
+				let frame = frame.as_ref().unwrap_or(&CloseFrame {
+					code: CloseCode::Abnormal,
+					reason: Cow::Borrowed("Abnormal"),
+				});
 				info!("Disconnected by Server: {} {}", frame.code, frame.reason);
 			}
 		};

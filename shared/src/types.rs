@@ -92,7 +92,11 @@ mod inner {
 
 impl ChunkCoordinates {
 	pub const fn new(voxject: VoxjectId, coordinates: Vector3<i32>, level: Level) -> Self {
-		Self(inner::ChunkCoordinates { voxject, coordinates, level })
+		Self(inner::ChunkCoordinates {
+			voxject,
+			coordinates,
+			level,
+		})
 	}
 
 	/// # Panics
