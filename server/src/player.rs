@@ -1,4 +1,4 @@
-use crate::{sector::ClientLock, sector::Sector, sector::TickLock, Sectors};
+use crate::{sector::ClientLock, sector::Event, sector::Sector, sector::SectorHandle, sector::TickLock, Sectors};
 use axum::extract::ws::{close_code, CloseFrame, Message, WebSocket};
 use axum::extract::{ConnectInfo, Path, Query, State, WebSocketUpgrade};
 use axum::{http::StatusCode, response::IntoResponse, response::Response};
@@ -8,7 +8,7 @@ use serde::Deserialize;
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncVoxject};
 use solarscape_shared::{messages::serverbound::ServerboundMessage, types::ChunkCoordinates, types::Level};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc};
-use std::{borrow::Cow, cell::Cell, collections::HashSet, net::SocketAddr, ops::Deref};
+use std::{borrow::Cow, collections::HashSet, net::SocketAddr, ops::Deref};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tokio::sync::oneshot::{channel as oneshot, Receiver as OneshotReceiver, Sender as OneshotSender};
 use tokio::sync::{mpsc::error::SendError, mpsc::error::TryRecvError, Mutex, RwLock};
@@ -17,74 +17,46 @@ use tokio::{pin, select, time::interval, time::Duration, time::Instant};
 pub struct Player {
 	pub connection: Arc<Connection>,
 
-	location: Cell<Isometry3<f32>>,
+	pub location: Isometry3<f32>,
 
-	client_locks: Cell<Vec<ClientLock>>,
-	tick_locks: Cell<Vec<TickLock>>,
+	pub client_locks: Vec<ClientLock>,
+	pub tick_locks: Vec<TickLock>,
 }
 
 impl Player {
 	pub fn accept(sector: &Sector, connection: Arc<Connection>) -> Self {
-		for voxject in sector.voxjects() {
-			let id = voxject.id;
+		for (id, voxject) in &sector.voxjects {
 			connection.send(AddVoxject {
-				id,
+				id: *id,
 				name: voxject.name.clone(),
 			});
 			connection.send(SyncVoxject {
-				id,
+				id: *id,
 				location: Isometry3::default(),
 			});
 		}
 
 		Self {
 			connection,
-			location: Cell::default(),
-			client_locks: Cell::default(),
-			tick_locks: Cell::default(),
+			location: Isometry3::default(),
+			client_locks: vec![],
+			tick_locks: vec![],
 		}
 	}
 
-	pub fn process_player(&self, sector: &Arc<Sector>) {
-		while let Ok(message) = self.try_recv() {
-			match message {
-				ServerboundMessage::PlayerLocation(location) => {
-					// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
-					self.location.set(location);
-
-					let (new_client_locks, new_tick_locks) = self.compute_locks(sector);
-
-					let client_locks = new_client_locks
-						.into_iter()
-						.map(|coordinates| ClientLock::new(sector, coordinates, self.connection.clone()))
-						.collect();
-
-					self.client_locks.set(client_locks);
-
-					let tick_locks = new_tick_locks
-						.into_iter()
-						.map(|coordinates| TickLock::new(sector, coordinates))
-						.collect();
-
-					self.tick_locks.set(tick_locks);
-				}
-			}
-		}
-	}
-
-	pub fn compute_locks(&self, sector: &Sector) -> (HashSet<ChunkCoordinates>, Vec<ChunkCoordinates>) {
+	pub fn compute_locks(&self, sector: &Arc<SectorHandle>) -> (HashSet<ChunkCoordinates>, Vec<ChunkCoordinates>) {
 		const MULTIPLIER: i32 = 1;
 
 		let mut client_locks = HashSet::new();
 		let mut tick_locks = Vec::new();
 
-		for voxject in sector.voxjects() {
+		for voxject in sector.voxjects.values() {
 			// These values are relative to the current level. So a player position of
 			// (0.5 0.5 0.5, Chunk 0 0 0, Level 0) is the same as (0.25 0.25 0.25, Chunk 0, 0, 0, Level 1).
 
 			// Voxjects temporarily do not have a position until we intograte Rapier
 			let mut player_position =
-				Isometry3::default().inverse_transform_vector(&self.location.get().translation.vector) / 16.0;
+				Isometry3::default().inverse_transform_vector(&self.location.translation.vector) / 16.0;
 			let mut player_chunk = ChunkCoordinates::new(voxject.id, convert_unchecked(player_position), Level::new(0));
 			let mut level_chunks = HashSet::new();
 
@@ -236,30 +208,35 @@ impl Connection {
 						incoming: Mutex::new(incoming),
 					});
 
-					if sector_handle.send(connection).is_err() {
+					if sector_handle.send(Event::PlayerConnected(connection)).is_err() {
 						warn!("[{name}] Failed to connect to {sector:?}, sector handle has been dropped.")
 					}
 
 					tokio::spawn(Self::handle_connection(
+						id,
 						name.clone(),
 						latency,
 						handler_disconnect,
 						handler_incoming,
 						handler_outgoing,
 						socket,
+						sector_handle,
 					));
 				})
 			},
 		)
 	}
 
+	#[allow(clippy::too_many_arguments)]
 	async fn handle_connection(
+		id: usize,
 		name: Box<str>,
 		latency: Arc<RwLock<Duration>>,
 		disconnect: OneshotReceiver<Option<CloseFrame<'static>>>,
 		incoming: Sender<ServerboundMessage>,
 		outgoing: Receiver<ClientboundMessage>,
 		mut socket: WebSocket,
+		sector: Arc<SectorHandle>,
 	) {
 		info!("[{name}] Connected");
 
@@ -309,6 +286,8 @@ impl Connection {
 				let _ = socket.send(Message::Close(frame)).await;
 			}
 		};
+
+		let _ = sector.send(Event::PlayerDisconnected(id));
 	}
 
 	async fn connection_loop(

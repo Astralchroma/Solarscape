@@ -5,21 +5,19 @@ mod generation;
 mod player;
 mod sector;
 
-use crate::{config::Config, player::Connection, sector::Sector};
+use crate::{config::Config, player::Connection, sector::Sector, sector::SectorHandle};
 use axum::{http::StatusCode, routing::get};
 use log::error;
 use log::{info, warn, LevelFilter::Trace};
 use rayon::spawn_broadcast;
-use std::{
-	env, fs, fs::File, io, io::Read, net::SocketAddr, path::PathBuf, sync::Arc, sync::Barrier, thread, time::Instant,
-};
+use std::sync::{Arc, Barrier};
+use std::{collections::HashMap, env, fs, fs::File, io, io::Read, net::SocketAddr, path::PathBuf, time::Instant};
 use thread_priority::ThreadPriority;
-use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedSender as Sender};
 use tokio::{net::TcpListener, runtime::Builder};
 
-type Sectors = Arc<dashmap::DashMap<Box<str>, Sender<Arc<Connection>>>>;
+type Sectors = Arc<HashMap<Box<str>, Arc<SectorHandle>>>;
 
-pub mod config {
+mod config {
 	use serde::Deserialize;
 
 	#[derive(Deserialize)]
@@ -59,7 +57,7 @@ fn main() -> io::Result<()> {
 
 	info!("Working Directory: {:?}", env::current_dir()?);
 
-	let config: Config = {
+	let Config { name, sectors }: Config = {
 		let path: PathBuf = env::var("SOLARSCAPE_CONFIG")
 			.expect("environment variable 'SOLARSCAPE_CONFIG' must be set")
 			.into();
@@ -76,7 +74,7 @@ fn main() -> io::Result<()> {
 		hocon::de::from_str(&string).expect("configuration file must be valid")
 	};
 
-	info!("Server Name: {:?}", config.name);
+	info!("Server Name: {:?}", name);
 
 	let runtime = Arc::new(
 		Builder::new_multi_thread()
@@ -98,31 +96,19 @@ fn main() -> io::Result<()> {
 
 	info!("Loading sectors");
 
-	let sectors = Sectors::default();
-
-	let barrier = Arc::new(Barrier::new(config.sectors.len() + 1));
-	for sector in config.sectors.into_iter() {
-		let (send, receiver) = channel();
-		sectors.insert(sector.name.clone(), send);
-
-		let barrier = barrier.clone();
-		let runtime = runtime.clone();
-		thread::Builder::new().name(sector.name.to_string()).spawn(move || {
-			let _guard = runtime.enter();
-
-			let start_time = Instant::now();
-
-			let sector = Sector::new(sector, receiver);
-
-			let end_time = Instant::now();
-			let load_time = end_time - start_time;
-			info!("{:?} ready! {load_time:.0?}", sector.name);
-
-			barrier.wait();
-
-			sector.run();
-		})?;
-	}
+	let barrier = Arc::new(Barrier::new(sectors.len() + 1));
+	let sectors = Arc::new(
+		sectors
+			.into_iter()
+			.map(|config| {
+				let barrier = barrier.clone();
+				let sector = Sector::load(config, move || {
+					barrier.wait();
+				});
+				(sector.name.clone(), sector)
+			})
+			.collect(),
+	);
 
 	barrier.wait();
 

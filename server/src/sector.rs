@@ -1,51 +1,34 @@
 use crate::{config, generation::sphere_generator, generation::Generator, player::Connection, player::Player};
 use dashmap::DashMap;
-use log::{error, warn};
+use log::{info, warn};
 use nalgebra::{point, vector, Point3};
 use solarscape_shared::messages::clientbound::{ClientboundMessage, SyncChunk};
+use solarscape_shared::messages::serverbound::ServerboundMessage;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
-use std::{array, collections::HashMap, mem, mem::MaybeUninit, thread, time::Duration, time::Instant};
-use thiserror::Error;
-use tokio::sync::mpsc::{error::TryRecvError, UnboundedReceiver as Receiver};
+use std::{array, collections::HashMap, mem, mem::MaybeUninit, ops::Deref, thread, time::Duration, time::Instant};
+use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-pub struct Sector {
+/// A [`SectorHandle`] allows accessing shared information about a [`Sector`], as well as sending events to be
+/// processed at the start of the next tick. It does not allow directly accessing the [`Sector`]'s internal state
+/// however.
+pub struct SectorHandle {
+	/// The name of the [`Sector`] as specified by the server's configuration.
 	pub name: Box<str>,
 
-	voxjects: HashMap<VoxjectId, Voxject>,
+	sender: Sender<Event>,
+
+	pub voxjects: HashMap<VoxjectId, Voxject>,
 	chunks: DashMap<ChunkCoordinates, Weak<Chunk>>,
-	ticking_chunks: DashMap<usize, Arc<Chunk>>,
-
-	players: Mutex<Vec<Player>>,
-
-	connecting_players: Mutex<Receiver<Arc<Connection>>>,
 }
 
-impl Sector {
-	#[must_use]
-	pub fn new(
-		config::Sector { name, voxjects }: config::Sector,
-		connecting_players: Receiver<Arc<Connection>>,
-	) -> Arc<Self> {
-		let voxjects = voxjects.into_iter().map(Voxject::new).collect();
-
-		Arc::new(Self {
-			name,
-
-			voxjects,
-			chunks: DashMap::new(),
-			ticking_chunks: DashMap::new(),
-
-			players: Mutex::new(Vec::new()),
-
-			connecting_players: Mutex::new(connecting_players),
-		})
-	}
-
-	pub fn voxjects(&self) -> impl Iterator<Item = &Voxject> {
-		self.voxjects.values()
+impl SectorHandle {
+	/// Sends an event to the [`Sector`] to be processed at the start of the next tick. The event is returned if the
+	/// event could not be sent.
+	pub fn send(&self, event: Event) -> Result<(), Event> {
+		self.sender.send(event).map_err(|error| error.0)
 	}
 
 	pub fn get_chunk(self: &Arc<Self>, coordinates: ChunkCoordinates) -> Arc<Chunk> {
@@ -59,20 +42,79 @@ impl Sector {
 				chunk
 			})
 	}
+}
 
-	pub fn run(self: Arc<Self>) {
+/// [`Event`]s are sent to [`Sector`]s and are processed at the start of the next tick.
+pub enum Event {
+	PlayerConnected(Arc<Connection>),
+	PlayerDisconnected(usize),
+	TickLockChunk(ChunkCoordinates),
+	TickReleaseChunk(ChunkCoordinates),
+}
+
+/// Represents an individual gameworld, generally it is only accessible on the sector thread, and is owned and managed
+/// by the tick loop.
+pub struct Sector {
+	pub handle: Arc<SectorHandle>,
+	events: Receiver<Event>,
+	ticking_chunks: HashMap<ChunkCoordinates, Arc<Chunk>>,
+	players: HashMap<usize, Player>,
+}
+
+impl Sector {
+	pub fn load(
+		config::Sector { name, voxjects }: config::Sector,
+		callback: impl Fn() + Send + 'static,
+	) -> Arc<SectorHandle> {
+		let start_time = Instant::now();
+
+		let (sender, events) = channel();
+		let handle = Arc::new(SectorHandle {
+			name,
+			sender,
+			voxjects: voxjects.into_iter().map(Voxject::new).collect(),
+			chunks: DashMap::new(),
+		});
+		let ret = handle.clone();
+
+		thread::Builder::new()
+			.name(handle.name.to_string())
+			.spawn(move || {
+				let sector = Self {
+					handle,
+					events,
+					ticking_chunks: HashMap::new(),
+					players: HashMap::new(),
+				};
+
+				let load_time = Instant::now() - start_time;
+				info!("{:?} ready! {load_time:.0?}", sector.name);
+
+				callback();
+
+				sector.run();
+			})
+			.expect("failed to spawn thread");
+
+		ret
+	}
+
+	fn run(mut self) {
 		let target_tick_time = Duration::from_secs(1) / 30;
 
 		loop {
 			let tick_start = Instant::now();
 
+			self.tick();
+
+			/*
 			if let Err(error) = self.tick() {
 				error!("Fatal error occurred while ticking sector, stopping.\n{error}");
 				break;
 			}
+			*/
 
-			let tick_end = Instant::now();
-			let tick_duration = tick_end - tick_start;
+			let tick_duration = Instant::now() - tick_start;
 
 			match target_tick_time.checked_sub(tick_duration) {
 				Some(time_until_next_tick) => thread::sleep(time_until_next_tick),
@@ -81,39 +123,68 @@ impl Sector {
 		}
 	}
 
-	fn tick(self: &Arc<Self>) -> Result<(), SectorTickError> {
-		{
-			let mut players = self.players.blocking_lock();
+	fn tick(&mut self) {
+		self.handle_events();
+		self.process_players();
+	}
 
-			// Remove disconnected players
-			players.retain(|player| !player.is_disconnected());
-		}
-
-		// Handle connecting players
-		loop {
-			match self.connecting_players.blocking_lock().try_recv() {
-				Err(TryRecvError::Empty) => break,
-				Err(TryRecvError::Disconnected) => return Err(SectorTickError::Dropped),
-				Ok(connecting_player) => {
-					let player = Player::accept(self, connecting_player);
-					self.players.blocking_lock().push(player);
+	fn handle_events(&mut self) {
+		while let Ok(event) = self.events.try_recv() {
+			match event {
+				Event::PlayerConnected(connection) => {
+					let player = Player::accept(self, connection);
+					self.players.insert(player.id, player);
+				}
+				Event::PlayerDisconnected(id) => {
+					self.players.remove(&id);
+				}
+				Event::TickLockChunk(coordinates) => {
+					let chunk = self.get_chunk(coordinates);
+					self.ticking_chunks.insert(coordinates, chunk);
+				}
+				Event::TickReleaseChunk(coordinates) => {
+					self.ticking_chunks.remove(&coordinates);
 				}
 			}
 		}
+	}
 
-		// Process all players
-		for player in self.players.blocking_lock().iter() {
-			player.process_player(self)
+	pub fn process_players(&mut self) {
+		for player in self.players.values_mut() {
+			while let Ok(message) = player.try_recv() {
+				match message {
+					ServerboundMessage::PlayerLocation(location) => {
+						// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
+						player.location = location;
+
+						let (new_client_locks, new_tick_locks) = player.compute_locks(&self.handle);
+
+						let client_locks = new_client_locks
+							.into_iter()
+							.map(|coordinates| ClientLock::new(&self.handle, coordinates, player.connection.clone()))
+							.collect();
+
+						player.client_locks = client_locks;
+
+						let tick_locks = new_tick_locks
+							.into_iter()
+							.map(|coordinates| TickLock::new(&self.handle, coordinates))
+							.collect();
+
+						player.tick_locks = tick_locks;
+					}
+				}
+			}
 		}
-
-		Ok(())
 	}
 }
 
-#[derive(Debug, Error)]
-enum SectorTickError {
-	#[error("sector handle was dropped")]
-	Dropped,
+impl Deref for Sector {
+	type Target = Arc<SectorHandle>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.handle
+	}
 }
 
 pub struct Voxject {
@@ -136,8 +207,7 @@ impl Voxject {
 
 #[non_exhaustive]
 pub struct Chunk {
-	pub id: usize,
-	pub sector: Weak<Sector>,
+	pub sector: Weak<SectorHandle>,
 	pub coordinates: ChunkCoordinates,
 
 	// This is deliberately a `Mutex<HashMap<K, V>>` instead of a `DashMap<K, V>` as when locking the chunk for a
@@ -153,12 +223,8 @@ pub struct Chunk {
 }
 
 impl Chunk {
-	fn new(sector: &Arc<Sector>, coordinates: ChunkCoordinates) -> Arc<Self> {
-		static COUNTER: AtomicUsize = AtomicUsize::new(0);
-		let id = COUNTER.fetch_add(1, Relaxed);
-
+	fn new(sector: &Arc<SectorHandle>, coordinates: ChunkCoordinates) -> Arc<Self> {
 		let return_chunk = Arc::new(Self {
-			id,
 			sector: Arc::downgrade(sector),
 			coordinates,
 
@@ -394,7 +460,7 @@ pub struct ClientLock {
 }
 
 impl ClientLock {
-	pub fn new(sector: &Arc<Sector>, coordinates: ChunkCoordinates, connection: Arc<Connection>) -> Self {
+	pub fn new(sector: &Arc<SectorHandle>, coordinates: ChunkCoordinates, connection: Arc<Connection>) -> Self {
 		// Build a list of chunks that we need to subscribe to
 		let chunks: [Arc<Chunk>; 27] = {
 			let mut chunks: [_; 27] = array::from_fn(|_| MaybeUninit::uninit());
@@ -444,7 +510,7 @@ impl Drop for ClientLock {
 pub struct TickLock([Arc<Chunk>; 27]);
 
 impl TickLock {
-	pub fn new(sector: &Arc<Sector>, coordinates: ChunkCoordinates) -> Self {
+	pub fn new(sector: &Arc<SectorHandle>, coordinates: ChunkCoordinates) -> Self {
 		// Build a list of chunks that we need to lock
 		let chunks: [Arc<Chunk>; 27] = {
 			let mut chunks: [_; 27] = array::from_fn(|_| MaybeUninit::uninit());
@@ -463,7 +529,7 @@ impl TickLock {
 
 		for chunk in &chunks {
 			if chunk.tick_lock_count.fetch_add(1, Relaxed) == 0 {
-				sector.ticking_chunks.insert(chunk.id, chunk.clone());
+				let _ = sector.send(Event::TickLockChunk(chunk.coordinates));
 				chunk.clone().generate_collision_mesh();
 			}
 		}
@@ -477,7 +543,7 @@ impl Drop for TickLock {
 		for chunk in &self.0 {
 			if chunk.tick_lock_count.fetch_sub(1, Relaxed) == 1 {
 				if let Some(sector) = Weak::upgrade(&chunk.sector) {
-					sector.ticking_chunks.remove(&chunk.id);
+					let _ = sector.send(Event::TickReleaseChunk(chunk.coordinates));
 				}
 			}
 		}
