@@ -120,6 +120,11 @@ impl ChunkCoordinates {
 			Level::new(*self.level - 1),
 		)
 	}
+
+	/// Returns the Chunk's translation relative to the Voxject.
+	pub fn voxject_relative_translation(&self) -> Vector3<f32> {
+		self.coordinates.map(|coordinate| coordinate << *self.level).cast() * 16.0
+	}
 }
 
 impl Add<Vector3<i32>> for ChunkCoordinates {
