@@ -26,3 +26,6 @@ opt-level = 3
 [profile.release]
 codegen-units = 1
 lto = true
+
+[profile.dev]
+opt-level = 1
