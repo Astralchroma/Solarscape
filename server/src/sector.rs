@@ -498,7 +498,7 @@ impl Drop for Chunk {
 struct TickingChunk {
 	inner: Arc<Chunk>,
 	rigid_body: RigidBodyHandle,
-	collider: ColliderHandle,
+	collider: Option<ColliderHandle>,
 }
 
 impl TickingChunk {
@@ -512,12 +512,15 @@ impl TickingChunk {
 		let collider = {
 			let collision = chunk.read_collision_immediately();
 
-			sector.colliders.insert_with_parent(
-				// It hurts to have to call clone here.
-				ColliderBuilder::trimesh(collision.vertices.clone(), collision.indices.clone()).build(),
-				rigid_body,
-				&mut sector.rigid_bodies,
-			)
+			match collision.vertices.is_empty() {
+				true => None,
+				false => Some(sector.colliders.insert_with_parent(
+					// It hurts to have to call clone here.
+					ColliderBuilder::trimesh(collision.vertices.clone(), collision.indices.clone()).build(),
+					rigid_body,
+					&mut sector.rigid_bodies,
+				)),
+			}
 		};
 
 		let ticking_chunk = Self {
