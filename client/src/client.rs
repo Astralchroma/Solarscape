@@ -1,4 +1,5 @@
 use crate::{camera::Camera, connection::Connection, types::Degrees, world::Chunk, world::Sector, world::Voxject};
+use image::GenericImageView;
 use log::{error, info};
 use nalgebra::{Isometry3, IsometryMatrix3, Point3, Vector3};
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, RemoveChunk, SyncChunk, SyncVoxject};
@@ -6,12 +7,19 @@ use std::{iter::once, sync::Arc, time::Instant};
 use thiserror::Error;
 use tokio::{runtime::Handle, spawn};
 use wgpu::{
-	Backends, Color, CommandEncoderDescriptor, CompositeAlphaMode::Opaque, CreateSurfaceError, Device,
-	DeviceDescriptor, Extent3d, Instance, InstanceDescriptor, LoadOp::Clear, Operations,
-	PowerPreference::HighPerformance, PresentMode::AutoNoVsync, Queue, RenderPassColorAttachment,
-	RenderPassDepthStencilAttachment, RenderPassDescriptor, RequestAdapterOptions, RequestDeviceError, StoreOp::Store,
-	Surface, SurfaceConfiguration, SurfaceError, Texture, TextureDescriptor, TextureDimension::D2, TextureFormat,
-	TextureFormat::Depth32Float, TextureUsages, TextureView, TextureViewDescriptor,
+	include_wgsl, vertex_attr_array, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry,
+	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Color, ColorTargetState,
+	ColorWrites, CommandEncoderDescriptor, CompareFunction::GreaterEqual, CompositeAlphaMode::Opaque,
+	CreateSurfaceError, DepthStencilState, Device, DeviceDescriptor, Extent3d, Face::Back, FragmentState, FrontFace,
+	ImageCopyTexture, ImageDataLayout, Instance, InstanceDescriptor, LoadOp::Clear, MultisampleState, Operations,
+	Origin3d, PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode, PowerPreference::HighPerformance,
+	PresentMode::AutoNoVsync, PrimitiveState, PrimitiveTopology, Queue, RenderPassColorAttachment,
+	RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
+	RequestAdapterOptions, RequestDeviceError, SamplerBindingType::NonFiltering, SamplerDescriptor, ShaderStages,
+	StoreOp::Store, Surface, SurfaceConfiguration, SurfaceError, Texture, TextureAspect::All, TextureDescriptor,
+	TextureDimension, TextureDimension::D2, TextureFormat, TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb,
+	TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexBufferLayout,
+	VertexState, VertexStepMode,
 };
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::EventLoopProxy;
@@ -81,6 +89,9 @@ pub struct State {
 	connection: Connection,
 
 	camera: Camera,
+	chunk_pipeline: RenderPipeline,
+	terrain_textures_bind_group: BindGroup,
+
 	sector: Sector,
 }
 
@@ -187,6 +198,154 @@ impl State {
 
 		info!("First frame in {:.0?}", Instant::now() - start_time);
 
+		let mut camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
+
+		camera.set_view(IsometryMatrix3::look_at_rh(
+			&Point3::new(8.0, 8.0, 8.0),
+			&Point3::origin(),
+			&Vector3::y(),
+		));
+
+		let terrain_textures_image = image::load_from_memory(include_bytes!("terrain_textures.png"))
+			.expect("terrain_textures.png must be valid");
+		let terrain_textures_rgba8 = terrain_textures_image.to_rgba8();
+		let (terrain_textures_width, terrain_textures_height) = terrain_textures_image.dimensions();
+		let terrain_textures_size = Extent3d {
+			width: terrain_textures_width,
+			height: terrain_textures_height,
+			depth_or_array_layers: 1,
+		};
+
+		let terrain_textures = device.create_texture(&TextureDescriptor {
+			label: Some("sector.terrain_textures"),
+			size: terrain_textures_size,
+			mip_level_count: 1,
+			sample_count: 1,
+			dimension: TextureDimension::D2,
+			format: Rgba8UnormSrgb,
+			usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+			view_formats: &[],
+		});
+
+		queue.write_texture(
+			ImageCopyTexture {
+				texture: &terrain_textures,
+				mip_level: 0,
+				origin: Origin3d::ZERO,
+				aspect: All,
+			},
+			&terrain_textures_rgba8,
+			ImageDataLayout {
+				offset: 0,
+				bytes_per_row: Some(4 * terrain_textures_width),
+				rows_per_image: Some(terrain_textures_height),
+			},
+			terrain_textures_size,
+		);
+
+		let terrain_textures_view = terrain_textures.create_view(&TextureViewDescriptor::default());
+		let terrain_textures_sampler = device.create_sampler(&SamplerDescriptor::default());
+
+		let terrain_textures_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+			label: Some("sector.terrain_textures_bind_group_layout"),
+			entries: &[
+				BindGroupLayoutEntry {
+					binding: 0,
+					visibility: ShaderStages::FRAGMENT,
+					ty: BindingType::Texture {
+						sample_type: TextureSampleType::Float { filterable: false },
+						view_dimension: TextureViewDimension::D2,
+						multisampled: false,
+					},
+					count: None,
+				},
+				BindGroupLayoutEntry {
+					binding: 1,
+					visibility: ShaderStages::FRAGMENT,
+					ty: BindingType::Sampler(NonFiltering),
+					count: None,
+				},
+			],
+		});
+
+		let terrain_textures_bind_group = device.create_bind_group(&BindGroupDescriptor {
+			label: Some("sector.terrain_textures_bind_group"),
+			layout: &terrain_textures_bind_group_layout,
+			entries: &[
+				BindGroupEntry {
+					binding: 0,
+					resource: BindingResource::TextureView(&terrain_textures_view),
+				},
+				BindGroupEntry {
+					binding: 1,
+					resource: BindingResource::Sampler(&terrain_textures_sampler),
+				},
+			],
+		});
+
+		let chunk_shader = device.create_shader_module(include_wgsl!("chunk.wgsl"));
+
+		let chunk_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+			label: Some("sector.chunk_pipeline_layout"),
+			bind_group_layouts: &[camera.bind_group_layout(), &terrain_textures_bind_group_layout],
+			push_constant_ranges: &[],
+		});
+
+		let chunk_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+			label: Some("sector.chunk_pipeline"),
+			layout: Some(&chunk_pipeline_layout),
+			vertex: VertexState {
+				module: &chunk_shader,
+				entry_point: "vertex",
+				compilation_options: PipelineCompilationOptions::default(),
+				buffers: &[
+					VertexBufferLayout {
+						array_stride: 32,
+						step_mode: VertexStepMode::Vertex,
+						attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Uint8x2, 3 => Uint8x2, 4 => Float32],
+					},
+					VertexBufferLayout {
+						array_stride: 16,
+						step_mode: VertexStepMode::Instance,
+						attributes: &vertex_attr_array![5 => Float32x3, 6 => Float32],
+					},
+				],
+			},
+			primitive: PrimitiveState {
+				topology: PrimitiveTopology::TriangleList,
+				strip_index_format: None,
+				front_face: FrontFace::Ccw,
+				cull_mode: Some(Back),
+				unclipped_depth: false,
+				polygon_mode: PolygonMode::Fill,
+				conservative: false,
+			},
+			depth_stencil: Some(DepthStencilState {
+				format: Depth32Float,
+				depth_write_enabled: true,
+				depth_compare: GreaterEqual,
+				stencil: Default::default(),
+				bias: Default::default(),
+			}),
+			multisample: MultisampleState {
+				count: 1,
+				mask: !0,
+				alpha_to_coverage_enabled: false,
+			},
+			fragment: Some(FragmentState {
+				module: &chunk_shader,
+				entry_point: "fragment",
+				compilation_options: PipelineCompilationOptions::default(),
+				targets: &[Some(ColorTargetState {
+					format: config.format,
+					blend: Some(BlendState::REPLACE),
+					write_mask: ColorWrites::ALL,
+				})],
+			}),
+			multiview: None,
+			cache: None,
+		});
+
 		let depth_texture_descriptor = TextureDescriptor {
 			label: Some("depth_texture"),
 			size: Extent3d {
@@ -207,21 +366,13 @@ impl State {
 			..TextureViewDescriptor::default()
 		};
 
-		let mut camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
-
-		camera.set_view(IsometryMatrix3::look_at_rh(
-			&Point3::new(8.0, 8.0, 8.0),
-			&Point3::origin(),
-			&Vector3::y(),
-		));
-
-		let sector = Sector::new(&config, &camera, &device, &queue);
-
 		let depth_texture = device.create_texture(&depth_texture_descriptor);
 		let depth_texture_view = depth_texture.create_view(&depth_texture_view_descriptor);
 
 		let connection = Handle::current().block_on(connection_task).unwrap().unwrap();
 		connection.send(Isometry3::default());
+
+		let sector = Sector::new();
 
 		info!("Ready in {:.0?}", Instant::now() - start_time);
 
@@ -240,6 +391,9 @@ impl State {
 			connection,
 
 			camera,
+			chunk_pipeline,
+			terrain_textures_bind_group,
+
 			sector,
 		})
 	}
@@ -294,7 +448,19 @@ impl State {
 		});
 
 		self.camera.use_camera(&self.queue, &mut render_pass);
-		self.sector.render(&mut render_pass);
+		render_pass.set_pipeline(&self.chunk_pipeline);
+		render_pass.set_bind_group(1, &self.terrain_textures_bind_group, &[]);
+		self.sector
+			.voxjects
+			.iter()
+			.flat_map(|(_, voxject)| voxject.chunks.iter().flat_map(|level| level.values()))
+			.filter(|chunk| *chunk.coordinates.level == 0)
+			.filter_map(|chunk| chunk.mesh.as_ref())
+			.for_each(|chunk| {
+				render_pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
+				render_pass.set_vertex_buffer(1, chunk.instance_buffer.slice(..));
+				render_pass.draw(0..chunk.vertex_count, 0..1);
+			});
 
 		drop(render_pass);
 

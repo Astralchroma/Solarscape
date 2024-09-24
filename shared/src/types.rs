@@ -1,4 +1,4 @@
-use nalgebra::Vector3;
+use nalgebra::{vector, Vector3};
 use serde::{de::Error, Deserialize, Deserializer, Serialize};
 use std::{fmt, fmt::Display, fmt::Formatter, ops::Add, ops::Deref, sync::atomic::AtomicUsize, sync::atomic::Ordering};
 
@@ -124,6 +124,75 @@ impl ChunkCoordinates {
 	/// Returns the Chunk's translation relative to the Voxject.
 	pub fn voxject_relative_translation(&self) -> Vector3<f32> {
 		self.coordinates.map(|coordinate| coordinate << *self.level).cast() * 16.0
+	}
+
+	/// Returns a list of the Chunk's surrounding chunks. These are both the Chunk's dependents and dependencies.
+	/// Chunks are ordered from -1 to 1, x then y then z, this ordering can be relied on.
+	#[rustfmt::skip]
+	pub fn surrounding(&self) -> [ChunkCoordinates; 26] {
+		[
+			*self + vector![-1, -1, -1],
+			*self + vector![-1, -1,  0],
+			*self + vector![-1, -1,  1],
+			*self + vector![-1,  0, -1],
+			*self + vector![-1,  0,  0],
+			*self + vector![-1,  0,  1],
+			*self + vector![-1,  1, -1],
+			*self + vector![-1,  1,  0],
+			*self + vector![-1,  1,  1],
+			*self + vector![ 0, -1, -1],
+			*self + vector![ 0, -1,  0],
+			*self + vector![ 0, -1,  1],
+			*self + vector![ 0,  0, -1],
+			*self + vector![ 0,  0,  1],
+			*self + vector![ 0,  1, -1],
+			*self + vector![ 0,  1,  0],
+			*self + vector![ 0,  1,  1],
+			*self + vector![ 1, -1, -1],
+			*self + vector![ 1, -1,  0],
+			*self + vector![ 1, -1,  1],
+			*self + vector![ 1,  0, -1],
+			*self + vector![ 1,  0,  0],
+			*self + vector![ 1,  0,  1],
+			*self + vector![ 1,  1, -1],
+			*self + vector![ 1,  1,  0],
+			*self + vector![ 1,  1,  1],
+		]
+	}
+
+	/// Returns a list of the Chunk's surrounding chunks and the current chunks.
+	/// Chunks are ordered from -1 to 1, x then y then z, this ordering can be relied on.
+	#[rustfmt::skip]
+	pub fn surrounding_and_current(&self) -> [ChunkCoordinates; 27] {
+		[
+			*self + vector![-1, -1, -1],
+			*self + vector![-1, -1,  0],
+			*self + vector![-1, -1,  1],
+			*self + vector![-1,  0, -1],
+			*self + vector![-1,  0,  0],
+			*self + vector![-1,  0,  1],
+			*self + vector![-1,  1, -1],
+			*self + vector![-1,  1,  0],
+			*self + vector![-1,  1,  1],
+			*self + vector![ 0, -1, -1],
+			*self + vector![ 0, -1,  0],
+			*self + vector![ 0, -1,  1],
+			*self + vector![ 0,  0, -1],
+			*self,
+			*self + vector![ 0,  0,  1],
+			*self + vector![ 0,  1, -1],
+			*self + vector![ 0,  1,  0],
+			*self + vector![ 0,  1,  1],
+			*self + vector![ 1, -1, -1],
+			*self + vector![ 1, -1,  0],
+			*self + vector![ 1, -1,  1],
+			*self + vector![ 1,  0, -1],
+			*self + vector![ 1,  0,  0],
+			*self + vector![ 1,  0,  1],
+			*self + vector![ 1,  1, -1],
+			*self + vector![ 1,  1,  0],
+			*self + vector![ 1,  1,  1],
+		]
 	}
 }
 

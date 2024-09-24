@@ -1,188 +1,19 @@
-use crate::camera::Camera;
 use bytemuck::{cast_slice, Pod, Zeroable};
-use image::GenericImageView;
 use nalgebra::{vector, Isometry3, Vector2, Vector3};
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
 use std::{collections::HashMap, collections::HashSet};
-use wgpu::{
-	include_wgsl, util::BufferInitDescriptor, util::DeviceExt, vertex_attr_array, BindGroup, BindGroupDescriptor,
-	BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer,
-	BufferUsages, ColorTargetState, ColorWrites, CompareFunction::GreaterEqual, DepthStencilState, Device, Extent3d,
-	Face::Back, FragmentState, FrontFace, ImageCopyTexture, ImageDataLayout, MultisampleState, Origin3d,
-	PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, Queue,
-	RenderPass, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType::NonFiltering, SamplerDescriptor,
-	ShaderStages, SurfaceConfiguration, TextureAspect::All, TextureDescriptor, TextureDimension,
-	TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb, TextureSampleType, TextureUsages,
-	TextureViewDescriptor, TextureViewDimension, VertexBufferLayout, VertexState, VertexStepMode::Instance,
-	VertexStepMode::Vertex,
-};
+use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device};
 
 pub struct Sector {
 	pub voxjects: HashMap<VoxjectId, Voxject>,
-
-	terrain_textures_bind_group: BindGroup,
-	chunk_pipeline: RenderPipeline,
 }
 
 impl Sector {
-	#[must_use]
-	pub fn new(config: &SurfaceConfiguration, camera: &Camera, device: &Device, queue: &Queue) -> Self {
-		let terrain_textures_image = image::load_from_memory(include_bytes!("terrain_textures.png"))
-			.expect("terrain_textures.png must be valid");
-		let terrain_textures_rgba8 = terrain_textures_image.to_rgba8();
-		let (terrain_textures_width, terrain_textures_height) = terrain_textures_image.dimensions();
-		let terrain_textures_size = Extent3d {
-			width: terrain_textures_width,
-			height: terrain_textures_height,
-			depth_or_array_layers: 1,
-		};
-
-		let terrain_textures = device.create_texture(&TextureDescriptor {
-			label: Some("sector.terrain_textures"),
-			size: terrain_textures_size,
-			mip_level_count: 1,
-			sample_count: 1,
-			dimension: TextureDimension::D2,
-			format: Rgba8UnormSrgb,
-			usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-			view_formats: &[],
-		});
-
-		queue.write_texture(
-			ImageCopyTexture {
-				texture: &terrain_textures,
-				mip_level: 0,
-				origin: Origin3d::ZERO,
-				aspect: All,
-			},
-			&terrain_textures_rgba8,
-			ImageDataLayout {
-				offset: 0,
-				bytes_per_row: Some(4 * terrain_textures_width),
-				rows_per_image: Some(terrain_textures_height),
-			},
-			terrain_textures_size,
-		);
-
-		let terrain_textures_view = terrain_textures.create_view(&TextureViewDescriptor::default());
-		let terrain_textures_sampler = device.create_sampler(&SamplerDescriptor::default());
-
-		let terrain_textures_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-			label: Some("sector.terrain_textures_bind_group_layout"),
-			entries: &[
-				BindGroupLayoutEntry {
-					binding: 0,
-					visibility: ShaderStages::FRAGMENT,
-					ty: BindingType::Texture {
-						sample_type: TextureSampleType::Float { filterable: false },
-						view_dimension: TextureViewDimension::D2,
-						multisampled: false,
-					},
-					count: None,
-				},
-				BindGroupLayoutEntry {
-					binding: 1,
-					visibility: ShaderStages::FRAGMENT,
-					ty: BindingType::Sampler(NonFiltering),
-					count: None,
-				},
-			],
-		});
-
-		let terrain_textures_bind_group = device.create_bind_group(&BindGroupDescriptor {
-			label: Some("sector.terrain_textures_bind_group"),
-			layout: &terrain_textures_bind_group_layout,
-			entries: &[
-				BindGroupEntry {
-					binding: 0,
-					resource: BindingResource::TextureView(&terrain_textures_view),
-				},
-				BindGroupEntry {
-					binding: 1,
-					resource: BindingResource::Sampler(&terrain_textures_sampler),
-				},
-			],
-		});
-
-		let chunk_shader = device.create_shader_module(include_wgsl!("chunk.wgsl"));
-
-		let chunk_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-			label: Some("sector.chunk_pipeline_layout"),
-			bind_group_layouts: &[camera.bind_group_layout(), &terrain_textures_bind_group_layout],
-			push_constant_ranges: &[],
-		});
-
-		let chunk_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-			label: Some("sector.chunk_pipeline"),
-			layout: Some(&chunk_pipeline_layout),
-			vertex: VertexState {
-				module: &chunk_shader,
-				entry_point: "vertex",
-				compilation_options: PipelineCompilationOptions::default(),
-				buffers: &[
-					VertexBufferLayout {
-						array_stride: 32,
-						step_mode: Vertex,
-						attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Uint8x2, 3 => Uint8x2, 4 => Float32],
-					},
-					VertexBufferLayout {
-						array_stride: 16,
-						step_mode: Instance,
-						attributes: &vertex_attr_array![5 => Float32x3, 6 => Float32],
-					},
-				],
-			},
-			primitive: PrimitiveState {
-				topology: PrimitiveTopology::TriangleList,
-				strip_index_format: None,
-				front_face: FrontFace::Ccw,
-				cull_mode: Some(Back),
-				unclipped_depth: false,
-				polygon_mode: PolygonMode::Fill,
-				conservative: false,
-			},
-			depth_stencil: Some(DepthStencilState {
-				format: Depth32Float,
-				depth_write_enabled: true,
-				depth_compare: GreaterEqual,
-				stencil: Default::default(),
-				bias: Default::default(),
-			}),
-			multisample: MultisampleState {
-				count: 1,
-				mask: !0,
-				alpha_to_coverage_enabled: false,
-			},
-			fragment: Some(FragmentState {
-				module: &chunk_shader,
-				entry_point: "fragment",
-				compilation_options: PipelineCompilationOptions::default(),
-				targets: &[Some(ColorTargetState {
-					format: config.format,
-					blend: Some(BlendState::REPLACE),
-					write_mask: ColorWrites::ALL,
-				})],
-			}),
-			multiview: None,
-			cache: None,
-		});
-
+	pub fn new() -> Self {
 		Self {
 			voxjects: HashMap::new(),
-			chunk_pipeline,
-			terrain_textures_bind_group,
 		}
-	}
-
-	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
-		render_pass.set_pipeline(&self.chunk_pipeline);
-		render_pass.set_bind_group(1, &self.terrain_textures_bind_group, &[]);
-
-		self.voxjects
-			.iter()
-			.flat_map(|(_, voxject)| voxject.chunks.iter().flat_map(|level| level.values()))
-			.for_each(|chunk| chunk.render(render_pass));
 	}
 }
 
@@ -363,9 +194,9 @@ pub struct Chunk {
 }
 
 pub struct ChunkMesh {
-	vertex_count: u32,
-	vertex_buffer: Buffer,
-	instance_buffer: Buffer,
+	pub vertex_count: u32,
+	pub vertex_buffer: Buffer,
+	pub instance_buffer: Buffer,
 }
 
 impl Chunk {
@@ -508,22 +339,5 @@ impl Chunk {
 				usage: BufferUsages::VERTEX,
 			}),
 		});
-	}
-
-	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
-		if *self.coordinates.level != 0 {
-			return;
-		}
-
-		if let Some(ChunkMesh {
-			vertex_count,
-			vertex_buffer,
-			instance_buffer,
-		}) = &self.mesh
-		{
-			render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-			render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
-			render_pass.draw(0..*vertex_count, 0..1);
-		}
 	}
 }
