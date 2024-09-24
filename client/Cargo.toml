@@ -6,7 +6,9 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 bincode.workspace = true
+dashmap.workspace = true
 log.workspace = true
+rayon.workspace = true
 solarscape-shared.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -21,4 +23,7 @@ tokio-util = "0.7"
 winit = "0.30"
 
 wgpu = { version = "22", default-features = false, features = ["wgsl"] }
-image = { version = "0.25", default-features = false, features = ["png", "rayon"] }
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "rayon",
+] }

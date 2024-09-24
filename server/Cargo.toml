@@ -6,19 +6,25 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 bincode.workspace = true
+dashmap.workspace = true
 log.workspace = true
 nalgebra.workspace = true
+rayon.workspace = true
 solarscape-shared.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
 serde = { workspace = true, features = ["rc"] }
 
-dashmap = "6"
 hocon = "0.9"
 rand = "0.8"
-rayon = "1"
 thread-priority = "1"
 
-axum = { version = "0.7", default-features = false, features = ["http1", "http2", "query", "tokio", "ws"] }
+axum = { version = "0.7", default-features = false, features = [
+    "http1",
+    "http2",
+    "query",
+    "tokio",
+    "ws",
+] }
 rapier3d = { version = "0.22", features = ["simd-stable"] }
