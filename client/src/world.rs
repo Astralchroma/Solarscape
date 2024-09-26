@@ -1,3 +1,4 @@
+use crate::{connection::Connection, player::Local, player::Player};
 use bytemuck::{cast_slice, Pod, Zeroable};
 use nalgebra::{vector, Isometry3, Vector2, Vector3};
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
@@ -6,12 +7,18 @@ use std::{collections::HashMap, collections::HashSet};
 use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device};
 
 pub struct Sector {
+	pub player: Player<Local>,
+
 	pub voxjects: HashMap<VoxjectId, Voxject>,
 }
 
 impl Sector {
-	pub fn new() -> Self {
+	pub fn new(connection: Connection) -> Self {
+		let player = Player::new(connection);
+
 		Self {
+			player,
+
 			voxjects: HashMap::new(),
 		}
 	}

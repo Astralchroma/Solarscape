@@ -1,7 +1,9 @@
-use crate::{camera::Camera, connection::Connection, types::Degrees, world::Chunk, world::Sector, world::Voxject};
+use crate::{connection::Connection, world::Chunk, world::Sector, world::Voxject};
+use bytemuck::cast_slice;
+use core::f32;
 use image::GenericImageView;
 use log::{error, info};
-use nalgebra::{Isometry3, IsometryMatrix3, Point3, Vector3};
+use nalgebra::{Isometry3, Perspective3};
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, RemoveChunk, SyncChunk, SyncVoxject};
 use std::{iter::once, sync::Arc, time::Instant};
 use thiserror::Error;
@@ -10,21 +12,21 @@ use wgpu::{
 	include_wgsl, vertex_attr_array, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry,
 	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Color, ColorTargetState,
 	ColorWrites, CommandEncoderDescriptor, CompareFunction::GreaterEqual, CompositeAlphaMode::Opaque,
-	CreateSurfaceError, DepthStencilState, Device, DeviceDescriptor, Extent3d, Face::Back, FragmentState, FrontFace,
-	ImageCopyTexture, ImageDataLayout, Instance, InstanceDescriptor, LoadOp::Clear, MultisampleState, Operations,
-	Origin3d, PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode, PowerPreference::HighPerformance,
-	PresentMode::AutoNoVsync, PrimitiveState, PrimitiveTopology, Queue, RenderPassColorAttachment,
-	RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
-	RequestAdapterOptions, RequestDeviceError, SamplerBindingType::NonFiltering, SamplerDescriptor, ShaderStages,
-	StoreOp::Store, Surface, SurfaceConfiguration, SurfaceError, Texture, TextureAspect::All, TextureDescriptor,
-	TextureDimension, TextureDimension::D2, TextureFormat, TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb,
-	TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexBufferLayout,
-	VertexState, VertexStepMode,
+	CreateSurfaceError, DepthStencilState, Device, DeviceDescriptor, Extent3d, Face::Back, Features, FragmentState,
+	FrontFace, ImageCopyTexture, ImageDataLayout, Instance, InstanceDescriptor, Limits, LoadOp::Clear,
+	MultisampleState, Operations, Origin3d, PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode,
+	PowerPreference::HighPerformance, PresentMode::AutoNoVsync, PrimitiveState, PrimitiveTopology, PushConstantRange,
+	Queue, RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline,
+	RenderPipelineDescriptor, RequestAdapterOptions, RequestDeviceError, SamplerBindingType::NonFiltering,
+	SamplerDescriptor, ShaderStages, StoreOp::Store, Surface, SurfaceConfiguration, SurfaceError, Texture,
+	TextureAspect::All, TextureDescriptor, TextureDimension, TextureDimension::D2, TextureFormat,
+	TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb, TextureSampleType, TextureUsages, TextureView,
+	TextureViewDescriptor, TextureViewDimension, VertexBufferLayout, VertexState, VertexStepMode,
 };
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
-use winit::event_loop::EventLoopProxy;
-use winit::window::{Window, WindowId};
-use winit::{application::ApplicationHandler, dpi::PhysicalSize, error::OsError, event_loop::ActiveEventLoop};
+use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::window::{CursorGrabMode::Confined, CursorGrabMode::Locked, Window, WindowId};
+use winit::{application::ApplicationHandler, dpi::LogicalPosition, dpi::PhysicalSize, error::OsError};
 
 pub struct Client {
 	pub name: Box<str>,
@@ -56,8 +58,10 @@ impl ApplicationHandler<Event> for Client {
 		}
 	}
 
-	fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, _: DeviceEvent) {
-		// Currently unused, however we are going to leave it here as we know we will use it later
+	fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
+		if let Some(state) = &mut self.state {
+			state.device_event(event);
+		}
 	}
 
 	// This should only ever be called on iOS, Android, and Web, none of which we support, so this is untested.
@@ -86,9 +90,10 @@ pub struct State {
 	depth_texture: Texture,
 	depth_texture_view: TextureView,
 
-	connection: Connection,
+	frame_start: Instant,
 
-	camera: Camera,
+	perspective: Perspective3<f32>,
+
 	chunk_pipeline: RenderPipeline,
 	terrain_textures_bind_group: BindGroup,
 
@@ -134,6 +139,11 @@ impl State {
 		let (device, queue) = Handle::current().block_on(adapter.request_device(
 			&DeviceDescriptor {
 				label: Some("device"),
+				required_features: Features::PUSH_CONSTANTS,
+				required_limits: Limits {
+					max_push_constant_size: 64,
+					..Limits::default()
+				},
 				..DeviceDescriptor::default()
 			},
 			None,
@@ -150,6 +160,16 @@ impl State {
 
 		let PhysicalSize { width, height } = window.inner_size();
 
+		window
+			.set_cursor_grab(Confined)
+			.or_else(|_| window.set_cursor_grab(Locked));
+
+		window.set_cursor_visible(false);
+		window.set_cursor_position(LogicalPosition {
+			x: width as f32 / 2.0,
+			y: height as f32 / 2.0,
+		});
+
 		let config = SurfaceConfiguration {
 			usage: TextureUsages::RENDER_ATTACHMENT,
 			format: surface_format,
@@ -162,6 +182,8 @@ impl State {
 		};
 
 		surface.configure(&device, &config);
+
+		let frame_start = Instant::now();
 
 		// We aren't even done initializing yet, but the sooner we render something the better, it makes launching the
 		// game feel more responsive. So lets render a frame real quick. This doesn't make a big difference right now,
@@ -197,14 +219,6 @@ impl State {
 		}
 
 		info!("First frame in {:.0?}", Instant::now() - start_time);
-
-		let mut camera = Camera::new(width as f32 / height as f32, Degrees(90.0), &device);
-
-		camera.set_view(IsometryMatrix3::look_at_rh(
-			&Point3::new(8.0, 8.0, 8.0),
-			&Point3::origin(),
-			&Vector3::y(),
-		));
 
 		let terrain_textures_image = image::load_from_memory(include_bytes!("terrain_textures.png"))
 			.expect("terrain_textures.png must be valid");
@@ -287,8 +301,11 @@ impl State {
 
 		let chunk_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
 			label: Some("sector.chunk_pipeline_layout"),
-			bind_group_layouts: &[camera.bind_group_layout(), &terrain_textures_bind_group_layout],
-			push_constant_ranges: &[],
+			bind_group_layouts: &[&terrain_textures_bind_group_layout],
+			push_constant_ranges: &[PushConstantRange {
+				stages: ShaderStages::VERTEX,
+				range: 0..64,
+			}],
 		});
 
 		let chunk_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -372,7 +389,7 @@ impl State {
 		let connection = Handle::current().block_on(connection_task).unwrap().unwrap();
 		connection.send(Isometry3::default());
 
-		let sector = Sector::new();
+		let sector = Sector::new(connection);
 
 		info!("Ready in {:.0?}", Instant::now() - start_time);
 
@@ -388,9 +405,10 @@ impl State {
 			depth_texture,
 			depth_texture_view,
 
-			connection,
+			frame_start,
 
-			camera,
+			perspective: Perspective3::new(width as f32 / height as f32, f32::to_radians(90.0), 0.0, f32::MAX),
+
 			chunk_pipeline,
 			terrain_textures_bind_group,
 
@@ -411,10 +429,16 @@ impl State {
 		};
 		self.depth_texture = self.device.create_texture(&self.depth_texture_descriptor);
 		self.depth_texture_view = self.depth_texture.create_view(&TextureViewDescriptor::default());
-		self.camera.set_aspect(width as f32 / height as f32);
+		self.perspective.set_aspect(width as f32 / height as f32);
 	}
 
 	fn render(&mut self, event_loop: &ActiveEventLoop) {
+		let frame_start = Instant::now();
+		let delta = (frame_start - self.frame_start).as_secs_f32();
+		self.frame_start = frame_start;
+
+		self.sector.player.frame(delta);
+
 		let output = match self.surface.get_current_texture() {
 			Ok(output) => output,
 			Err(error) => {
@@ -447,9 +471,12 @@ impl State {
 			..Default::default()
 		});
 
-		self.camera.use_camera(&self.queue, &mut render_pass);
 		render_pass.set_pipeline(&self.chunk_pipeline);
-		render_pass.set_bind_group(1, &self.terrain_textures_bind_group, &[]);
+
+		let camera_matrix = self.perspective.to_homogeneous() * self.sector.player.location.to_homogeneous();
+		render_pass.set_push_constants(ShaderStages::VERTEX, 0, cast_slice(&[camera_matrix]));
+
+		render_pass.set_bind_group(0, &self.terrain_textures_bind_group, &[]);
 		self.sector
 			.voxjects
 			.iter()
@@ -522,6 +549,18 @@ impl State {
 			WindowEvent::RedrawRequested => self.render(event_loop),
 			_ => {}
 		}
+
+		self.sector.player.handle_window_event(event);
+	}
+
+	fn device_event(&mut self, event: DeviceEvent) {
+		self.sector.player.handle_device_event(event);
+
+		self.window.set_cursor_visible(false);
+		self.window.set_cursor_position(LogicalPosition {
+			x: self.width as f32 / 2.0,
+			y: self.height as f32 / 2.0,
+		});
 	}
 }
 

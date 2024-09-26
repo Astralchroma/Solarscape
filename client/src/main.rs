@@ -7,10 +7,9 @@ use std::{env, error::Error, time::Instant};
 use tokio::runtime::Builder;
 use winit::event_loop::EventLoop;
 
-mod camera;
 mod client;
 mod connection;
-mod types;
+mod player;
 mod world;
 
 fn main() -> Result<(), Box<dyn Error>> {
