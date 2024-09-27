@@ -11,10 +11,10 @@ use tokio::{runtime::Handle, spawn};
 use wgpu::{
 	include_wgsl, vertex_attr_array, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry,
 	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Color, ColorTargetState,
-	ColorWrites, CommandEncoderDescriptor, CompareFunction::GreaterEqual, CompositeAlphaMode::Opaque,
-	CreateSurfaceError, DepthStencilState, Device, DeviceDescriptor, Extent3d, Face::Back, Features, FragmentState,
-	FrontFace, ImageCopyTexture, ImageDataLayout, Instance, InstanceDescriptor, Limits, LoadOp::Clear,
-	MultisampleState, Operations, Origin3d, PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode,
+	ColorWrites, CommandEncoderDescriptor, CompareFunction::LessEqual, CompositeAlphaMode::Opaque, CreateSurfaceError,
+	DepthStencilState, Device, DeviceDescriptor, Extent3d, Face::Back, Features, FragmentState, FrontFace,
+	ImageCopyTexture, ImageDataLayout, Instance, InstanceDescriptor, Limits, LoadOp::Clear, MultisampleState,
+	Operations, Origin3d, PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode,
 	PowerPreference::HighPerformance, PresentMode::AutoNoVsync, PrimitiveState, PrimitiveTopology, PushConstantRange,
 	Queue, RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline,
 	RenderPipelineDescriptor, RequestAdapterOptions, RequestDeviceError, SamplerBindingType::NonFiltering,
@@ -340,7 +340,7 @@ impl State {
 			depth_stencil: Some(DepthStencilState {
 				format: Depth32Float,
 				depth_write_enabled: true,
-				depth_compare: GreaterEqual,
+				depth_compare: LessEqual,
 				stencil: Default::default(),
 				bias: Default::default(),
 			}),
@@ -407,7 +407,7 @@ impl State {
 
 			frame_start,
 
-			perspective: Perspective3::new(width as f32 / height as f32, f32::to_radians(90.0), 0.0, f32::MAX),
+			perspective: Perspective3::new(width as f32 / height as f32, f32::to_radians(90.0), 0.05, f32::MAX),
 
 			chunk_pipeline,
 			terrain_textures_bind_group,
@@ -463,7 +463,7 @@ impl State {
 			depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
 				view: &self.depth_texture_view,
 				depth_ops: Some(Operations {
-					load: Clear(0.0),
+					load: Clear(1.0),
 					store: Store,
 				}),
 				stencil_ops: None,
