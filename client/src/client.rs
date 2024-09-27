@@ -30,6 +30,7 @@ use winit::{application::ApplicationHandler, dpi::LogicalPosition, dpi::Physical
 
 pub struct Client {
 	pub name: Box<str>,
+	pub sector_endpoint: Box<str>,
 	pub event_loop_proxy: EventLoopProxy<Event>,
 	pub state: Option<State>,
 }
@@ -103,7 +104,7 @@ pub struct State {
 impl State {
 	pub fn new(client: &Client, event_loop: &ActiveEventLoop) -> Result<Self, ClientError> {
 		let connection_task = spawn(Connection::new(
-			format!("ws://localhost:8000/example?name={}", client.name),
+			format!("{}?name={}", client.sector_endpoint, client.name),
 			client.event_loop_proxy.clone(),
 		));
 

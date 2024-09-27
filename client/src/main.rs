@@ -25,6 +25,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	let name = env::args().nth(1).expect("name").into_boxed_str();
 
+	let sector_endpoint = env::args()
+		.nth(2)
+		.unwrap_or_else(|| String::from("ws://localhost:8000/example"))
+		.into_boxed_str();
+
 	info!("Setting name to {name:?}");
 
 	let runtime = Builder::new_multi_thread()
@@ -41,6 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let event_loop = EventLoop::with_user_event().build()?;
 	let mut client = Client {
 		name,
+		sector_endpoint,
 		event_loop_proxy: event_loop.create_proxy(),
 		state: None,
 	};
