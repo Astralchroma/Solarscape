@@ -7,8 +7,8 @@ mod sector;
 
 use crate::{config::Config, player::Connection, sector::Sector, sector::SectorHandle};
 use axum::{http::StatusCode, routing::get};
-use log::error;
-use log::{info, warn, LevelFilter::Trace};
+use env_logger::Env;
+use log::{error, info, warn};
 use rayon::spawn_broadcast;
 use std::sync::{Arc, Barrier};
 use std::{collections::HashMap, env, fs, fs::File, io, io::Read, net::SocketAddr, path::PathBuf, time::Instant};
@@ -41,8 +41,11 @@ mod config {
 fn main() -> io::Result<()> {
 	let start_time = Instant::now();
 
-	log::set_logger(&solarscape_shared::StdLogger).expect("logger must not already be set");
-	log::set_max_level(Trace);
+	env_logger::init_from_env(Env::default().default_filter_or(if cfg!(debug) {
+		"solarscape_server=debug"
+	} else {
+		"solarscape_server=info"
+	}));
 
 	info!("Solarscape (Server) v{}", env!("CARGO_PKG_VERSION"));
 	info!("Command Line: {:?}", env::args().collect::<Vec<_>>().join(" "));
