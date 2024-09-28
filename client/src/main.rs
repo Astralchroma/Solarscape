@@ -1,8 +1,8 @@
 #![warn(clippy::nursery)]
 
 use crate::client::Client;
-use log::{info, LevelFilter::Trace};
-use solarscape_shared::StdLogger;
+use env_logger::Env;
+use log::info;
 use std::{env, error::Error, time::Instant};
 use tokio::runtime::Builder;
 use winit::event_loop::EventLoop;
@@ -15,8 +15,11 @@ mod world;
 fn main() -> Result<(), Box<dyn Error>> {
 	let start_time = Instant::now();
 
-	log::set_logger(&StdLogger).expect("logger must not already be set");
-	log::set_max_level(Trace);
+	env_logger::init_from_env(Env::default().default_filter_or(if cfg!(debug) {
+		"solarscape_client=debug"
+	} else {
+		"solarscape_client=info"
+	}));
 
 	info!("Solarscape (Client) v{}", env!("CARGO_PKG_VERSION"));
 

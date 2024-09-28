@@ -12,12 +12,12 @@ solarscape-shared = { path = "shared" }
 anyhow = "1"
 bincode = "1"
 dashmap = "6"
+env_logger = "0.11"
 log = "0.4"
 nalgebra = "0.33"
 rayon = "1"
 thiserror = "1"
 
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rapier3d = { version = "0.22", features = ["simd-stable"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
