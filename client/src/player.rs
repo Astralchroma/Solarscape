@@ -154,7 +154,7 @@ impl Player<Local> {
 		}
 	}
 
-	pub fn frame(&mut self, delta: f32) {
+	pub fn tick(&mut self, delta: f32) {
 		fn key_state_to_float(negative_state: &OppositeKeyState, positive_state: &OppositeKeyState) -> f32 {
 			match negative_state {
 				OppositeKeyState::PressedFirst => match positive_state {

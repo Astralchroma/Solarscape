@@ -9,6 +9,7 @@ bincode.workspace = true
 dashmap.workspace = true
 log.workspace = true
 nalgebra.workspace = true
+rapier3d.workspace = true
 rayon.workspace = true
 solarscape-shared.workspace = true
 thiserror.workspace = true
@@ -27,4 +28,3 @@ axum = { version = "0.7", default-features = false, features = [
     "tokio",
     "ws",
 ] }
-rapier3d = { version = "0.22", features = ["simd-stable"] }

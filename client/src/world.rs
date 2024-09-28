@@ -1,15 +1,46 @@
 use crate::{connection::Connection, player::Local, player::Player};
 use bytemuck::{cast_slice, Pod, Zeroable};
-use nalgebra::{vector, Isometry3, Vector2, Vector3};
+use dashmap::DashMap;
+use log::debug;
+use nalgebra::{point, vector, Isometry3, Vector2, Vector3};
+use rapier3d::{
+	dynamics::{
+		CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder,
+		RigidBodySet,
+	},
+	geometry::{ColliderBuilder, ColliderSet, DefaultBroadPhase, NarrowPhase},
+	pipeline::PhysicsPipeline,
+	prelude::{ColliderHandle, RigidBodyHandle},
+};
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
-use std::{collections::HashMap, collections::HashSet};
+use std::{collections::HashMap, collections::HashSet, mem::drop as nom, ops::Deref, sync::Arc, time::Instant};
 use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device};
 
 pub struct Sector {
+	shared: Arc<SharedSector>,
+
 	pub player: Player<Local>,
 
 	pub voxjects: HashMap<VoxjectId, Voxject>,
+
+	last_tick_start: Instant,
+
+	physics_pipeline: PhysicsPipeline,
+	integration_parameters: IntegrationParameters,
+	islands: IslandManager,
+	broad_phase: DefaultBroadPhase,
+	narrow_phase: NarrowPhase,
+	rigid_bodies: RigidBodySet,
+	colliders: ColliderSet,
+	impulse_joints: ImpulseJointSet,
+	multibody_joints: MultibodyJointSet,
+	ccd_solver: CCDSolver,
+}
+
+pub struct SharedSector {
+	pub chunks: DashMap<ChunkCoordinates, Chunk>,
+	pub dependent_chunks: DashMap<ChunkCoordinates, HashSet<ChunkCoordinates>>,
 }
 
 impl Sector {
@@ -17,35 +48,69 @@ impl Sector {
 		let player = Player::new(connection);
 
 		Self {
+			shared: Arc::new(SharedSector {
+				chunks: DashMap::new(),
+				dependent_chunks: DashMap::new(),
+			}),
+
 			player,
 
 			voxjects: HashMap::new(),
+
+			last_tick_start: Instant::now(),
+
+			physics_pipeline: PhysicsPipeline::new(),
+			integration_parameters: IntegrationParameters::default(),
+			islands: IslandManager::new(),
+			broad_phase: DefaultBroadPhase::new(),
+			narrow_phase: NarrowPhase::new(),
+			rigid_bodies: RigidBodySet::new(),
+			colliders: ColliderSet::new(),
+			impulse_joints: ImpulseJointSet::new(),
+			multibody_joints: MultibodyJointSet::new(),
+			ccd_solver: CCDSolver::new(),
 		}
 	}
-}
 
-pub struct Voxject {
-	pub id: VoxjectId,
-	pub name: Box<str>,
-	pub location: Isometry3<f32>,
+	pub fn tick(&mut self) {
+		let tick_start = Instant::now();
+		let delta = (tick_start - self.last_tick_start).as_secs_f32();
+		self.last_tick_start = tick_start;
 
-	pub dependent_chunks: HashMap<ChunkCoordinates, HashSet<ChunkCoordinates>>,
+		self.player.tick(delta);
 
-	pub chunks: [HashMap<Vector3<i32>, Chunk>; 31],
-}
+		self.integration_parameters.dt = delta;
 
-// This code is admittedly absolutely fucking terrible, it just needs to work
-impl Voxject {
+		self.physics_pipeline.step(
+			&vector![0.0, 0.0, 0.0],
+			&self.integration_parameters,
+			&mut self.islands,
+			&mut self.broad_phase,
+			&mut self.narrow_phase,
+			&mut self.rigid_bodies,
+			&mut self.colliders,
+			&mut self.impulse_joints,
+			&mut self.multibody_joints,
+			&mut self.ccd_solver,
+			None,
+			&(),
+			&(),
+		);
+	}
+
 	pub fn add_chunk(&mut self, device: &Device, chunk: Chunk) {
 		let coordinates = chunk.coordinates;
-		self.chunks[*coordinates.level as usize].insert(**coordinates, chunk);
+		self.chunks.insert(coordinates, chunk);
 
 		// Rebuild any chunks that need this chunk
-		{
-			if let Some(dependent_chunks) = self.dependent_chunks.get(&coordinates).cloned() {
-				for dependent_chunk in dependent_chunks {
-					self.try_build_chunk(device, dependent_chunk);
-				}
+		'rebuild_dependents: {
+			let dependent_chunks = match self.dependent_chunks.get(&coordinates) {
+				Some(dependent_chunks) => dependent_chunks.clone(),
+				None => break 'rebuild_dependents,
+			};
+
+			for dependent_chunk in dependent_chunks {
+				self.try_build_chunk(device, dependent_chunk);
 			}
 		}
 
@@ -53,36 +118,43 @@ impl Voxject {
 	}
 
 	pub fn remove_chunk(&mut self, device: &Device, coordinates: ChunkCoordinates) {
-		self.chunks[*coordinates.level as usize].remove(&**coordinates);
+		self.chunks.remove(&coordinates);
 
-		if let Some(dependent_chunks) = self.dependent_chunks.get(&coordinates).cloned() {
-			for dependent_chunk in dependent_chunks {
-				self.try_build_chunk(device, dependent_chunk);
-			}
+		let dependent_chunks = match self.dependent_chunks.get(&coordinates) {
+			Some(dependent_chunks) => dependent_chunks.clone(),
+			None => return,
+		};
+
+		for dependent_chunk in dependent_chunks {
+			self.try_build_chunk(device, dependent_chunk);
 		}
 	}
 
+	// This code is admittedly absolutely fucking terrible, for the time being I don't care, it just needs to work
 	pub fn try_build_chunk(&mut self, device: &Device, grid_coordinates: ChunkCoordinates) {
 		let dependency_grid_coordinates = [
-			grid_coordinates.coordinates + Vector3::new(0, 0, 0),
-			grid_coordinates.coordinates + Vector3::new(0, 0, 1),
-			grid_coordinates.coordinates + Vector3::new(0, 1, 0),
-			grid_coordinates.coordinates + Vector3::new(0, 1, 1),
-			grid_coordinates.coordinates + Vector3::new(1, 0, 0),
-			grid_coordinates.coordinates + Vector3::new(1, 0, 1),
-			grid_coordinates.coordinates + Vector3::new(1, 1, 0),
-			grid_coordinates.coordinates + Vector3::new(1, 1, 1),
+			grid_coordinates + Vector3::new(0, 0, 0),
+			grid_coordinates + Vector3::new(0, 0, 1),
+			grid_coordinates + Vector3::new(0, 1, 0),
+			grid_coordinates + Vector3::new(0, 1, 1),
+			grid_coordinates + Vector3::new(1, 0, 0),
+			grid_coordinates + Vector3::new(1, 0, 1),
+			grid_coordinates + Vector3::new(1, 1, 0),
+			grid_coordinates + Vector3::new(1, 1, 1),
 		];
 
-		let dependency_chunks = dependency_grid_coordinates
-			.map(|coordinates| self.chunks[*grid_coordinates.level as usize].get(&coordinates));
-		let should_uplevel = *grid_coordinates.level != 30;
-		let mut upleveled_dependency_grid_coordinates = Default::default();
+		let dependency_chunks = dependency_grid_coordinates.map(|coordinates| self.chunks.get(&coordinates));
+
+		let mut upleveled_dependency_grid_coordinates = None;
 		let mut upleveled_dependency_chunks = Default::default();
+
+		let should_uplevel = *grid_coordinates.level != 30;
 		if should_uplevel {
-			upleveled_dependency_grid_coordinates = dependency_grid_coordinates.map(|coordinates| coordinates / 2);
+			upleveled_dependency_grid_coordinates =
+				Some(dependency_grid_coordinates.map(|coordinates| coordinates.upleveled()));
 			upleveled_dependency_chunks = upleveled_dependency_grid_coordinates
-				.map(|coordinates| self.chunks[*grid_coordinates.level as usize + 1].get(&coordinates));
+				.unwrap()
+				.map(|coordinates| self.chunks.get(&coordinates));
 		}
 
 		let mut densities = [0.0; 17 * 17 * 17];
@@ -97,7 +169,7 @@ impl Voxject {
 					let cell_index = (x * 289) + (y * 17) + z;
 
 					// The actual chunk we need is loaded, yay! This is the easy path.
-					if let Some(chunk) = dependency_chunks[chunk_index] {
+					if let Some(chunk) = &dependency_chunks[chunk_index] {
 						// Data expands a little bit further than chunk data, so we can't just copy the chunk data array
 						// instead we have to map it to the
 						let chunk_cell_index = (x & 0x0F) << 8 | (y & 0x0F) << 4 | z & 0x0F;
@@ -119,7 +191,7 @@ impl Voxject {
 						// Now we do the same thing we would do normally, except operating on upleveled chunks
 						let upleveled_chunk_index = ((u_x & 0x10) >> 2) | ((u_y & 0x10) >> 3) | ((u_z & 0x10) >> 4);
 
-						if let Some(chunk) = upleveled_dependency_chunks[upleveled_chunk_index] {
+						if let Some(chunk) = &upleveled_dependency_chunks[upleveled_chunk_index] {
 							let u_chunk_cell_index = (u_x & 0x0F) << 8 | (u_y & 0x0F) << 4 | u_z & 0x0F;
 							densities[cell_index] = chunk.densities[u_chunk_cell_index];
 							materials[cell_index] = chunk.materials[u_chunk_cell_index];
@@ -140,56 +212,72 @@ impl Voxject {
 
 		// Make sure we are rebuilt if any chunks we depend on are changed
 		for level_coordinates in dependency_grid_coordinates {
-			let dependency_grid_coordinates = ChunkCoordinates::new(self.id, level_coordinates, grid_coordinates.level);
-			match self.dependent_chunks.get_mut(&dependency_grid_coordinates) {
+			match self.dependent_chunks.get_mut(&level_coordinates) {
 				None => {
 					self.dependent_chunks
-						.insert(dependency_grid_coordinates, HashSet::from([grid_coordinates]));
+						.insert(level_coordinates, HashSet::from([grid_coordinates]));
 				}
-				Some(dependent_chunks) => {
-					dependent_chunks.insert(grid_coordinates);
+				Some(mut dependent_chunks) => {
+					dependent_chunks.value_mut().insert(grid_coordinates);
 				}
 			}
 		}
 
 		if should_uplevel {
 			// Now either add or remove our dependency on upleveled chunks
-			for level_coordinates in upleveled_dependency_grid_coordinates {
-				let upleveled_dependency_grid_coordinates =
-					ChunkCoordinates::new(self.id, level_coordinates, upleveled_grid_coordinates.level);
-				match self.dependent_chunks.get_mut(&upleveled_dependency_grid_coordinates) {
+			for level_coordinates in upleveled_dependency_grid_coordinates.unwrap() {
+				let should_remove = match self.dependent_chunks.get_mut(&level_coordinates) {
 					None if need_upleveled_chunks => {
-						self.dependent_chunks.insert(
-							upleveled_dependency_grid_coordinates,
-							HashSet::from([upleveled_grid_coordinates]),
-						);
+						self.dependent_chunks
+							.insert(level_coordinates, HashSet::from([upleveled_grid_coordinates]));
+						false
 					}
-					Some(dependent_chunks) => {
+					Some(mut dependent_chunks) => {
 						match need_upleveled_chunks {
 							true => dependent_chunks.insert(upleveled_grid_coordinates),
 							false => dependent_chunks.remove(&upleveled_grid_coordinates),
 						};
 
-						if dependent_chunks.is_empty() {
-							self.dependent_chunks.remove(&upleveled_dependency_grid_coordinates);
-						}
+						dependent_chunks.is_empty()
 					}
-					_ => {}
+					_ => false,
+				};
+
+				if should_remove {
+					self.dependent_chunks.remove(&level_coordinates);
 				}
 			}
 		}
 
-		if let Some(chunk) = self.chunks[*grid_coordinates.level as usize].get_mut(&grid_coordinates.coordinates) {
+		nom(dependency_chunks);
+		nom(upleveled_dependency_chunks);
+
+		let shared_clone = self.shared.clone();
+		if let Some(mut chunk) = shared_clone.chunks.get_mut(&grid_coordinates) {
 			// Not enough data to build chunk
 			if need_upleveled_chunks {
-				chunk.mesh = None;
+				chunk.value_mut().mesh = None;
 				return;
 			}
 
 			// Now we can build the chunk mesh
-			chunk.rebuild_mesh(device, densities, materials);
-		}
+			chunk.rebuild_mesh(self, device, densities, materials);
+		};
 	}
+}
+
+impl Deref for Sector {
+	type Target = SharedSector;
+
+	fn deref(&self) -> &Self::Target {
+		&self.shared
+	}
+}
+
+pub struct Voxject {
+	pub id: VoxjectId,
+	pub name: Box<str>,
+	pub location: Isometry3<f32>,
 }
 
 #[non_exhaustive]
@@ -202,29 +290,35 @@ pub struct Chunk {
 
 pub struct ChunkMesh {
 	pub vertex_count: u32,
-	pub vertex_buffer: Buffer,
+
+	pub vertex_position_buffer: Buffer,
+	pub vertex_data_buffer: Buffer,
 	pub instance_buffer: Buffer,
+
+	collider: ColliderHandle,
+	rigid_body: RigidBodyHandle,
+}
+
+#[allow(unused)]
+#[derive(Clone, Copy)]
+#[repr(packed)]
+struct VertexData {
+	normal: Vector3<f32>,
+	material_a: Vector2<u8>,
+	material_b: Vector2<u8>,
+	weight: f32,
 }
 
 impl Chunk {
 	pub fn rebuild_mesh(
 		&mut self,
+		sector: &mut Sector,
 		device: &Device,
 		densities: [f32; 17 * 17 * 17],
 		materials: [Material; 17 * 17 * 17],
 	) {
+		let mut vertex_positions = vec![];
 		let mut vertex_data = vec![];
-
-		#[allow(unused)]
-		#[derive(Clone, Copy)]
-		#[repr(packed)]
-		struct VertexData {
-			position: Vector3<f32>,
-			normal: Vector3<f32>,
-			material_a: Vector2<u8>,
-			material_b: Vector2<u8>,
-			weight: f32,
-		}
 
 		unsafe impl Zeroable for VertexData {}
 		unsafe impl Pod for VertexData {}
@@ -261,55 +355,57 @@ impl Chunk {
 					let EdgeData { count, edge_indices } = CELL_EDGE_MAP[case_index];
 
 					for edge_indices in edge_indices.chunks(3).take(count as usize) {
-						let mut vertices = edge_indices
-							.iter()
-							.map(|edge_index| {
-								let (a_index, b_index) = EDGE_CORNER_MAP[*edge_index as usize];
+						let mut cell_vertex_positions = vec![];
+						let mut cell_vertex_data = vec![];
 
-								let a_density = densities[a_index];
-								let b_density = densities[b_index];
+						for edge_index in edge_indices.iter() {
+							let (a_index, b_index) = EDGE_CORNER_MAP[*edge_index as usize];
 
-								let weight = if a_density == b_density {
-									0.5
-								} else {
-									(0.0 - a_density) / (b_density - a_density)
-								};
+							let a_density = densities[a_index];
+							let b_density = densities[b_index];
 
-								let a = CORNERS[a_index];
-								let b = CORNERS[b_index];
+							let weight = if a_density == b_density {
+								0.5
+							} else {
+								(0.0 - a_density) / (b_density - a_density)
+							};
 
-								let vertex = a + weight * (b - a);
+							let a = CORNERS[a_index];
+							let b = CORNERS[b_index];
 
-								let a_material = if matches!(materials[a_index], Material::Nothing) {
-									materials[b_index]
-								} else {
-									materials[a_index]
-								};
-								let b_material = if matches!(materials[b_index], Material::Nothing) {
-									materials[a_index]
-								} else {
-									materials[b_index]
-								};
+							let vertex = a + weight * (b - a);
 
-								VertexData {
-									position: vector![x as f32, y as f32, z as f32] + vertex,
-									normal: Vector3::default(),
-									material_a: vector![(a_material as u8 & 0xC) >> 2, a_material as u8 & 0x3],
-									material_b: vector![(b_material as u8 & 0xC) >> 2, b_material as u8 & 0x3],
-									weight,
-								}
-							})
-							.collect::<Vec<_>>();
+							let a_material = if matches!(materials[a_index], Material::Nothing) {
+								materials[b_index]
+							} else {
+								materials[a_index]
+							};
+							let b_material = if matches!(materials[b_index], Material::Nothing) {
+								materials[a_index]
+							} else {
+								materials[b_index]
+							};
 
-						let normal = (vertices[1].position - vertices[0].position)
-							.cross(&(vertices[2].position - vertices[0].position))
+							cell_vertex_positions.push(point![x as f32, y as f32, z as f32] + vertex);
+
+							cell_vertex_data.push(VertexData {
+								normal: Vector3::default(),
+								material_a: vector![(a_material as u8 & 0xC) >> 2, a_material as u8 & 0x3],
+								material_b: vector![(b_material as u8 & 0xC) >> 2, b_material as u8 & 0x3],
+								weight,
+							});
+						}
+
+						let normal = (cell_vertex_positions[1] - cell_vertex_positions[0])
+							.cross(&(cell_vertex_positions[2] - cell_vertex_positions[0]))
 							.normalize();
 
-						vertices[0].normal = normal;
-						vertices[1].normal = normal;
-						vertices[2].normal = normal;
+						cell_vertex_data[0].normal = normal;
+						cell_vertex_data[1].normal = normal;
+						cell_vertex_data[2].normal = normal;
 
-						vertex_data.extend_from_slice(&vertices);
+						vertex_positions.extend_from_slice(&cell_vertex_positions);
+						vertex_data.extend_from_slice(&cell_vertex_data);
 					}
 				}
 			}
@@ -330,10 +426,28 @@ impl Chunk {
 		unsafe impl Zeroable for InstanceData {}
 		unsafe impl Pod for InstanceData {}
 
+		let rigid_body = sector.rigid_bodies.insert(
+			RigidBodyBuilder::fixed()
+				.translation(self.coordinates.voxject_relative_translation())
+				.build(),
+		);
+
+		let vertex_indices = (0..vertex_positions.len() as u32)
+			.collect::<Vec<_>>()
+			.chunks_exact(3)
+			.map(|chunk| [chunk[0], chunk[1], chunk[2]])
+			.collect();
+
 		self.mesh = Some(ChunkMesh {
 			vertex_count: vertex_data.len() as u32,
-			vertex_buffer: device.create_buffer_init(&BufferInitDescriptor {
-				label: Some("chunk.mesh.vertex_buffer"),
+
+			vertex_position_buffer: device.create_buffer_init(&BufferInitDescriptor {
+				label: Some("chunk.mesh#vertex_position_buffer"),
+				contents: cast_slice(&vertex_positions),
+				usage: BufferUsages::VERTEX,
+			}),
+			vertex_data_buffer: device.create_buffer_init(&BufferInitDescriptor {
+				label: Some("chunk.mesh#vertex_data_buffer"),
 				contents: cast_slice(&vertex_data),
 				usage: BufferUsages::VERTEX,
 			}),
@@ -345,6 +459,13 @@ impl Chunk {
 				}]),
 				usage: BufferUsages::VERTEX,
 			}),
+
+			collider: sector.colliders.insert_with_parent(
+				ColliderBuilder::trimesh(vertex_positions, vertex_indices).build(),
+				rigid_body,
+				&mut sector.rigid_bodies,
+			),
+			rigid_body,
 		});
 	}
 }

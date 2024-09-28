@@ -8,6 +8,7 @@ anyhow.workspace = true
 bincode.workspace = true
 dashmap.workspace = true
 log.workspace = true
+rapier3d.workspace = true
 rayon.workspace = true
 solarscape-shared.workspace = true
 thiserror.workspace = true

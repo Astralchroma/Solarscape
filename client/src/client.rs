@@ -91,8 +91,6 @@ pub struct State {
 	depth_texture: Texture,
 	depth_texture_view: TextureView,
 
-	frame_start: Instant,
-
 	perspective: Perspective3<f32>,
 
 	chunk_pipeline: RenderPipeline,
@@ -183,8 +181,6 @@ impl State {
 		};
 
 		surface.configure(&device, &config);
-
-		let frame_start = Instant::now();
 
 		// We aren't even done initializing yet, but the sooner we render something the better, it makes launching the
 		// game feel more responsive. So lets render a frame real quick. This doesn't make a big difference right now,
@@ -318,9 +314,14 @@ impl State {
 				compilation_options: PipelineCompilationOptions::default(),
 				buffers: &[
 					VertexBufferLayout {
-						array_stride: 32,
+						array_stride: 12,
 						step_mode: VertexStepMode::Vertex,
-						attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Uint8x2, 3 => Uint8x2, 4 => Float32],
+						attributes: &vertex_attr_array![0 => Float32x3],
+					},
+					VertexBufferLayout {
+						array_stride: 20,
+						step_mode: VertexStepMode::Vertex,
+						attributes: &vertex_attr_array![1 => Float32x3, 2 => Uint8x2, 3 => Uint8x2, 4 => Float32],
 					},
 					VertexBufferLayout {
 						array_stride: 16,
@@ -406,8 +407,6 @@ impl State {
 			depth_texture,
 			depth_texture_view,
 
-			frame_start,
-
 			perspective: Perspective3::new(width as f32 / height as f32, f32::to_radians(90.0), 0.05, f32::MAX),
 
 			chunk_pipeline,
@@ -434,11 +433,7 @@ impl State {
 	}
 
 	fn render(&mut self, event_loop: &ActiveEventLoop) {
-		let frame_start = Instant::now();
-		let delta = (frame_start - self.frame_start).as_secs_f32();
-		self.frame_start = frame_start;
-
-		self.sector.player.frame(delta);
+		self.sector.tick();
 
 		let output = match self.surface.get_current_texture() {
 			Ok(output) => output,
@@ -478,17 +473,19 @@ impl State {
 		render_pass.set_push_constants(ShaderStages::VERTEX, 0, cast_slice(&[camera_matrix]));
 
 		render_pass.set_bind_group(0, &self.terrain_textures_bind_group, &[]);
-		self.sector
-			.voxjects
-			.iter()
-			.flat_map(|(_, voxject)| voxject.chunks.iter().flat_map(|level| level.values()))
-			.filter(|chunk| *chunk.coordinates.level == 0)
-			.filter_map(|chunk| chunk.mesh.as_ref())
-			.for_each(|chunk| {
-				render_pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
-				render_pass.set_vertex_buffer(1, chunk.instance_buffer.slice(..));
-				render_pass.draw(0..chunk.vertex_count, 0..1);
-			});
+
+		for chunk in self.sector.chunks.iter() {
+			if *chunk.coordinates.level != 0 {
+				continue;
+			}
+
+			if let Some(mesh) = chunk.mesh.as_ref() {
+				render_pass.set_vertex_buffer(0, mesh.vertex_position_buffer.slice(..));
+				render_pass.set_vertex_buffer(1, mesh.vertex_data_buffer.slice(..));
+				render_pass.set_vertex_buffer(2, mesh.instance_buffer.slice(..));
+				render_pass.draw(0..mesh.vertex_count, 0..1);
+			}
+		}
 
 		drop(render_pass);
 
@@ -509,8 +506,6 @@ impl State {
 							id,
 							name,
 							location: Isometry3::default(),
-							chunks: Default::default(),
-							dependent_chunks: Default::default(),
 						},
 					);
 				}
@@ -522,18 +517,18 @@ impl State {
 					materials,
 					densities,
 				}) => {
-					let chunk = Chunk {
-						coordinates,
-						materials,
-						densities,
-						mesh: None,
-					};
-					let voxject = self.sector.voxjects.get_mut(&coordinates.voxject).unwrap();
-					voxject.add_chunk(&self.device, chunk);
+					self.sector.add_chunk(
+						&self.device,
+						Chunk {
+							coordinates,
+							materials,
+							densities,
+							mesh: None,
+						},
+					);
 				}
 				ClientboundMessage::RemoveChunk(RemoveChunk(coordinates)) => {
-					let voxject = self.sector.voxjects.get_mut(&coordinates.voxject).unwrap();
-					voxject.remove_chunk(&self.device, coordinates);
+					self.sector.remove_chunk(&self.device, coordinates);
 				}
 			},
 		}

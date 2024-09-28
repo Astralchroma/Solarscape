@@ -2864,6 +2864,7 @@ dependencies = [
  "log",
  "nalgebra",
  "rand",
+ "rapier3d",
  "rayon",
  "solarscape-shared",
  "thiserror",

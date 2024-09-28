@@ -18,6 +18,7 @@ rayon = "1"
 thiserror = "1"
 
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+rapier3d = { version = "0.22", features = ["simd-stable"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 
