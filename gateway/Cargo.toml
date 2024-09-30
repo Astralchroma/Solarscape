@@ -1,0 +1,21 @@
+[package]
+name = "solarscape-gateway"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+env_logger.workspace = true
+log.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+email_address = "0.2"
+
+argon2 = { version = "0.5", features = ["std"] }
+clap = { version = "4", features = ["cargo", "derive"] }
+sqlx = { version = "0.8", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
+time = { version = "0.3", features = ["macros"] }

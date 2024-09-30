@@ -1,0 +1,48 @@
+<!doctype html>
+<!-- Why is this considered valid Html5 lmao -->
+<title>Solarscape (Gateway) v0.0.0</title>
+<script src=/htmx-2.0.2.min.js></script>
+<meta name="htmx-config" content='{"responseHandling": [{"code":".*", "swap": true}]}'>
+<style>
+	:root {
+		max-width: 768px
+	}
+</style>
+<h1>Solarscape (Gateway) v0.0.0</h1>
+<p>
+	You probably aren't supposed to be here right now (unless you are), but that's not an issue, everything you see here
+	is barebones right now as the goal is to make a technically playable public alpha that we can use as the foundations
+	to continue developing the game, so that's why this page looks straight out of the early 90s.
+</p>
+<p>
+	The database won't be reset prior to the public alpha launch unless something goes wrong and it's easier to just
+	nuke it and start over, so feel free to create your account now and effectively reserve your username.
+</p>
+<form hx-get="/create_account" hx-target=#message>
+	<hr>
+	<p id=message></p>
+
+	<h3>Username</h3>
+	<input type=text name=username placeholder=Username><br>
+	<i>(<code style="background: lightgray">0-9A-Za-z_</code>, 1..=32 characters )</i><br>
+
+	<h3>Email</h3>
+	<input type=email name=email placeholder=Email>
+	<p style="color: red">
+		While required, Email Addresses aren't currently verified. Once verification is implemented, all accounts will
+		be locked pending Email verification. While you can provide a dummy Email now, you do so risking losing access
+		to your account in the future, no support will be provided.
+	</p>
+
+	<h3>Password</h3>
+	<input type=password name=password placeholder=Password><br>
+	<p>
+		<i>For the rightfully security conscious, while this is barebones, we have not cut corners on password security,
+			passwords are hashed and salted with Argon2.</i>
+	</p>
+
+	<input type=submit value="Create Account"><br>
+
+	<hr>
+</form>
+<a href=https://github.com/Astralchroma/Solarscape>Source code on GitHub</a>

@@ -2,6 +2,7 @@
 name = "solarscape-server"
 version.workspace = true
 edition.workspace = true
+publish = false
 
 [dependencies]
 anyhow.workspace = true
@@ -16,16 +17,9 @@ solarscape-shared.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
-serde = { workspace = true, features = ["rc"] }
+axum = { workspace = true, features = [ "ws" ] }
+serde = { workspace = true, features = [ "rc" ] }
 
 hocon = "0.9"
 rand = "0.8"
 thread-priority = "1"
-
-axum = { version = "0.7", default-features = false, features = [
-    "http1",
-    "http2",
-    "query",
-    "tokio",
-    "ws",
-] }
