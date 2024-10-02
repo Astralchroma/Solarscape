@@ -2,6 +2,8 @@ use nalgebra::{vector, Vector3};
 use serde::{de::Error, Deserialize, Deserializer, Serialize};
 use std::{fmt, fmt::Display, fmt::Formatter, ops::Add, ops::Deref, sync::atomic::AtomicUsize, sync::atomic::Ordering};
 
+pub const LEVELS: u8 = 28;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
 #[repr(transparent)]
@@ -38,7 +40,7 @@ pub struct Level(u8);
 
 impl Level {
 	pub const fn new(level: u8) -> Self {
-		assert!(level < 32, "out of bounds 0..=31");
+		assert!(level < LEVELS, "out of bounds 0..=27");
 		Self(level)
 	}
 }
@@ -46,8 +48,8 @@ impl Level {
 impl<'d> Deserialize<'d> for Level {
 	fn deserialize<D: Deserializer<'d>>(deserializer: D) -> Result<Self, D::Error> {
 		let level = u8::deserialize(deserializer)?;
-		match level > 32 {
-			true => Err(Error::custom("out of bounds 0..=31")),
+		match level >= LEVELS {
+			true => Err(Error::custom("out of bounds 0..=27")),
 			false => Ok(Self(level)),
 		}
 	}
@@ -100,9 +102,9 @@ impl ChunkCoordinates {
 	}
 
 	/// # Panics
-	/// If [`level`] is 31 as upleveled grid coordinates would be on level 32, which is out of bounds.
+	/// If [`level`] is 27 as upleveled grid coordinates would be on level 28, which is out of bounds.
 	pub fn upleveled(&self) -> Self {
-		assert_ne!(*self.level, 31);
+		assert!(*self.level < LEVELS - 1);
 		Self::new(
 			self.voxject,
 			self.coordinates.map(|coordinate| coordinate >> 1),
