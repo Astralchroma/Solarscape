@@ -6,7 +6,8 @@ use log::{error, info, warn};
 use nalgebra::{convert_unchecked, vector, Isometry3, Vector3};
 use serde::Deserialize;
 use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, SyncVoxject};
-use solarscape_shared::{messages::serverbound::ServerboundMessage, types::ChunkCoordinates, types::Level};
+use solarscape_shared::messages::serverbound::ServerboundMessage;
+use solarscape_shared::types::{ChunkCoordinates, Level, LEVELS};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc};
 use std::{borrow::Cow, collections::HashSet, net::SocketAddr, ops::Deref};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
@@ -62,9 +63,9 @@ impl Player {
 
 			tick_locks.push(player_chunk);
 
-			for level in 0..31u8 {
+			for level in 0..LEVELS - 1 {
 				let level = Level::new(level);
-				let radius = ((*level as i32 / 32) * MULTIPLIER + MULTIPLIER) >> *level;
+				let radius = ((*level as i32 / LEVELS as i32) * MULTIPLIER + MULTIPLIER) >> *level;
 
 				if radius > 0 {
 					for x in player_chunk.coordinates.x - radius..=player_chunk.coordinates.x + radius {
@@ -101,7 +102,7 @@ impl Player {
 				player_position /= 2.0;
 				player_chunk = player_chunk.upleveled();
 
-				if *level < 30 {
+				if *level < LEVELS - 2 {
 					level_chunks = level_chunks.into_iter().map(|chunk| chunk.upleveled()).collect();
 				}
 			}
