@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- Why is this considered valid Html5 lmao -->
 <title>Solarscape (Gateway) v0.0.0</title>
-<script src=/htmx-2.0.2.min.js></script>
+<script src="./htmx-2.0.2.min.js"></script>
 <meta name="htmx-config" content='{"responseHandling": [{"code":".*", "swap": true}]}'>
 <style>
 	:root {
@@ -18,8 +18,9 @@
 	The database won't be reset prior to the public alpha launch unless something goes wrong and it's easier to just
 	nuke it and start over, so feel free to create your account now and effectively reserve your username.
 </p>
-<form hx-get="/create_account" hx-target=#message>
+<form hx-get="./create_account" hx-target=#message>
 	<hr>
+
 	<p id=message></p>
 
 	<h3>Username</h3>
