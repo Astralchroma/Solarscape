@@ -1,7 +1,7 @@
+use crate::endpoints::{api, web};
 use argon2::Argon2;
-use axum::{http::StatusCode, routing::get, Router};
+use axum::{http::StatusCode, Router};
 use clap::Parser;
-use endpoints::{web::get_create_account, web::get_htmx, web::get_root};
 use env_logger::Env;
 use log::info;
 use sqlx::{postgres::PgConnectOptions, PgPool};
@@ -11,6 +11,7 @@ use tokio::{net::TcpListener, runtime::Runtime};
 mod types;
 
 mod endpoints {
+	pub mod api;
 	pub mod web;
 }
 
@@ -46,9 +47,8 @@ fn main() {
 		.expect("failed to connect to PostgreSQL database");
 
 	let router = Router::new()
-		.route("/", get(get_root))
-		.route("/htmx-2.0.2.min.js", get(get_htmx))
-		.route("/create_account", get(get_create_account))
+		.nest("/web", web::router())
+		.nest("/api", api::router())
 		.fallback(|| async { StatusCode::NOT_FOUND })
 		.with_state(database);
 

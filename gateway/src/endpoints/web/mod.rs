@@ -1,56 +1,28 @@
-use crate::{types::Email, types::Id, types::Username, ARGON_2};
+use crate::{types::Email, types::Id, types::InternalError, types::Username, ARGON_2};
 use argon2::{password_hash::rand_core::OsRng, password_hash::SaltString, PasswordHasher};
-use axum::{
-	debug_handler,
-	extract::{Query, State},
-	http::{HeaderMap, HeaderValue, StatusCode},
-	response::{IntoResponse, Response},
-};
-use log::error;
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::{debug_handler, extract::Query, extract::State, routing::get, Router};
 use serde::Deserialize;
-use sqlx::{error::ErrorKind, query, PgPool};
-
-type RequestResult<T, E = T> = Result<T, Error<E>>;
-
-pub enum Error<E: IntoResponse> {
-	Endpoint(E),
-	Internal(anyhow::Error),
-}
-
-impl<E: IntoResponse> IntoResponse for Error<E> {
-	fn into_response(self) -> Response {
-		match self {
-			Error::Endpoint(error) => error.into_response(),
-			Error::Internal(internal_error) => {
-				error!("{internal_error}");
-				(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
-			}
-		}
-	}
-}
-
-impl<E: IntoResponse, A: Into<anyhow::Error>> From<A> for Error<E> {
-	fn from(value: A) -> Self {
-		Self::Internal(value.into())
-	}
-}
+use sqlx::{error::ErrorKind::UniqueViolation, query, Error::Database, PgPool};
+use thiserror::Error;
 
 #[derive(Deserialize)]
-pub struct CreateAccount {
+struct CreateAccount {
 	username: Username,
 	email: Email,
 	password: Box<str>,
 }
 
 #[debug_handler]
-pub async fn get_create_account(
+async fn create_account(
 	State(database): State<PgPool>,
 	Query(CreateAccount {
 		username,
 		email,
 		password,
 	}): Query<CreateAccount>,
-) -> RequestResult<impl IntoResponse> {
+) -> Result<&'static str, CreateAccountError> {
 	let salt = SaltString::generate(&mut OsRng);
 	let password = ARGON_2.hash_password(password.as_bytes(), &salt)?.to_string();
 
@@ -66,19 +38,50 @@ pub async fn get_create_account(
 	.await;
 
 	return match result {
-		Ok(_) => Ok(r#"<p id=message style="color: green">Account Created!</p>"#),
-		Err(error) => match error {
-			sqlx::Error::Database(error) if matches!(error.kind(), ErrorKind::UniqueViolation) => {
-				Ok(r#"<p id=message style="color: red">Account Already Exists!</p>"#)
-			}
-			_ => Err(error)?,
-		},
+		Ok(_) => Ok(r#"<p style="color:green">Account Created!</p>"#),
+		Err(error) => Err(match error {
+			Database(error) if matches!(error.kind(), UniqueViolation) => CreateAccountError::AccountExists,
+			_ => error.into(),
+		}),
 	};
+}
+
+#[derive(Debug, Error)]
+enum CreateAccountError {
+	#[error("Account Exists!")]
+	AccountExists,
+
+	#[error(transparent)]
+	Internal(#[from] anyhow::Error),
+}
+
+impl<E: InternalError> From<E> for CreateAccountError {
+	fn from(value: E) -> Self {
+		Self::Internal(value.into())
+	}
+}
+
+impl IntoResponse for CreateAccountError {
+	fn into_response(self) -> Response {
+		use log::error;
+
+		match self {
+			CreateAccountError::AccountExists => (StatusCode::CONFLICT, r#"<p style="color:red">Account Exists!</p>"#),
+			CreateAccountError::Internal(error) => {
+				error!("{error}");
+				(
+					StatusCode::INTERNAL_SERVER_ERROR,
+					r#"<p style="color:red">Internal Error!</p>"#,
+				)
+			}
+		}
+		.into_response()
+	}
 }
 
 // Probably a more sane way to serve static content, but it's just two files, who cares
 #[debug_handler]
-pub async fn get_root() -> impl IntoResponse {
+async fn root() -> impl IntoResponse {
 	let mut html_header_map = HeaderMap::new();
 	html_header_map.append("Content-Type", HeaderValue::from_static("text/html;charset=utf-8"));
 
@@ -86,7 +89,7 @@ pub async fn get_root() -> impl IntoResponse {
 }
 
 #[debug_handler]
-pub async fn get_htmx() -> impl IntoResponse {
+async fn htmx() -> impl IntoResponse {
 	let mut js_header_map = HeaderMap::new();
 	js_header_map.append(
 		"Content-Type",
@@ -94,4 +97,11 @@ pub async fn get_htmx() -> impl IntoResponse {
 	);
 
 	(js_header_map, include_str!("htmx-2.0.2.min.js"))
+}
+
+pub fn router() -> Router<PgPool> {
+	Router::new()
+		.route("/index.html", get(root))
+		.route("/htmx-2.0.2.min.js", get(htmx))
+		.route("/create_account", get(create_account))
 }
