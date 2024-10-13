@@ -24,5 +24,8 @@
 				"minor"
 			]
 		}
-	]
+	],
+	"lockFileMaintenance": {
+		"enabled": false
+	}
 }
