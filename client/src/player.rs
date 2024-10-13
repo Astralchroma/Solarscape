@@ -1,5 +1,5 @@
-use crate::connection::Connection;
 use nalgebra::{vector, IsometryMatrix3, Rotation3, Translation3};
+use solarscape_shared::connection::{ClientEnd, Connection};
 use std::{ops::Deref, ops::DerefMut};
 use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey::Code};
@@ -29,7 +29,7 @@ impl<L: Locality> DerefMut for Player<L> {
 }
 
 pub struct Local {
-	connection: Connection,
+	pub connection: Connection<ClientEnd>,
 
 	left_state: OppositeKeyState,
 	right_state: OppositeKeyState,
@@ -58,7 +58,7 @@ enum OppositeKeyState {
 impl Locality for Local {}
 
 impl Player<Local> {
-	pub fn new(connection: Connection) -> Self {
+	pub fn new(connection: Connection<ClientEnd>) -> Self {
 		Self {
 			location: IsometryMatrix3::translation(0.0, 0.0, 0.0),
 
@@ -187,5 +187,9 @@ impl Player<Local> {
 		);
 
 		self.rotate(rotation);
+
+		// Lol, apparently we never accounted for the fact that players move, so the server
+		// will unload everything and load it again, re-sending everything to the client
+		// self.connection.send(self.location);
 	}
 }

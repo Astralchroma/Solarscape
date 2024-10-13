@@ -1,8 +1,8 @@
+use crate::Gateway;
 use axum::Router;
-use sqlx::PgPool;
 
 mod dev;
 
-pub fn router() -> Router<PgPool> {
+pub fn router() -> Router<Gateway> {
 	Router::new().nest("/dev", dev::router())
 }

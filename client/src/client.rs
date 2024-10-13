@@ -1,13 +1,12 @@
-use crate::{connection::Connection, world::Chunk, world::Sector, world::Voxject};
+use crate::{world::Sector, ClArgs};
 use bytemuck::cast_slice;
 use core::f32;
 use image::GenericImageView;
 use log::{error, info};
-use nalgebra::{Isometry3, Perspective3};
-use solarscape_shared::messages::clientbound::{AddVoxject, ClientboundMessage, RemoveChunk, SyncChunk, SyncVoxject};
+use nalgebra::Perspective3;
 use std::{iter::once, sync::Arc, time::Instant};
 use thiserror::Error;
-use tokio::{runtime::Handle, spawn};
+use tokio::runtime::Handle;
 use wgpu::{
 	include_wgsl, vertex_attr_array, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry,
 	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Color, ColorTargetState,
@@ -23,19 +22,18 @@ use wgpu::{
 	TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb, TextureSampleType, TextureUsages, TextureView,
 	TextureViewDescriptor, TextureViewDimension, VertexBufferLayout, VertexState, VertexStepMode,
 };
+use winit::dpi::{LogicalPosition, PhysicalSize};
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{CursorGrabMode::Confined, CursorGrabMode::Locked, Window, WindowId};
-use winit::{application::ApplicationHandler, dpi::LogicalPosition, dpi::PhysicalSize, error::OsError};
+use winit::{application::ApplicationHandler, error::OsError, event_loop::ActiveEventLoop};
 
 pub struct Client {
-	pub name: Box<str>,
-	pub sector_endpoint: Box<str>,
-	pub event_loop_proxy: EventLoopProxy<Event>,
+	pub cl_args: ClArgs,
+
 	pub state: Option<State>,
 }
 
-impl ApplicationHandler<Event> for Client {
+impl ApplicationHandler for Client {
 	fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 		self.state = match State::new(self, event_loop) {
 			Ok(state) => Some(state),
@@ -44,12 +42,6 @@ impl ApplicationHandler<Event> for Client {
 				event_loop.exit();
 				return;
 			}
-		}
-	}
-
-	fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
-		if let Some(state) = &mut self.state {
-			state.user_event(event_loop, event);
 		}
 	}
 
@@ -75,10 +67,6 @@ impl ApplicationHandler<Event> for Client {
 	}
 }
 
-pub enum Event {
-	Message(ClientboundMessage),
-}
-
 pub struct State {
 	window: Arc<Window>,
 	surface: Surface<'static>,
@@ -101,11 +89,6 @@ pub struct State {
 
 impl State {
 	pub fn new(client: &Client, event_loop: &ActiveEventLoop) -> Result<Self, ClientError> {
-		let connection_task = spawn(Connection::new(
-			format!("{}?name={}", client.sector_endpoint, client.name),
-			client.event_loop_proxy.clone(),
-		));
-
 		let start_time = Instant::now();
 
 		let instance = Instance::new(InstanceDescriptor {
@@ -388,10 +371,7 @@ impl State {
 		let depth_texture = device.create_texture(&depth_texture_descriptor);
 		let depth_texture_view = depth_texture.create_view(&depth_texture_view_descriptor);
 
-		let connection = Handle::current().block_on(connection_task).unwrap().unwrap();
-		connection.send(Isometry3::default());
-
-		let sector = Sector::new(connection);
+		let sector = Handle::current().block_on(Sector::new(&client));
 
 		info!("Ready in {:.0?}", Instant::now() - start_time);
 
@@ -433,7 +413,7 @@ impl State {
 	}
 
 	fn render(&mut self, event_loop: &ActiveEventLoop) {
-		self.sector.tick();
+		self.sector.tick(&self.device);
 
 		let output = match self.surface.get_current_texture() {
 			Ok(output) => output,
@@ -493,45 +473,6 @@ impl State {
 		output.present();
 
 		self.window.request_redraw();
-	}
-
-	fn user_event(&mut self, _: &ActiveEventLoop, event: Event) {
-		match event {
-			Event::Message(message) => match message {
-				ClientboundMessage::AddVoxject(AddVoxject { id, name }) => {
-					info!("Added Voxject {id} {name:?}");
-					self.sector.voxjects.insert(
-						id,
-						Voxject {
-							id,
-							name,
-							location: Isometry3::default(),
-						},
-					);
-				}
-				ClientboundMessage::SyncVoxject(SyncVoxject { id, location }) => {
-					self.sector.voxjects.get_mut(&id).unwrap().location = location;
-				}
-				ClientboundMessage::SyncChunk(SyncChunk {
-					coordinates,
-					materials,
-					densities,
-				}) => {
-					self.sector.add_chunk(
-						&self.device,
-						Chunk {
-							coordinates,
-							materials,
-							densities,
-							mesh: None,
-						},
-					);
-				}
-				ClientboundMessage::RemoveChunk(RemoveChunk(coordinates)) => {
-					self.sector.remove_chunk(&self.device, coordinates);
-				}
-			},
-		}
 	}
 
 	fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {

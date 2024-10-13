@@ -1,0 +1,11 @@
+[package]
+name = "solarscape-backend-types"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+sqlx.workspace = true
+
+time = { version = "0.3", features = ["macros"] }

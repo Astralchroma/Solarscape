@@ -1,6 +1,6 @@
-use crate::{config, generation::sphere_generator, generation::Generator, player::Connection, player::Player};
+use crate::{generation::sphere_generator, generation::Generator, player::Player};
 use dashmap::DashMap;
-use log::{info, warn};
+use log::warn;
 use nalgebra::{point, vector, Point3};
 use rapier3d::dynamics::{
 	CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder,
@@ -8,8 +8,9 @@ use rapier3d::dynamics::{
 };
 use rapier3d::geometry::{ColliderBuilder, ColliderHandle, ColliderSet, DefaultBroadPhase, NarrowPhase};
 use rapier3d::pipeline::PhysicsPipeline;
-use solarscape_shared::messages::clientbound::{ClientboundMessage, SyncChunk};
-use solarscape_shared::messages::serverbound::ServerboundMessage;
+use solarscape_backend_types::types::Id;
+use solarscape_shared::connection::{Connection, ConnectionSend, ServerEnd};
+use solarscape_shared::message::{Clientbound, Serverbound, SyncChunk};
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
@@ -17,15 +18,28 @@ use std::{array, collections::HashMap, mem, mem::MaybeUninit, ops::Deref, thread
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-/// Represents an individual gameworld, generally it is only accessible on the sector thread, and is owned and managed
-/// by the tick loop.
+pub mod config {
+	use serde::Deserialize;
+
+	#[derive(Deserialize)]
+	pub struct Sector {
+		pub name: Box<str>,
+		pub voxjects: Vec<Voxject>,
+	}
+
+	#[derive(Deserialize)]
+	pub struct Voxject {
+		pub name: Box<str>,
+	}
+}
+
 pub struct Sector {
-	pub handle: Arc<SectorHandle>,
+	pub shared: Arc<SharedSector>,
 
 	events: Receiver<Event>,
 
 	ticking_chunks: HashMap<ChunkCoordinates, TickingChunk>,
-	players: HashMap<usize, Player>,
+	players: Vec<Player>,
 
 	// A bunch of different data used by Rapier, most of it isn't important
 	physics_pipeline: PhysicsPipeline,
@@ -40,58 +54,51 @@ pub struct Sector {
 	ccd_solver: CCDSolver,
 }
 
-impl Sector {
-	pub fn load(
-		config::Sector { name, voxjects }: config::Sector,
-		callback: impl Fn() + Send + 'static,
-	) -> Arc<SectorHandle> {
-		let start_time = Instant::now();
+/// A [`SharedSector`] allows accessing shared information about a [`Sector`], as well as sending events to be
+/// processed at the start of the next tick. It does not allow directly accessing the [`Sector`]'s internal state
+/// however.
+pub struct SharedSector {
+	pub name: Box<str>,
 
+	sender: Sender<Event>,
+
+	pub voxjects: HashMap<VoxjectId, Voxject>,
+	chunks: DashMap<ChunkCoordinates, Weak<Chunk>>,
+}
+
+impl From<config::Sector> for Sector {
+	fn from(config::Sector { name, voxjects }: config::Sector) -> Self {
 		let (sender, events) = channel();
-		let handle = Arc::new(SectorHandle {
-			name,
-			sender,
-			voxjects: voxjects.into_iter().map(Voxject::new).collect(),
-			chunks: DashMap::new(),
-		});
-		let ret = handle.clone();
 
-		thread::Builder::new()
-			.name(handle.name.to_string())
-			.spawn(move || {
-				let sector = Self {
-					handle,
+		Self {
+			shared: Arc::new(SharedSector {
+				name,
+				sender,
+				voxjects: voxjects.into_iter().map(Voxject::new).collect(),
+				chunks: DashMap::new(),
+			}),
 
-					events,
+			events,
 
-					ticking_chunks: HashMap::new(),
-					players: HashMap::new(),
+			ticking_chunks: HashMap::new(),
+			players: vec![],
 
-					physics_pipeline: PhysicsPipeline::new(),
-					integration_parameters: IntegrationParameters::default(),
-					islands: IslandManager::new(),
-					broad_phase: DefaultBroadPhase::new(),
-					narrow_phase: NarrowPhase::new(),
-					rigid_bodies: RigidBodySet::new(),
-					colliders: ColliderSet::new(),
-					impulse_joints: ImpulseJointSet::new(),
-					multibody_joints: MultibodyJointSet::new(),
-					ccd_solver: CCDSolver::new(),
-				};
-
-				let load_time = Instant::now() - start_time;
-				info!("{:?} ready! {load_time:.0?}", sector.name);
-
-				callback();
-
-				sector.run();
-			})
-			.expect("failed to spawn thread");
-
-		ret
+			physics_pipeline: PhysicsPipeline::new(),
+			integration_parameters: IntegrationParameters::default(),
+			islands: IslandManager::new(),
+			broad_phase: DefaultBroadPhase::new(),
+			narrow_phase: NarrowPhase::new(),
+			rigid_bodies: RigidBodySet::new(),
+			colliders: ColliderSet::new(),
+			impulse_joints: ImpulseJointSet::new(),
+			multibody_joints: MultibodyJointSet::new(),
+			ccd_solver: CCDSolver::new(),
+		}
 	}
+}
 
-	fn run(mut self) {
+impl Sector {
+	pub fn run(mut self) {
 		let target_tick_time = Duration::from_secs(1) / 30;
 
 		loop {
@@ -132,12 +139,9 @@ impl Sector {
 	fn handle_events(&mut self) {
 		while let Ok(event) = self.events.try_recv() {
 			match event {
-				Event::PlayerConnected(connection) => {
+				Event::PlayerConnected(_, connection) => {
 					let player = Player::accept(self, connection);
-					self.players.insert(player.id, player);
-				}
-				Event::PlayerDisconnected(id) => {
-					self.players.remove(&id);
+					self.players.push(player);
 				}
 				Event::TickLockChunk(coordinates) => {
 					let chunk = self.get_chunk(coordinates);
@@ -151,25 +155,27 @@ impl Sector {
 	}
 
 	pub fn process_players(&mut self) {
-		for player in self.players.values_mut() {
+		self.players.retain(|player| player.connection.is_connected());
+
+		for player in self.players.iter_mut() {
 			while let Ok(message) = player.try_recv() {
 				match message {
-					ServerboundMessage::PlayerLocation(location) => {
+					Serverbound::PlayerLocation(location) => {
 						// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
 						player.location = location;
 
-						let (new_client_locks, new_tick_locks) = player.compute_locks(&self.handle);
+						let (new_client_locks, new_tick_locks) = player.compute_locks(&self.shared);
 
 						let client_locks = new_client_locks
 							.into_iter()
-							.map(|coordinates| ClientLock::new(&self.handle, coordinates, player.connection.clone()))
+							.map(|coordinates| ClientLock::new(&self.shared, coordinates, player.connection.sender()))
 							.collect();
 
 						player.client_locks = client_locks;
 
 						let tick_locks = new_tick_locks
 							.into_iter()
-							.map(|coordinates| TickLock::new(&self.handle, coordinates))
+							.map(|coordinates| TickLock::new(&self.shared, coordinates))
 							.collect();
 
 						player.tick_locks = tick_locks;
@@ -180,28 +186,7 @@ impl Sector {
 	}
 }
 
-impl Deref for Sector {
-	type Target = Arc<SectorHandle>;
-
-	fn deref(&self) -> &Self::Target {
-		&self.handle
-	}
-}
-
-/// A [`SectorHandle`] allows accessing shared information about a [`Sector`], as well as sending events to be
-/// processed at the start of the next tick. It does not allow directly accessing the [`Sector`]'s internal state
-/// however.
-pub struct SectorHandle {
-	/// The name of the [`Sector`] as specified by the server's configuration.
-	pub name: Box<str>,
-
-	sender: Sender<Event>,
-
-	pub voxjects: HashMap<VoxjectId, Voxject>,
-	chunks: DashMap<ChunkCoordinates, Weak<Chunk>>,
-}
-
-impl SectorHandle {
+impl SharedSector {
 	/// Sends an event to the [`Sector`] to be processed at the start of the next tick. The event is returned if the
 	/// event could not be sent.
 	pub fn send(&self, event: Event) -> Result<(), Event> {
@@ -221,10 +206,17 @@ impl SectorHandle {
 	}
 }
 
+impl Deref for Sector {
+	type Target = Arc<SharedSector>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.shared
+	}
+}
+
 /// [`Event`]s are sent to [`Sector`]s and are processed at the start of the next tick.
 pub enum Event {
-	PlayerConnected(Arc<Connection>),
-	PlayerDisconnected(usize),
+	PlayerConnected(Id, Connection<ServerEnd>),
 	TickLockChunk(ChunkCoordinates),
 	TickReleaseChunk(ChunkCoordinates),
 }
@@ -249,12 +241,10 @@ impl Voxject {
 
 #[non_exhaustive]
 pub struct Chunk {
-	pub sector: Weak<SectorHandle>,
+	pub sector: Weak<SharedSector>,
 	pub coordinates: ChunkCoordinates,
 
-	// This is deliberately a `Mutex<HashMap<K, V>>` instead of a `DashMap<K, V>` as when locking the chunk for a
-	// connection, we need to prevent another thread from syncing at the same time, otherwise it could cause a desync.
-	subscribed_clients: Mutex<HashMap<usize, Arc<Connection>>>,
+	subscribed_clients: Mutex<Vec<Arc<ConnectionSend<ServerEnd>>>>,
 
 	// Multiple tick locks may exist, we need to avoid removing a chunk from the ticking list if its tick locked
 	// elsewhere.
@@ -270,12 +260,12 @@ pub type DataReadGuard<'a> = RwLockReadGuard<'a, Data>;
 pub type CollisionReadGuard<'a> = RwLockReadGuard<'a, Collision>;
 
 impl Chunk {
-	fn new(sector: &Arc<SectorHandle>, coordinates: ChunkCoordinates) -> Arc<Self> {
+	fn new(sector: &Arc<SharedSector>, coordinates: ChunkCoordinates) -> Arc<Self> {
 		let return_chunk = Arc::new(Self {
 			sector: Arc::downgrade(sector),
 			coordinates,
 
-			subscribed_clients: Mutex::new(HashMap::new()),
+			subscribed_clients: Mutex::new(vec![]),
 
 			tick_lock_count: AtomicUsize::new(0),
 
@@ -314,7 +304,7 @@ impl Chunk {
 
 		let data = data.downgrade();
 
-		let message = ClientboundMessage::SyncChunk(SyncChunk {
+		let message = Clientbound::SyncChunk(SyncChunk {
 			coordinates: self.coordinates,
 			materials: data.as_ref().unwrap().materials.clone(),
 			densities: data.as_ref().unwrap().densities.clone(),
@@ -322,7 +312,7 @@ impl Chunk {
 
 		self.subscribed_clients
 			.blocking_lock()
-			.values()
+			.iter()
 			.for_each(|connection| connection.send(message.clone()));
 
 		data
@@ -565,11 +555,15 @@ pub struct Collision {
 
 pub struct ClientLock {
 	chunks: [Arc<Chunk>; 27],
-	id: usize,
+	connection: Arc<ConnectionSend<ServerEnd>>,
 }
 
 impl ClientLock {
-	pub fn new(sector: &Arc<SectorHandle>, coordinates: ChunkCoordinates, connection: Arc<Connection>) -> Self {
+	pub fn new(
+		sector: &Arc<SharedSector>,
+		coordinates: ChunkCoordinates,
+		connection: Arc<ConnectionSend<ServerEnd>>,
+	) -> Self {
 		// Build a list of chunks that we need to subscribe to
 		let chunks: [Arc<Chunk>; 27] = {
 			let mut chunks: [_; 27] = array::from_fn(|_| MaybeUninit::uninit());
@@ -590,7 +584,8 @@ impl ClientLock {
 			let mut subscribed_clients = chunk.subscribed_clients.blocking_lock();
 
 			// is_none check to avoid duplicate chunk syncs
-			if subscribed_clients.insert(connection.id, connection.clone()).is_none() {
+			if !subscribed_clients.contains(&connection) {
+				subscribed_clients.push(connection.clone());
 				if let Some(ref data) = *chunk.try_read_data() {
 					connection.send(SyncChunk {
 						coordinates: chunk.coordinates,
@@ -601,17 +596,17 @@ impl ClientLock {
 			}
 		}
 
-		Self {
-			chunks,
-			id: connection.id,
-		}
+		Self { chunks, connection }
 	}
 }
 
 impl Drop for ClientLock {
 	fn drop(&mut self) {
 		for chunk in &self.chunks {
-			chunk.subscribed_clients.blocking_lock().remove(&self.id);
+			chunk
+				.subscribed_clients
+				.blocking_lock()
+				.retain(|other| self.connection != *other);
 		}
 	}
 }
@@ -619,7 +614,7 @@ impl Drop for ClientLock {
 pub struct TickLock([Arc<Chunk>; 27]);
 
 impl TickLock {
-	pub fn new(sector: &Arc<SectorHandle>, coordinates: ChunkCoordinates) -> Self {
+	pub fn new(sector: &Arc<SharedSector>, coordinates: ChunkCoordinates) -> Self {
 		// Build a list of chunks that we need to lock
 		let chunks: [Arc<Chunk>; 27] = {
 			let mut chunks: [_; 27] = array::from_fn(|_| MaybeUninit::uninit());

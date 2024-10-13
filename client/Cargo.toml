@@ -6,12 +6,15 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
-bincode.workspace = true
+chacha20poly1305.workspace = true
+clap.workspace = true
 dashmap.workspace = true
 env_logger.workspace = true
 log.workspace = true
 rapier3d.workspace = true
 rayon.workspace = true
+serde_json.workspace = true
+serde.workspace = true
 solarscape-shared.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -19,14 +22,8 @@ tokio.workspace = true
 nalgebra = { workspace = true, features = ["bytemuck"] }
 
 bytemuck = "1"
-futures-util = "0.3"
-rand = "0.8"
-tokio-tungstenite = "0.24"
-tokio-util = "0.7"
+reqwest = "0.12"
 winit = "0.30"
 
 wgpu = { version = "22", default-features = false, features = ["wgsl"] }
-image = { version = "0.25", default-features = false, features = [
-    "png",
-    "rayon",
-] }
+image = { version = "0.25", default-features = false, features = ["png", "rayon"] }

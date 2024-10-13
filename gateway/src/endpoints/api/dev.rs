@@ -1,9 +1,11 @@
-use crate::{types::Email, types::InternalError, types::Token, ARGON_2};
+use crate::{extractors::Authenticated, types::Email, types::InternalError, types::Token, Gateway, ARGON_2};
 use argon2::{password_hash::Error as ArgonError, PasswordHash, PasswordVerifier};
 use axum::response::{IntoResponse, Response};
-use axum::{debug_handler, extract::Query, extract::State, http::StatusCode, routing::get, Router};
-use serde::Deserialize;
-use sqlx::{query, query_scalar, PgPool};
+use axum::{debug_handler, extract::Query, extract::State, http::StatusCode, routing::get, Json, Router};
+use chacha20poly1305::{aead::OsRng, ChaCha20Poly1305, KeyInit};
+use serde::{Deserialize, Serialize};
+use solarscape_backend_types::messages::AllowConnection;
+use sqlx::{query, query_scalar};
 use thiserror::Error;
 
 #[derive(Deserialize)]
@@ -14,7 +16,7 @@ struct GetToken {
 
 #[debug_handler]
 async fn token(
-	State(database): State<PgPool>,
+	State(Gateway { database, .. }): State<Gateway>,
 	Query(GetToken { email, password }): Query<GetToken>,
 ) -> Result<Token, GetTokenError> {
 	let mut transaction = database.begin().await?;
@@ -90,13 +92,75 @@ impl IntoResponse for GetTokenError {
 			GetTokenError::IncorrectPassword => (StatusCode::UNAUTHORIZED, "Incorrect Password"),
 			GetTokenError::Internal(error) => {
 				error!("{error}");
-				(StatusCode::INTERNAL_SERVER_ERROR, "Internal Error")
+				(StatusCode::INTERNAL_SERVER_ERROR, "Internal / Unknown Error")
 			}
 		}
 		.into_response()
 	}
 }
 
-pub fn router() -> Router<PgPool> {
-	Router::new().route("/token", get(token))
+#[debug_handler]
+async fn connect(
+	State(Gateway { database, cl_args }): State<Gateway>,
+	Authenticated(id): Authenticated,
+) -> Result<Json<ConnectionInfo>, ConnectError> {
+	// Generate Encryption Key
+	let key = ChaCha20Poly1305::generate_key(&mut OsRng);
+
+	// Send Key to Sector Server through Channel
+	// Currently, sector servers just create a channel with the same name as the sector
+	// This is fine for now, but will need to be improved when we implement proper support for multiple sectors
+	let allow_connection = AllowConnection { id, key: key.into() };
+	let message = serde_json::to_string(&allow_connection).unwrap();
+	query!(
+		"SELECT pg_notify(channel, message) FROM (VALUES ($1, $2)) notifies(channel, message)",
+		cl_args.sector,
+		message,
+	)
+	.execute(&database)
+	.await?;
+
+	// Respond with Connection Info
+	Ok(Json(ConnectionInfo {
+		key: key.into(),
+		address: cl_args.sector_address.clone(),
+	}))
+}
+
+#[derive(Serialize)]
+struct ConnectionInfo {
+	key: [u8; 32],
+	address: String,
+}
+
+#[derive(Debug, Error)]
+enum ConnectError {
+	#[error(transparent)]
+	Internal(#[from] anyhow::Error),
+}
+
+impl<E: InternalError> From<E> for ConnectError {
+	fn from(value: E) -> Self {
+		Self::Internal(value.into())
+	}
+}
+
+impl IntoResponse for ConnectError {
+	fn into_response(self) -> Response {
+		use log::error;
+
+		match self {
+			ConnectError::Internal(error) => {
+				error!("{error}");
+				(StatusCode::INTERNAL_SERVER_ERROR, "Internal / Unknown Error")
+			}
+		}
+		.into_response()
+	}
+}
+
+pub fn router() -> Router<Gateway> {
+	Router::new()
+		.route("/token", get(token))
+		.route("/connect", get(connect))
 }
