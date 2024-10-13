@@ -107,8 +107,6 @@ impl Sector {
 			};
 		};
 
-		connection.send(IsometryMatrix3::default());
-
 		let player = Player::new(connection);
 
 		Self {

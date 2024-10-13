@@ -3,8 +3,7 @@ use nalgebra::{convert_unchecked, vector, IsometryMatrix3, Vector3};
 use solarscape_shared::connection::{Connection, ServerEnd};
 use solarscape_shared::message::{SyncSector, Voxject};
 use solarscape_shared::types::{ChunkCoordinates, Level, LEVELS};
-use std::ops::DerefMut;
-use std::{collections::HashSet, ops::Deref, sync::Arc};
+use std::{collections::HashSet, ops::Deref, ops::DerefMut, sync::Arc};
 
 pub struct Player {
 	pub connection: Connection<ServerEnd>,
@@ -37,11 +36,11 @@ impl Player {
 		}
 	}
 
-	pub fn compute_locks(&self, sector: &Arc<SharedSector>) -> (HashSet<ChunkCoordinates>, Vec<ChunkCoordinates>) {
+	pub fn compute_locks(&self, sector: &Arc<SharedSector>) -> (HashSet<ChunkCoordinates>, HashSet<ChunkCoordinates>) {
 		const MULTIPLIER: i32 = 1;
 
 		let mut client_locks = HashSet::new();
-		let mut tick_locks = Vec::new();
+		let mut tick_locks = HashSet::new();
 
 		for voxject in sector.voxjects.values() {
 			// These values are relative to the current level. So a player position of
@@ -53,7 +52,7 @@ impl Player {
 			let mut player_chunk = ChunkCoordinates::new(voxject.id, convert_unchecked(player_position), Level::new(0));
 			let mut level_chunks = HashSet::new();
 
-			tick_locks.push(player_chunk);
+			tick_locks.insert(player_chunk);
 
 			for level in 0..LEVELS - 1 {
 				let level = Level::new(level);
