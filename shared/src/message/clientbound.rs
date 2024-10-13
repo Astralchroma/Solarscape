@@ -1,18 +1,18 @@
 use crate::types::{ChunkCoordinates, Material, VoxjectId};
-use nalgebra::Isometry3;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 #[derive(Clone, Deserialize, Serialize)]
-pub struct AddVoxject {
-	pub id: VoxjectId,
+pub struct SyncSector {
 	pub name: Box<str>,
+
+	pub voxjects: Vec<Voxject>,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
-pub struct SyncVoxject {
+#[derive(Clone, Deserialize, Serialize)]
+pub struct Voxject {
 	pub id: VoxjectId,
-	pub location: Isometry3<f32>,
+	pub name: Box<str>,
 }
 
 #[serde_as]
@@ -31,32 +31,25 @@ pub struct SyncChunk {
 pub struct RemoveChunk(pub ChunkCoordinates);
 
 #[derive(Clone, Deserialize, Serialize)]
-pub enum ClientboundMessage {
-	AddVoxject(AddVoxject),
-	SyncVoxject(SyncVoxject),
+pub enum Clientbound {
+	SyncSector(SyncSector),
 	SyncChunk(SyncChunk),
 	RemoveChunk(RemoveChunk),
 }
 
-impl From<AddVoxject> for ClientboundMessage {
-	fn from(value: AddVoxject) -> Self {
-		Self::AddVoxject(value)
+impl From<SyncSector> for Clientbound {
+	fn from(value: SyncSector) -> Self {
+		Self::SyncSector(value)
 	}
 }
 
-impl From<SyncVoxject> for ClientboundMessage {
-	fn from(value: SyncVoxject) -> Self {
-		Self::SyncVoxject(value)
-	}
-}
-
-impl From<SyncChunk> for ClientboundMessage {
+impl From<SyncChunk> for Clientbound {
 	fn from(value: SyncChunk) -> Self {
 		Self::SyncChunk(value)
 	}
 }
 
-impl From<RemoveChunk> for ClientboundMessage {
+impl From<RemoveChunk> for Clientbound {
 	fn from(value: RemoveChunk) -> Self {
 		Self::RemoveChunk(value)
 	}

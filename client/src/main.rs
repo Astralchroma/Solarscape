@@ -1,21 +1,38 @@
-#![warn(clippy::nursery)]
-
 use crate::client::Client;
+use clap::Parser;
 use env_logger::Env;
 use log::info;
+use reqwest::Url;
 use std::{env, error::Error, time::Instant};
-use tokio::runtime::Builder;
+use tokio::runtime::Runtime;
 use winit::event_loop::EventLoop;
 
 mod client;
-mod connection;
 mod player;
 mod world;
+
+#[derive(Parser)]
+#[command(version)]
+pub struct ClArgs {
+	/// Solarscape Gateway API Endpoint
+	#[arg(long, default_value = "https://solarscape.astralchroma.dev/api")]
+	api_endpoint: Url,
+
+	/// Email Address to log in with
+	#[arg(long)]
+	email: String,
+
+	/// Password to log in with
+	#[arg(long)]
+	password: String,
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
 	let start_time = Instant::now();
 
-	env_logger::init_from_env(Env::default().default_filter_or(if cfg!(debug) {
+	let cl_args = ClArgs::parse();
+
+	env_logger::init_from_env(Env::default().default_filter_or(if cfg!(debug_assertions) {
 		"solarscape_client=debug"
 	} else {
 		"solarscape_client=info"
@@ -23,36 +40,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	info!("Solarscape (Client) v{}", env!("CARGO_PKG_VERSION"));
 
-	info!("Command Line: {:?}", env::args().collect::<Vec<_>>().join(" "));
-	info!("Working Directory: {:?}", env::current_dir()?);
-
-	let name = env::args().nth(1).expect("name").into_boxed_str();
-
-	let sector_endpoint = env::args()
-		.nth(2)
-		.unwrap_or_else(|| String::from("ws://localhost:8000/example"))
-		.into_boxed_str();
-
-	info!("Setting name to {name:?}");
-
-	let runtime = Builder::new_multi_thread()
-		.thread_name("io-worker")
-		.worker_threads(1)
-		.enable_io()
-		.enable_time()
-		.build()?;
-
+	let runtime = Runtime::new()?;
 	let _guard = runtime.enter();
 
-	info!("Started Async Runtime with 1 worker thread");
-
 	let event_loop = EventLoop::with_user_event().build()?;
-	let mut client = Client {
-		name,
-		sector_endpoint,
-		event_loop_proxy: event_loop.create_proxy(),
-		state: None,
-	};
+	let mut client = Client { cl_args, state: None };
 
 	info!("Event loop ready in {:.0?}", Instant::now() - start_time);
 

@@ -1,25 +1,28 @@
 [package]
-name = "solarscape-server"
+name = "solarscape-sector-server"
 version.workspace = true
 edition.workspace = true
 publish = false
 
 [dependencies]
 anyhow.workspace = true
-bincode.workspace = true
+chacha20poly1305.workspace = true
+clap.workspace = true
 dashmap.workspace = true
 env_logger.workspace = true
 log.workspace = true
 nalgebra.workspace = true
 rapier3d.workspace = true
 rayon.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+solarscape-backend-types.workspace = true
 solarscape-shared.workspace = true
+sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
-axum = { workspace = true, features = [ "ws" ] }
-serde = { workspace = true, features = [ "rc" ] }
-
+futures = "0.3"
 hocon = "0.9"
 rand = "0.8"
 thread-priority = "1"

@@ -1,10 +1,11 @@
-use crate::{types::Email, types::Id, types::InternalError, types::Username, ARGON_2};
+use crate::{types::Email, types::InternalError, types::Username, Gateway, ARGON_2};
 use argon2::{password_hash::rand_core::OsRng, password_hash::SaltString, PasswordHasher};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::{debug_handler, extract::Query, extract::State, routing::get, Router};
 use serde::Deserialize;
-use sqlx::{error::ErrorKind::UniqueViolation, query, Error::Database, PgPool};
+use solarscape_backend_types::types::Id;
+use sqlx::{error::ErrorKind::UniqueViolation, query, Error::Database};
 use thiserror::Error;
 
 #[derive(Deserialize)]
@@ -16,7 +17,7 @@ struct CreateAccount {
 
 #[debug_handler]
 async fn create_account(
-	State(database): State<PgPool>,
+	State(Gateway { database, .. }): State<Gateway>,
 	Query(CreateAccount {
 		username,
 		email,
@@ -71,7 +72,7 @@ impl IntoResponse for CreateAccountError {
 				error!("{error}");
 				(
 					StatusCode::INTERNAL_SERVER_ERROR,
-					r#"<p style="color:red">Internal Error!</p>"#,
+					r#"<p style="color:red">Internal / Unknown Error!</p>"#,
 				)
 			}
 		}
@@ -99,7 +100,7 @@ async fn htmx() -> impl IntoResponse {
 	(js_header_map, include_str!("htmx-2.0.2.min.js"))
 }
 
-pub fn router() -> Router<PgPool> {
+pub fn router() -> Router<Gateway> {
 	Router::new()
 		.route("/index.html", get(root))
 		.route("/htmx-2.0.2.min.js", get(htmx))
