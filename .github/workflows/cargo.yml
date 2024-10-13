@@ -6,19 +6,18 @@ jobs:
     name: Cargo
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Cache
-        uses: swatinem/rust-cache@v2
-      - name: Update Dependencies
-        run: cargo update
-      - name: Format Check
-        run: cargo fmt --check
-      - name: Build
+      - uses: actions/checkout@v4
+      - uses: swatinem/rust-cache@v2
+      - uses: cachix/install-nix-action@v30
+      - uses: cachix/cachix-action@v15
+        with:
+          name: devenv
+      - run: nix profile install nixpkgs#devenv
+      - shell: devenv shell bash -- -e {0}
         run: |
+          devenv up -d
+          sqlx migrate run
+          cargo fmt --check
           cargo build --message-format=json-diagnostic-rendered-ansi | jq -r 'select(.reason == "compiler-message" and .message.level != "warning").message | . as {message: $message, level: $level, rendered: $rendered} | .spans[] | select(.is_primary == true) | "::" + $level + " file=" + .file_name + ",col=" + (.column_start | tostring) + ",endColumn=" + (.column_end | tostring) + ",line=" + (.line_start | tostring) + ",endLine=" + (.line_end | tostring) + "::" + $message + "\n" + $rendered'
-          exit ${PIPESTATUS[0]}
-      - name: Clippy
-        run: |
           cargo clippy --all-features --message-format=json-diagnostic-rendered-ansi | jq -r 'select(.reason == "compiler-message").message | . as {message: $message, level: $level, rendered: $rendered} | .spans[] | select(.is_primary == true) | "::" + $level + " file=" + .file_name + ",col=" + (.column_start | tostring) + ",endColumn=" + (.column_end | tostring) + ",line=" + (.line_start | tostring) + ",endLine=" + (.line_end | tostring) + "::" + $message + "\n" + $rendered'
           exit ${PIPESTATUS[0]}
