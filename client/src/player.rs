@@ -188,8 +188,6 @@ impl Player<Local> {
 
 		self.rotate(rotation);
 
-		// Lol, apparently we never accounted for the fact that players move, so the server
-		// will unload everything and load it again, re-sending everything to the client
-		// self.connection.send(self.location);
+		self.connection.send(self.location);
 	}
 }

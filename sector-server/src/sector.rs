@@ -1,7 +1,7 @@
 use crate::{generation::sphere_generator, generation::Generator, player::Player};
 use dashmap::DashMap;
 use log::warn;
-use nalgebra::{point, vector, Point3};
+use nalgebra::{coordinates, point, vector, Point3};
 use rapier3d::dynamics::{
 	CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder,
 	RigidBodyHandle, RigidBodySet,
@@ -14,7 +14,7 @@ use solarscape_shared::message::{Clientbound, Serverbound, SyncChunk};
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
-use std::{array, collections::HashMap, mem, mem::MaybeUninit, ops::Deref, thread, time::Duration, time::Instant};
+use std::{collections::HashMap, mem::drop as nom, ops::Deref, thread, time::Duration, time::Instant};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -164,21 +164,30 @@ impl Sector {
 						// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
 						player.location = location;
 
-						let (new_client_locks, new_tick_locks) = player.compute_locks(&self.shared);
+						let (mut new_client_locks, mut new_tick_locks) = player.compute_locks(&self.shared);
 
-						let client_locks = new_client_locks
-							.into_iter()
-							.map(|coordinates| ClientLock::new(&self.shared, coordinates, player.connection.sender()))
-							.collect();
+						player
+							.client_locks
+							// Retain will remove any chunks that arent in the new list, remove will
+							// remove any chunks from the new list that were in the old list
+							.retain(|lock| new_client_locks.remove(&lock.chunk.coordinates));
 
-						player.client_locks = client_locks;
+						for coordinates in new_client_locks {
+							player.client_locks.push(ClientLock::new(
+								&self.shared,
+								coordinates,
+								player.connection.sender(),
+							));
+						}
 
-						let tick_locks = new_tick_locks
-							.into_iter()
-							.map(|coordinates| TickLock::new(&self.shared, coordinates))
-							.collect();
+						// Same as before, though there probably isn't a performence gain to doing it here
+						player
+							.tick_locks
+							.retain(|lock| new_tick_locks.remove(&lock.0.coordinates));
 
-						player.tick_locks = tick_locks;
+						for coordinates in new_tick_locks {
+							player.tick_locks.push(TickLock::new(&self.shared, coordinates));
+						}
 					}
 				}
 			}
@@ -554,7 +563,7 @@ pub struct Collision {
 }
 
 pub struct ClientLock {
-	chunks: [Arc<Chunk>; 27],
+	chunk: Arc<Chunk>,
 	connection: Arc<ConnectionSend<ServerEnd>>,
 }
 
@@ -564,91 +573,57 @@ impl ClientLock {
 		coordinates: ChunkCoordinates,
 		connection: Arc<ConnectionSend<ServerEnd>>,
 	) -> Self {
-		// Build a list of chunks that we need to subscribe to
-		let chunks: [Arc<Chunk>; 27] = {
-			let mut chunks: [_; 27] = array::from_fn(|_| MaybeUninit::uninit());
-			let mut index = 0;
-			for x in -1..=1 {
-				for y in -1..=1 {
-					for z in -1..=1 {
-						let coordinates = coordinates + vector![x, y, z];
-						chunks[index] = MaybeUninit::new(sector.get_chunk(coordinates));
-						index += 1;
-					}
-				}
-			}
-			unsafe { mem::transmute(chunks) }
-		};
+		let chunk = sector.get_chunk(coordinates);
 
-		for chunk in &chunks {
-			let mut subscribed_clients = chunk.subscribed_clients.blocking_lock();
+		let mut subscribed_clients = chunk.subscribed_clients.blocking_lock();
 
-			// is_none check to avoid duplicate chunk syncs
-			if !subscribed_clients.contains(&connection) {
-				subscribed_clients.push(connection.clone());
-				if let Some(ref data) = *chunk.try_read_data() {
-					connection.send(SyncChunk {
-						coordinates: chunk.coordinates,
-						materials: data.materials.clone(),
-						densities: data.densities.clone(),
-					});
-				}
+		// is_none check to avoid duplicate chunk syncs
+		if !subscribed_clients.contains(&connection) {
+			subscribed_clients.push(connection.clone());
+			if let Some(ref data) = *chunk.try_read_data() {
+				connection.send(SyncChunk {
+					coordinates: chunk.coordinates,
+					materials: data.materials.clone(),
+					densities: data.densities.clone(),
+				});
 			}
 		}
 
-		Self { chunks, connection }
+		nom(subscribed_clients);
+
+		Self { chunk, connection }
 	}
 }
 
 impl Drop for ClientLock {
 	fn drop(&mut self) {
-		for chunk in &self.chunks {
-			chunk
-				.subscribed_clients
-				.blocking_lock()
-				.retain(|other| self.connection != *other);
-		}
+		self.chunk
+			.subscribed_clients
+			.blocking_lock()
+			.retain(|other| self.connection != *other);
 	}
 }
 
-pub struct TickLock([Arc<Chunk>; 27]);
+pub struct TickLock(Arc<Chunk>);
 
 impl TickLock {
 	pub fn new(sector: &Arc<SharedSector>, coordinates: ChunkCoordinates) -> Self {
-		// Build a list of chunks that we need to lock
-		let chunks: [Arc<Chunk>; 27] = {
-			let mut chunks: [_; 27] = array::from_fn(|_| MaybeUninit::uninit());
-			let mut index = 0;
-			for x in -1..=1 {
-				for y in -1..=1 {
-					for z in -1..=1 {
-						let coordinates = coordinates + vector![x, y, z];
-						chunks[index] = MaybeUninit::new(sector.get_chunk(coordinates));
-						index += 1;
-					}
-				}
-			}
-			unsafe { mem::transmute(chunks) }
-		};
+		let chunk = sector.get_chunk(coordinates);
 
-		for chunk in &chunks {
-			if chunk.tick_lock_count.fetch_add(1, Relaxed) == 0 {
-				let _ = sector.send(Event::TickLockChunk(chunk.coordinates));
-				chunk.clone().trigger_collision_mesh_rebuild();
-			}
+		if chunk.tick_lock_count.fetch_add(1, Relaxed) == 0 {
+			let _ = sector.send(Event::TickLockChunk(chunk.coordinates));
+			chunk.clone().trigger_collision_mesh_rebuild();
 		}
 
-		Self(chunks)
+		Self(chunk)
 	}
 }
 
 impl Drop for TickLock {
 	fn drop(&mut self) {
-		for chunk in &self.0 {
-			if chunk.tick_lock_count.fetch_sub(1, Relaxed) == 1 {
-				if let Some(sector) = Weak::upgrade(&chunk.sector) {
-					let _ = sector.send(Event::TickReleaseChunk(chunk.coordinates));
-				}
+		if self.0.tick_lock_count.fetch_sub(1, Relaxed) == 1 {
+			if let Some(sector) = Weak::upgrade(&self.0.sector) {
+				let _ = sector.send(Event::TickReleaseChunk(self.0.coordinates));
 			}
 		}
 	}
