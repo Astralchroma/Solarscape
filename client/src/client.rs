@@ -1,9 +1,14 @@
 use crate::{world::Sector, ClArgs};
 use bytemuck::cast_slice;
 use core::f32;
+use egui::{CentralPanel, Color32, Context, Frame, ViewportId};
+use egui_wgpu::{Renderer, ScreenDescriptor};
+use egui_winit::State as Egui;
 use image::GenericImageView;
 use log::{error, info};
 use nalgebra::Perspective3;
+use std::collections::VecDeque;
+use std::time::Duration;
 use std::{iter::once, sync::Arc, time::Instant};
 use thiserror::Error;
 use tokio::runtime::Handle;
@@ -78,6 +83,14 @@ pub struct State {
 	depth_texture_descriptor: TextureDescriptor<'static>,
 	depth_texture: Texture,
 	depth_texture_view: TextureView,
+
+	frame_times: VecDeque<Duration>,
+	frame_time_total: Duration,
+	frame_time_average: Duration,
+	frames_per_second: usize,
+
+	egui: Egui,
+	egui_renderer: Renderer,
 
 	perspective: Perspective3<f32>,
 
@@ -371,6 +384,9 @@ impl State {
 		let depth_texture = device.create_texture(&depth_texture_descriptor);
 		let depth_texture_view = depth_texture.create_view(&depth_texture_view_descriptor);
 
+		let egui = Egui::new(Context::default(), ViewportId::default(), &window, None, None, None);
+		let egui_renderer = Renderer::new(&device, config.format, Some(Depth32Float), 1, false);
+
 		let sector = Handle::current().block_on(Sector::new(&client));
 
 		info!("Ready in {:.0?}", Instant::now() - start_time);
@@ -386,6 +402,14 @@ impl State {
 			depth_texture_descriptor,
 			depth_texture,
 			depth_texture_view,
+
+			egui,
+			egui_renderer,
+
+			frame_times: VecDeque::new(),
+			frame_time_total: Duration::default(),
+			frame_time_average: Duration::default(),
+			frames_per_second: 0,
 
 			perspective: Perspective3::new(width as f32 / height as f32, f32::to_radians(90.0), 0.05, f32::MAX),
 
@@ -413,6 +437,8 @@ impl State {
 	}
 
 	fn render(&mut self, event_loop: &ActiveEventLoop) {
+		let frame_start = Instant::now();
+
 		self.sector.tick(&self.device);
 
 		let output = match self.surface.get_current_texture() {
@@ -427,50 +453,103 @@ impl State {
 		let view = output.texture.create_view(&TextureViewDescriptor::default());
 		let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
 
-		let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-			color_attachments: &[Some(RenderPassColorAttachment {
-				ops: Operations {
-					load: Clear(Color::BLACK),
-					store: Store,
-				},
-				resolve_target: None,
-				view: &view,
-			})],
-			depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
-				view: &self.depth_texture_view,
-				depth_ops: Some(Operations {
-					load: Clear(1.0),
-					store: Store,
-				}),
-				stencil_ops: None,
-			}),
-			..Default::default()
+		let gui_input = self.egui.take_egui_input(&self.window);
+		let gui_output = self.egui.egui_ctx().run(gui_input, |context| {
+			context.style_mut(|style| style.visuals.panel_fill = Color32::TRANSPARENT);
+
+			CentralPanel::default().show(&context, |ui| {
+				Frame::none().fill(Color32::BLACK).inner_margin(8.0).show(ui, |ui| {
+					ui.style_mut().visuals.override_text_color = Some(Color32::WHITE);
+
+					ui.label(format!("Solarscape v{}", env!("CARGO_PKG_VERSION")));
+					ui.label(format!(
+						"{} FPS / {:.0?} Frame Time",
+						self.frames_per_second, self.frame_time_average
+					));
+				});
+			});
 		});
 
-		render_pass.set_pipeline(&self.chunk_pipeline);
+		let paint_jobs = self.egui.egui_ctx().tessellate(gui_output.shapes, 1.0);
+		let screen_descriptor = &ScreenDescriptor {
+			size_in_pixels: [self.config.width, self.config.height],
+			pixels_per_point: 1.0, // Don't know how to calculate this, come back to it later.
+		};
 
-		let camera_matrix = self.perspective.to_homogeneous() * self.sector.player.location.to_homogeneous();
-		render_pass.set_push_constants(ShaderStages::VERTEX, 0, cast_slice(&[camera_matrix]));
-
-		render_pass.set_bind_group(0, &self.terrain_textures_bind_group, &[]);
-
-		for chunk in self.sector.chunks.iter() {
-			if *chunk.coordinates.level != 0 {
-				continue;
-			}
-
-			if let Some(mesh) = chunk.mesh.as_ref() {
-				render_pass.set_vertex_buffer(0, mesh.vertex_position_buffer.slice(..));
-				render_pass.set_vertex_buffer(1, mesh.vertex_data_buffer.slice(..));
-				render_pass.set_vertex_buffer(2, mesh.instance_buffer.slice(..));
-				render_pass.draw(0..mesh.vertex_count, 0..1);
-			}
+		for (id, image_delta) in gui_output.textures_delta.set {
+			self.egui_renderer
+				.update_texture(&self.device, &self.queue, id, &image_delta);
 		}
 
-		drop(render_pass);
+		self.egui_renderer
+			.update_buffers(&self.device, &self.queue, &mut encoder, &paint_jobs, &screen_descriptor);
+
+		{
+			let mut render_pass = encoder
+				.begin_render_pass(&RenderPassDescriptor {
+					color_attachments: &[Some(RenderPassColorAttachment {
+						ops: Operations {
+							load: Clear(Color::BLACK),
+							store: Store,
+						},
+						resolve_target: None,
+						view: &view,
+					})],
+					depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+						view: &self.depth_texture_view,
+						depth_ops: Some(Operations {
+							load: Clear(1.0),
+							store: Store,
+						}),
+						stencil_ops: None,
+					}),
+					..Default::default()
+				})
+				.forget_lifetime();
+
+			render_pass.set_pipeline(&self.chunk_pipeline);
+
+			let camera_matrix = self.perspective.to_homogeneous() * self.sector.player.location.to_homogeneous();
+			render_pass.set_push_constants(ShaderStages::VERTEX, 0, cast_slice(&[camera_matrix]));
+
+			render_pass.set_bind_group(0, &self.terrain_textures_bind_group, &[]);
+
+			for chunk in self.sector.chunks.iter() {
+				if *chunk.coordinates.level != 0 {
+					continue;
+				}
+
+				if let Some(mesh) = chunk.mesh.as_ref() {
+					render_pass.set_vertex_buffer(0, mesh.vertex_position_buffer.slice(..));
+					render_pass.set_vertex_buffer(1, mesh.vertex_data_buffer.slice(..));
+					render_pass.set_vertex_buffer(2, mesh.instance_buffer.slice(..));
+					render_pass.draw(0..mesh.vertex_count, 0..1);
+				}
+			}
+
+			self.egui_renderer
+				.render(&mut render_pass, &paint_jobs, &screen_descriptor);
+		}
 
 		self.queue.submit(once(encoder.finish()));
 		output.present();
+
+		let frame_time = Instant::now() - frame_start;
+
+		self.frame_times.push_back(frame_time);
+		self.frame_time_total += frame_time;
+
+		while self.frame_time_total > Duration::from_secs(1) {
+			let old_frame_time = self.frame_times.pop_front().expect("pop_front is only called if frame_time_total is more than 1 second, which should only be the case if frame_times is populated");
+			self.frame_time_total -= old_frame_time;
+		}
+
+		self.frame_time_average = match self.frame_times.is_empty() {
+			true => frame_time,
+			false => self.frame_time_total / self.frame_times.len() as u32,
+		};
+
+		self.frames_per_second = (self.frame_times.len() as f64 / self.frame_time_total.as_secs_f64()).round() as usize;
 
 		self.window.request_redraw();
 	}

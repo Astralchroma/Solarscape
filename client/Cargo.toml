@@ -22,6 +22,9 @@ tokio.workspace = true
 nalgebra = { workspace = true, features = ["bytemuck"] }
 
 bytemuck = "1"
+egui = "0.29"
+egui-wgpu = "0.29"
+egui-winit = "0.29"
 reqwest = "0.12"
 winit = "0.30"
 
