@@ -3,6 +3,7 @@ name = "solarscape-backend-types"
 version.workspace = true
 edition.workspace = true
 publish = false
+build = "../build.rs"
 
 [dependencies]
 serde.workspace = true
