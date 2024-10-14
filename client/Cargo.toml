@@ -3,6 +3,7 @@ name = "solarscape-client"
 version.workspace = true
 edition.workspace = true
 publish = false
+build = "../build.rs"
 
 [dependencies]
 anyhow.workspace = true
