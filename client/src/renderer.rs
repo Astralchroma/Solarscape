@@ -508,6 +508,9 @@ impl Render for AnyState {
 		match self {
 			Self::Login(state) => state as &mut dyn Render,
 			Self::Sector(state) => state as &mut dyn Render,
+
+			#[cfg(debug)]
+			Self::GuiTest(_) => return,
 		}
 		.render(renderer, render_pass)
 	}
