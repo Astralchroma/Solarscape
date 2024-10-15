@@ -88,7 +88,7 @@ impl Player<Local> {
 		self.location.append_rotation_mut(&rotation)
 	}
 
-	pub fn handle_window_event(&mut self, event: WindowEvent) {
+	pub fn handle_window_event(&mut self, event: &WindowEvent) {
 		if let WindowEvent::KeyboardInput {
 			event: KeyEvent {
 				physical_key,
@@ -148,9 +148,13 @@ impl Player<Local> {
 		}
 	}
 
-	pub fn handle_device_event(&mut self, event: DeviceEvent) {
+	pub fn handle_device_event(&mut self, event: &DeviceEvent) {
 		if let DeviceEvent::MouseMotion { delta: (x, y) } = event {
-			self.rotate(Rotation3::from_euler_angles(y as f32 / 1000.0, x as f32 / 1000.0, 0.0));
+			self.rotate(Rotation3::from_euler_angles(
+				*y as f32 / 1000.0,
+				*x as f32 / 1000.0,
+				0.0,
+			));
 		}
 	}
 

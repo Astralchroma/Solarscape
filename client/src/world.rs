@@ -1,25 +1,22 @@
-use crate::{client::Client, player::Local, player::Player};
+use crate::{client::AnyState, client::State, player::Local, player::Player};
 use bytemuck::{cast_slice, Pod, Zeroable};
-use chacha20poly1305::{aead::AeadMutInPlace, ChaCha20Poly1305, KeyInit};
 use dashmap::DashMap;
-use nalgebra::{point, vector, Isometry3, IsometryMatrix3, Vector2, Vector3};
+use nalgebra::{point, vector, Isometry3, Vector2, Vector3};
 use rapier3d::dynamics::{
 	CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder, RigidBodySet,
 };
 use rapier3d::geometry::{ColliderBuilder, ColliderSet, DefaultBroadPhase, NarrowPhase};
 use rapier3d::pipeline::PhysicsPipeline;
 use rapier3d::prelude::{ColliderHandle, RigidBodyHandle};
-use serde::Deserialize;
-use serde_json::from_str;
-use solarscape_shared::connection::Connection;
+use solarscape_shared::connection::{ClientEnd, Connection};
 use solarscape_shared::message::{Clientbound, RemoveChunk, SyncChunk, SyncSector};
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
-use std::time::Duration;
-use std::{collections::HashMap, collections::HashSet, mem::drop as nom, ops::Deref, sync::Arc, time::Instant};
+use std::collections::{HashMap, HashSet};
+use std::{mem::drop as nom, ops::Deref, sync::Arc, time::Duration, time::Instant};
 use tokio::sync::mpsc::error::TryRecvError;
-use tokio::{io::AsyncWriteExt, net::TcpStream};
 use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device};
+use winit::event::{DeviceEvent, WindowEvent};
 
 pub struct Sector {
 	shared: Arc<SharedSector>,
@@ -48,58 +45,9 @@ pub struct SharedSector {
 }
 
 impl Sector {
-	pub async fn new(client: &Client) -> Self {
-		let reqwest = reqwest::Client::new();
-
-		let token = reqwest
-			.get(client.cl_args.api_endpoint.to_string() + "/dev/token")
-			.query(&[
-				("email", client.cl_args.email.clone()),
-				("password", client.cl_args.password.clone()),
-			])
-			.send()
-			.await
-			.expect("failed to login")
-			.text()
-			.await
-			.expect("failed to get token from response");
-
-		let details = reqwest
-			.get(client.cl_args.api_endpoint.to_string() + "/dev/connect")
-			.header("Authorization", token)
-			.send()
-			.await
-			.expect("failed to connect")
-			.text()
-			.await
-			.expect("failed to get token from response");
-
-		println!("{details}");
-
-		#[derive(Deserialize)]
-		struct ConnectionInfo {
-			key: [u8; 32],
-			address: String,
-		}
-
-		let details: ConnectionInfo = from_str(&details).unwrap();
-
-		let mut key = ChaCha20Poly1305::new_from_slice(&details.key).unwrap();
-		let mut stream = TcpStream::connect(details.address).await.unwrap();
-		let mut version_data = vec![0; 4];
-		key.encrypt_in_place(&[0; 12].into(), b"", &mut version_data);
-		stream.write_u16_le(version_data.len() as u16).await.unwrap();
-		stream.write_all(&version_data).await.unwrap();
-		let mut connection = Connection::new(stream, key);
-
+	pub async fn new(mut connection: Connection<ClientEnd>) -> Self {
 		let SyncSector { voxjects, .. } = loop {
-			let message = match connection.try_recv() {
-				Ok(message) => message,
-				Err(error) => match error {
-					TryRecvError::Empty => continue,
-					TryRecvError::Disconnected => panic!("connection failed"),
-				},
-			};
+			let message = connection.recv().await.expect("server should respond");
 
 			match message {
 				Clientbound::SyncSector(sync_sector) => break sync_sector,
@@ -144,33 +92,6 @@ impl Sector {
 			multibody_joints: MultibodyJointSet::new(),
 			ccd_solver: CCDSolver::new(),
 		}
-	}
-
-	pub fn tick(&mut self, device: &Device) {
-		let tick_start = Instant::now();
-		let delta = (tick_start - self.last_tick_start).as_secs_f32();
-		self.last_tick_start = tick_start;
-
-		self.process_messages(device);
-		self.player.tick(delta);
-
-		self.integration_parameters.dt = delta;
-
-		self.physics_pipeline.step(
-			&vector![0.0, 0.0, 0.0],
-			&self.integration_parameters,
-			&mut self.islands,
-			&mut self.broad_phase,
-			&mut self.narrow_phase,
-			&mut self.rigid_bodies,
-			&mut self.colliders,
-			&mut self.impulse_joints,
-			&mut self.multibody_joints,
-			&mut self.ccd_solver,
-			None,
-			&(),
-			&(),
-		);
 	}
 
 	pub fn process_messages(&mut self, device: &Device) {
@@ -372,6 +293,44 @@ impl Sector {
 			// Now we can build the chunk mesh
 			chunk.rebuild_mesh(self, device, densities, materials);
 		};
+	}
+}
+
+impl State for Sector {
+	fn tick(&mut self) -> Option<AnyState> {
+		let tick_start = Instant::now();
+		let delta = (tick_start - self.last_tick_start).as_secs_f32();
+		self.last_tick_start = tick_start;
+
+		self.player.tick(delta);
+
+		self.integration_parameters.dt = delta;
+
+		self.physics_pipeline.step(
+			&vector![0.0, 0.0, 0.0],
+			&self.integration_parameters,
+			&mut self.islands,
+			&mut self.broad_phase,
+			&mut self.narrow_phase,
+			&mut self.rigid_bodies,
+			&mut self.colliders,
+			&mut self.impulse_joints,
+			&mut self.multibody_joints,
+			&mut self.ccd_solver,
+			None,
+			&(),
+			&(),
+		);
+
+		None
+	}
+
+	fn window_event(&mut self, event: &WindowEvent) {
+		self.player.handle_window_event(event);
+	}
+
+	fn device_event(&mut self, event: &DeviceEvent) {
+		self.player.handle_device_event(event);
 	}
 }
 

@@ -126,6 +126,10 @@ impl<E: ConnectionSide> Connection<E> {
 		self.sender.clone()
 	}
 
+	pub async fn recv(&mut self) -> Option<E::I> {
+		self.incoming.recv().await
+	}
+
 	pub fn try_recv(&mut self) -> Result<E::I, TryRecvError> {
 		self.incoming.try_recv()
 	}
