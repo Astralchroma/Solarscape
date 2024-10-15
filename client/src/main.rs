@@ -13,6 +13,9 @@ mod player;
 mod renderer;
 mod world;
 
+#[cfg(debug)]
+mod gui_test;
+
 #[derive(Clone, Parser)]
 #[command(version)]
 pub struct ClArgs {
@@ -23,6 +26,10 @@ pub struct ClArgs {
 	#[cfg(debug)]
 	#[command(flatten)]
 	authentication: Option<Authentication>,
+
+	#[cfg(debug)]
+	#[arg(long)]
+	gui_test: bool,
 }
 
 #[cfg(debug)]

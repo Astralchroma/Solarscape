@@ -1,5 +1,5 @@
-use crate::world::Sector;
-use crate::{login::Login, renderer::Renderer, ClArgs};
+use crate::gui_test::GuiTest;
+use crate::{login::Login, renderer::Renderer, world::Sector, ClArgs};
 use egui::Context;
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::{application::ApplicationHandler, event_loop::ActiveEventLoop, window::WindowId};
@@ -65,10 +65,13 @@ impl ApplicationHandler for Client {
 impl From<ClArgs> for Client {
 	fn from(mut cl_args: ClArgs) -> Self {
 		Self {
-			state: AnyState::Login(match cfg!(debug) {
-				true => Login::from_cl_args(&mut cl_args),
-				false => Login::default(),
-			}),
+			state: match cfg!(debug) {
+				true => match cl_args.gui_test {
+					true => AnyState::GuiTest(GuiTest::default()),
+					false => AnyState::Login(Login::from_cl_args(&mut cl_args)),
+				},
+				false => AnyState::Login(Login::default()),
+			},
 
 			renderer: None,
 
@@ -93,6 +96,9 @@ pub trait State {
 pub enum AnyState {
 	Login(Login),
 	Sector(Sector),
+
+	#[cfg(debug)]
+	GuiTest(crate::gui_test::GuiTest),
 }
 
 impl State for AnyState {
@@ -100,6 +106,9 @@ impl State for AnyState {
 		match self {
 			Self::Login(state) => state as &mut dyn State,
 			Self::Sector(state) => state as &mut dyn State,
+
+			#[cfg(debug)]
+			Self::GuiTest(state) => state as &mut dyn State,
 		}
 		.tick()
 	}
@@ -108,6 +117,9 @@ impl State for AnyState {
 		match self {
 			Self::Login(state) => state as &mut dyn State,
 			Self::Sector(state) => state as &mut dyn State,
+
+			#[cfg(debug)]
+			Self::GuiTest(state) => state as &mut dyn State,
 		}
 		.draw_ui(cl_args, context)
 	}
@@ -116,6 +128,9 @@ impl State for AnyState {
 		match self {
 			Self::Login(state) => state as &mut dyn State,
 			Self::Sector(state) => state as &mut dyn State,
+
+			#[cfg(debug)]
+			Self::GuiTest(state) => state as &mut dyn State,
 		}
 		.window_event(event)
 	}
@@ -124,6 +139,9 @@ impl State for AnyState {
 		match self {
 			Self::Login(state) => state as &mut dyn State,
 			Self::Sector(state) => state as &mut dyn State,
+
+			#[cfg(debug)]
+			Self::GuiTest(state) => state as &mut dyn State,
 		}
 		.device_event(event)
 	}
