@@ -1,2 +1,0 @@
-DROP TABLE tokens;
-DROP TYPE STATE;

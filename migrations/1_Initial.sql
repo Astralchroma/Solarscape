@@ -1,9 +1,3 @@
--- As keeping track of the Database Schema manually is frustraiting beyond a few migrations,
--- this file provides a combination of those migrations to be used as a programmer
--- reference, it should not be used for an actual database testing or otherwise.
---
--- Currently in line with: `1_Initial.sql`
-
 CREATE TABLE players (
 	id       BigInt       PRIMARY KEY,
 

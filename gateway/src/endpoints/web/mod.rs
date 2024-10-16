@@ -29,7 +29,7 @@ async fn create_account(
 
 	let id = Id::new();
 	let result = query!(
-		"INSERT INTO players VALUES ($1, $2, $3, $4)",
+		"INSERT INTO players(id, username, email, password) VALUES ($1, $2, $3, $4)",
 		id as _,
 		username as _,
 		email as _,

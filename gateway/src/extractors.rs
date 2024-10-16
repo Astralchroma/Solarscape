@@ -25,7 +25,7 @@ impl FromRequestParts<Gateway> for Authenticated {
 			.into();
 
 		let id: Id = query_scalar!(
-			r#"SELECT player AS "id: Id" FROM tokens WHERE token = $1 AND state = 'valid'"#,
+			r#"SELECT player_id AS "id: Id" FROM tokens WHERE token = $1 AND valid = true"#,
 			token as _
 		)
 		.fetch_one(database)

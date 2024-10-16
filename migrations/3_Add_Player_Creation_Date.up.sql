@@ -1,1 +1,0 @@
-ALTER TABLE players ADD created TIMESTAMP NOT NULL DEFAULT 'now';
