@@ -21,12 +21,12 @@ async fn token(
 ) -> Result<Token, GetTokenError> {
 	let mut transaction = database.begin().await?;
 
-	let player = query!("SELECT id, phc_password FROM players WHERE email = $1", email as _)
+	let player = query!("SELECT id, password FROM players WHERE email = $1", email as _)
 		.fetch_optional(&mut *transaction)
 		.await?
 		.ok_or(GetTokenError::AccountDoesNotExist)?;
 
-	let result = ARGON_2.verify_password(password.as_bytes(), &PasswordHash::new(&player.phc_password)?);
+	let result = ARGON_2.verify_password(password.as_bytes(), &PasswordHash::new(&player.password)?);
 
 	match result {
 		Ok(_) => {}
@@ -56,9 +56,13 @@ async fn token(
 		}
 	};
 
-	query!("INSERT INTO tokens VALUES ($1, $2)", token as _, player.id)
-		.execute(&mut *transaction)
-		.await?;
+	query!(
+		"INSERT INTO tokens(token, player_id) VALUES ($1, $2)",
+		token as _,
+		player.id
+	)
+	.execute(&mut *transaction)
+	.await?;
 
 	transaction.commit().await?;
 
