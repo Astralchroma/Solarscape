@@ -25,7 +25,7 @@ use wgpu::{
 	TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb, TextureSampleType::Float, TextureUsages, TextureView,
 	TextureViewDescriptor, TextureViewDimension, VertexBufferLayout, VertexState, VertexStepMode,
 };
-use winit::window::{CursorGrabMode::Confined, CursorGrabMode::Locked, Window};
+use winit::window::{CursorGrabMode, Window};
 use winit::{dpi::LogicalPosition, dpi::PhysicalSize, error::OsError, event::WindowEvent, event_loop::ActiveEventLoop};
 
 pub struct Renderer {
@@ -520,15 +520,20 @@ impl Render for Login {}
 
 impl Render for Sector {
 	fn render(&mut self, renderer: &mut Renderer, render_pass: &mut RenderPass) {
-		let _ = renderer
-			.window
-			.set_cursor_grab(Confined)
-			.or_else(|_| renderer.window.set_cursor_grab(Locked));
-		let _ = renderer.window.set_cursor_visible(false);
-		let _ = renderer.window.set_cursor_position(LogicalPosition {
-			x: renderer.config.width as f32 / 2.0,
-			y: renderer.config.height as f32 / 2.0,
-		});
+		if !self.inventory_gui_open {
+			let _ = renderer
+				.window
+				.set_cursor_grab(CursorGrabMode::Confined)
+				.or_else(|_| renderer.window.set_cursor_grab(CursorGrabMode::Locked));
+			let _ = renderer.window.set_cursor_visible(false);
+			let _ = renderer.window.set_cursor_position(LogicalPosition {
+				x: renderer.config.width as f32 / 2.0,
+				y: renderer.config.height as f32 / 2.0,
+			});
+		} else {
+			let _ = renderer.window.set_cursor_grab(CursorGrabMode::None);
+			let _ = renderer.window.set_cursor_visible(true);
+		}
 
 		self.process_messages(&renderer.device);
 

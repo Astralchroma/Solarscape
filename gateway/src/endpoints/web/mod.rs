@@ -26,8 +26,14 @@ async fn create_account(
 ) -> Result<&'static str, CreateAccountError> {
 	let salt = SaltString::generate(&mut OsRng);
 	let password = ARGON_2.hash_password(password.as_bytes(), &salt)?.to_string();
-
 	let id = Id::new();
+
+	let mut transaction = database.begin().await?;
+
+	query!("INSERT INTO inventories(id) VALUES ($1)", id as _)
+		.execute(&mut *transaction)
+		.await?;
+
 	let result = query!(
 		"INSERT INTO players(id, username, email, password) VALUES ($1, $2, $3, $4)",
 		id as _,
@@ -35,11 +41,14 @@ async fn create_account(
 		email as _,
 		password
 	)
-	.execute(&database)
+	.execute(&mut *transaction)
 	.await;
 
 	return match result {
-		Ok(_) => Ok(r#"<p style="color:green">Account Created!</p>"#),
+		Ok(_) => {
+			transaction.commit().await?;
+			Ok(r#"<p style="color:green">Account Created!</p>"#)
+		}
 		Err(error) => Err(match error {
 			Database(error) if matches!(error.kind(), UniqueViolation) => CreateAccountError::AccountExists,
 			_ => error.into(),

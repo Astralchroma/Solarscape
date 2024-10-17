@@ -1,7 +1,7 @@
 use crate::{generation::sphere_generator, generation::Generator, player::Player};
 use dashmap::DashMap;
 use log::warn;
-use nalgebra::{coordinates, point, vector, Point3};
+use nalgebra::{point, vector, Point3};
 use rapier3d::dynamics::{
 	CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder,
 	RigidBodyHandle, RigidBodySet,
@@ -10,13 +10,14 @@ use rapier3d::geometry::{ColliderBuilder, ColliderHandle, ColliderSet, DefaultBr
 use rapier3d::pipeline::PhysicsPipeline;
 use solarscape_backend_types::types::Id;
 use solarscape_shared::connection::{Connection, ConnectionSend, ServerEnd};
-use solarscape_shared::message::{Clientbound, Serverbound, SyncChunk};
+use solarscape_shared::message::{Clientbound, Serverbound, SyncChunk, SyncInventory};
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
+use sqlx::{query, PgPool};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
 use std::{collections::HashMap, mem::drop as nom, ops::Deref, thread, time::Duration, time::Instant};
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
-use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::{runtime::Handle, sync::Mutex, sync::RwLock, sync::RwLockReadGuard, sync::RwLockWriteGuard};
 
 pub mod config {
 	use serde::Deserialize;
@@ -60,20 +61,24 @@ pub struct Sector {
 pub struct SharedSector {
 	pub name: Box<str>,
 
+	pub database: PgPool,
 	sender: Sender<Event>,
 
 	pub voxjects: HashMap<VoxjectId, Voxject>,
 	chunks: DashMap<ChunkCoordinates, Weak<Chunk>>,
 }
 
-impl From<config::Sector> for Sector {
-	fn from(config::Sector { name, voxjects }: config::Sector) -> Self {
+impl Sector {
+	pub fn new(database: PgPool, config::Sector { name, voxjects }: config::Sector) -> Self {
 		let (sender, events) = channel();
 
 		Self {
 			shared: Arc::new(SharedSector {
 				name,
+
+				database,
 				sender,
+
 				voxjects: voxjects.into_iter().map(Voxject::new).collect(),
 				chunks: DashMap::new(),
 			}),
@@ -95,9 +100,7 @@ impl From<config::Sector> for Sector {
 			ccd_solver: CCDSolver::new(),
 		}
 	}
-}
 
-impl Sector {
 	pub fn run(mut self) {
 		let target_tick_time = Duration::from_secs(1) / 30;
 
@@ -139,8 +142,8 @@ impl Sector {
 	fn handle_events(&mut self) {
 		while let Ok(event) = self.events.try_recv() {
 			match event {
-				Event::PlayerConnected(_, connection) => {
-					let player = Player::accept(self, connection);
+				Event::PlayerConnected(id, connection) => {
+					let player = Player::accept(self, id, connection);
 					self.players.push(player);
 				}
 				Event::TickLockChunk(coordinates) => {
@@ -188,6 +191,37 @@ impl Sector {
 						for coordinates in new_tick_locks {
 							player.tick_locks.push(TickLock::new(&self.shared, coordinates));
 						}
+					}
+					Serverbound::GiveTestItem => {
+						// borrroooowwww checkkkeerrr
+						let database_pool = self.shared.database.clone();
+
+						// How not to handle database queries: execute them blocking on the main thread
+						Handle::current().block_on(async {
+							let mut transaction = database_pool.begin().await.expect("database is fucked, probably");
+
+							let item_id = Id::new();
+
+							query!("INSERT INTO items(id, item) VALUES ($1, 'TestOre')", item_id as _)
+								.execute(&mut *transaction)
+								.await
+								.expect("what");
+
+							query!(
+								"INSERT INTO inventory_items(inventory_id, item_id) VALUES ($1, $2)",
+								player.id as _,
+								item_id as _
+							)
+							.execute(&mut *transaction)
+							.await
+							.unwrap();
+
+							transaction.commit().await.unwrap();
+						});
+
+						let inventory_list = Player::get_inventory(player.id, &database_pool);
+
+						player.send(SyncInventory(inventory_list));
 					}
 				}
 			}

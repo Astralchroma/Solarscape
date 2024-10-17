@@ -1,11 +1,15 @@
 use crate::sector::{ClientLock, Sector, SharedSector, TickLock};
 use nalgebra::{convert_unchecked, vector, IsometryMatrix3, Vector3};
+use solarscape_backend_types::types::Id;
 use solarscape_shared::connection::{Connection, ServerEnd};
-use solarscape_shared::message::{SyncSector, Voxject};
-use solarscape_shared::types::{ChunkCoordinates, Level, LEVELS};
+use solarscape_shared::message::{InventorySlot, Sync, Voxject};
+use solarscape_shared::types::{ChunkCoordinates, Item, Level, LEVELS};
+use sqlx::{query_as, PgPool};
 use std::{collections::HashSet, ops::Deref, ops::DerefMut, sync::Arc};
+use tokio::runtime::Handle;
 
 pub struct Player {
+	pub id: Id,
 	pub connection: Connection<ServerEnd>,
 
 	pub location: IsometryMatrix3<f32>,
@@ -15,8 +19,8 @@ pub struct Player {
 }
 
 impl Player {
-	pub fn accept(sector: &Sector, connection: Connection<ServerEnd>) -> Self {
-		connection.send(SyncSector {
+	pub fn accept(sector: &Sector, id: Id, connection: Connection<ServerEnd>) -> Self {
+		connection.send(Sync {
 			name: sector.name.clone(),
 			voxjects: sector
 				.voxjects
@@ -26,14 +30,32 @@ impl Player {
 					name: voxject.name.clone(),
 				})
 				.collect(),
+			inventory: Self::get_inventory(id, &sector.database),
 		});
 
 		Self {
+			id,
 			connection,
 			location: IsometryMatrix3::default(),
 			client_locks: vec![],
 			tick_locks: vec![],
 		}
+	}
+
+	pub fn get_inventory(id: Id, database: &PgPool) -> Vec<InventorySlot> {
+		Handle::current()
+			.block_on(
+				query_as!(
+					InventorySlot,
+					r#"SELECT item AS "item: Item", COUNT(*) as "quantity!"
+						FROM items JOIN inventory_items ON id = item_id
+						WHERE inventory_id = $1
+						GROUP BY item"#,
+					id as _,
+				)
+				.fetch_all(database),
+			)
+			.expect("inventory")
 	}
 
 	pub fn compute_locks(&self, sector: &Arc<SharedSector>) -> (HashSet<ChunkCoordinates>, HashSet<ChunkCoordinates>) {

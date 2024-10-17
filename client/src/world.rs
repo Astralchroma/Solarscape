@@ -1,6 +1,7 @@
 use crate::{client::AnyState, client::State, player::Local, player::Player};
 use bytemuck::{cast_slice, Pod, Zeroable};
 use dashmap::DashMap;
+use egui::{Align::Min, Align2, Layout, Window};
 use nalgebra::{point, vector, Isometry3, Vector2, Vector3};
 use rapier3d::dynamics::{
 	CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder, RigidBodySet,
@@ -9,19 +10,25 @@ use rapier3d::geometry::{ColliderBuilder, ColliderSet, DefaultBroadPhase, Narrow
 use rapier3d::pipeline::PhysicsPipeline;
 use rapier3d::prelude::{ColliderHandle, RigidBodyHandle};
 use solarscape_shared::connection::{ClientEnd, Connection};
-use solarscape_shared::message::{Clientbound, RemoveChunk, SyncChunk, SyncSector};
+use solarscape_shared::message::{
+	Clientbound, InventorySlot, RemoveChunk, Serverbound, Sync, SyncChunk, SyncInventory,
+};
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
 use std::collections::{HashMap, HashSet};
 use std::{mem::drop as nom, ops::Deref, sync::Arc, time::Duration, time::Instant};
 use tokio::sync::mpsc::error::TryRecvError;
 use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device};
-use winit::event::{DeviceEvent, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
+use winit::keyboard::{KeyCode, PhysicalKey};
 
 pub struct Sector {
 	shared: Arc<SharedSector>,
 
 	pub player: Player<Local>,
+
+	inventory: Vec<InventorySlot>,
+	pub inventory_gui_open: bool,
 
 	pub voxjects: HashMap<VoxjectId, Voxject>,
 
@@ -46,11 +53,13 @@ pub struct SharedSector {
 
 impl Sector {
 	pub async fn new(mut connection: Connection<ClientEnd>) -> Self {
-		let SyncSector { voxjects, .. } = loop {
+		let Sync {
+			voxjects, inventory, ..
+		} = loop {
 			let message = connection.recv().await.expect("server should respond");
 
 			match message {
-				Clientbound::SyncSector(sync_sector) => break sync_sector,
+				Clientbound::Sync(sync_sector) => break sync_sector,
 				_ => continue,
 			};
 		};
@@ -64,6 +73,9 @@ impl Sector {
 			}),
 
 			player,
+
+			inventory,
+			inventory_gui_open: false,
 
 			voxjects: voxjects
 				.into_iter()
@@ -109,7 +121,8 @@ impl Sector {
 			};
 
 			match message {
-				Clientbound::SyncSector(_) => continue, // what...?
+				Clientbound::Sync(_) => continue, // what...?
+				Clientbound::SyncInventory(SyncInventory(inventory)) => self.inventory = inventory,
 				Clientbound::SyncChunk(SyncChunk {
 					coordinates,
 					materials,
@@ -325,12 +338,85 @@ impl State for Sector {
 		None
 	}
 
+	fn draw_ui(&mut self, _: &crate::ClArgs, context: &egui::Context) {
+		Window::new("Inventory")
+			.anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+			.auto_sized()
+			.collapsible(false)
+			.hscroll(false)
+			.max_width(512.0)
+			.open(&mut self.inventory_gui_open)
+			.resizable(false)
+			.show(context, |window| {
+				if window.button(r#"Temporary magic "give me an item" button"#).clicked() {
+					self.player.connection.send(Serverbound::GiveTestItem);
+				}
+
+				window.columns(4, |columns| {
+					let mut column = 0;
+
+					for InventorySlot { item, quantity } in &self.inventory {
+						let next_column = {
+							let result = column;
+							column += 1;
+							if column == columns.len() {
+								column = 0;
+							}
+							result
+						};
+
+						columns[next_column].group(|group| {
+							group.with_layout(Layout::top_down(Min), |group| {
+								group.label(format!("{} ({})", item.display_name(), quantity));
+								group.label(item.description());
+							});
+						});
+					}
+				});
+			});
+	}
+
 	fn window_event(&mut self, event: &WindowEvent) {
-		self.player.handle_window_event(event);
+		match self.inventory_gui_open {
+			true => {
+				if let WindowEvent::KeyboardInput {
+					event:
+						KeyEvent {
+							physical_key: PhysicalKey::Code(KeyCode::Escape),
+							state: ElementState::Released,
+							repeat: false,
+							..
+						},
+					..
+				} = event
+				{
+					self.inventory_gui_open = false;
+				}
+			}
+			false => {
+				if let WindowEvent::KeyboardInput {
+					event:
+						KeyEvent {
+							physical_key: PhysicalKey::Code(KeyCode::Tab),
+							state: ElementState::Released,
+							repeat: false,
+							..
+						},
+					..
+				} = event
+				{
+					self.inventory_gui_open = true;
+				} else {
+					self.player.handle_window_event(event);
+				}
+			}
+		}
 	}
 
 	fn device_event(&mut self, event: &DeviceEvent) {
-		self.player.handle_device_event(event);
+		if !self.inventory_gui_open {
+			self.player.handle_device_event(event);
+		}
 	}
 }
 

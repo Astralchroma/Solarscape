@@ -234,3 +234,29 @@ pub enum Material {
 
 	Nothing = 0b1111,
 }
+
+#[cfg_attr(feature = "server", derive(sqlx::Type))]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub enum Item {
+	TestOre,
+}
+
+impl Item {
+	pub const fn name(&self) -> &'static str {
+		match self {
+			Self::TestOre => "test_ore",
+		}
+	}
+
+	pub const fn display_name(&self) -> &'static str {
+		match self {
+			Self::TestOre => "Test Ore",
+		}
+	}
+
+	pub const fn description(&self) -> &'static str {
+		match self {
+			Self::TestOre => "A material so alien that it breaks reality",
+		}
+	}
+}

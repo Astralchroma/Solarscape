@@ -1,18 +1,30 @@
-use crate::types::{ChunkCoordinates, Material, VoxjectId};
+use crate::types::{ChunkCoordinates, Item, Material, VoxjectId};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 #[derive(Clone, Deserialize, Serialize)]
-pub struct SyncSector {
+pub struct Sync {
 	pub name: Box<str>,
 
 	pub voxjects: Vec<Voxject>,
+
+	pub inventory: Vec<InventorySlot>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Voxject {
 	pub id: VoxjectId,
 	pub name: Box<str>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct SyncInventory(pub Vec<InventorySlot>);
+
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[cfg_attr(feature = "server", derive(sqlx::Type))]
+pub struct InventorySlot {
+	pub item: Item,
+	pub quantity: i64,
 }
 
 #[serde_as]
@@ -32,14 +44,21 @@ pub struct RemoveChunk(pub ChunkCoordinates);
 
 #[derive(Clone, Deserialize, Serialize)]
 pub enum Clientbound {
-	SyncSector(SyncSector),
+	Sync(Sync),
+	SyncInventory(SyncInventory),
 	SyncChunk(SyncChunk),
 	RemoveChunk(RemoveChunk),
 }
 
-impl From<SyncSector> for Clientbound {
-	fn from(value: SyncSector) -> Self {
-		Self::SyncSector(value)
+impl From<Sync> for Clientbound {
+	fn from(value: Sync) -> Self {
+		Self::Sync(value)
+	}
+}
+
+impl From<SyncInventory> for Clientbound {
+	fn from(value: SyncInventory) -> Self {
+		Self::SyncInventory(value)
 	}
 }
 
