@@ -13,5 +13,10 @@ serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
+sqlx = { workspace = true, optional = true }
+
 bincode = "1"
 serde_with = "3"
+
+[features]
+server = ["dep:sqlx"]

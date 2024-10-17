@@ -2,10 +2,11 @@
 -- this file provides a combination of those migrations to be used as a programmer
 -- reference, it should not be used for an actual database testing or otherwise.
 --
--- Currently in line with: `1_Initial.sql`
+-- Currently in line with: `2_Items_&_Inventories.sql`
 
 CREATE TABLE players (
-	id       BigInt       PRIMARY KEY,
+	id       BigInt       PRIMARY KEY
+	                      REFERENCES inventories(id) ON DELETE RESTRICT,
 
 	created  Timestamp    NOT NULL
 	                      DEFAULT NOW(),
@@ -38,4 +39,29 @@ CREATE TABLE tokens (
 	                    GENERATED ALWAYS AS (used - created < '1 day') STORED,
 
 	token     ByteA     PRIMARY KEY
+);
+
+CREATE TYPE Item AS ENUM ('TestOre');
+
+CREATE TABLE items (
+	id      BigInt    PRIMARY KEY,
+
+	created Timestamp NOT NULL
+	                  DEFAULT NOW(),
+
+	item    Item      NOT NULL
+);
+
+CREATE TABLE inventories (
+	id      BigInt    PRIMARY KEY,
+
+	created Timestamp NOT NULL
+	                  DEFAULT NOW()
+);
+
+CREATE TABLE inventory_items (
+	inventory_id BigInt REFERENCES inventories(id) ON DELETE CASCADE,
+	item_id      BigInt REFERENCES items(id) ON DELETE CASCADE,
+
+	PRIMARY KEY (inventory_id, item_id)
 );

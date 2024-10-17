@@ -9,7 +9,9 @@ use sector::{Event, Sector};
 use solarscape_backend_types::messages::AllowConnection;
 use solarscape_shared::connection::{Connection, ServerEnd};
 use sqlx::{postgres::PgConnectOptions, postgres::PgListener, PgPool};
-use std::{collections::HashMap, env, fs::read_to_string, io, net::SocketAddr, path::PathBuf, time::Instant};
+use std::{
+	collections::HashMap, env, fs::read_to_string, io, net::SocketAddr, path::PathBuf, sync::LazyLock, time::Instant,
+};
 use thiserror::Error;
 use thread_priority::ThreadPriority;
 use tokio::{io::AsyncReadExt, net::TcpListener, runtime::Runtime, select};
@@ -43,21 +45,22 @@ fn main() -> Result<(), SectorServerError> {
 
 	info!("Solarscape (Server) v{}", env!("CARGO_PKG_VERSION"));
 
+	let runtime = Runtime::new()?;
+	let a = runtime.enter();
+
+	cl_args.postgres = cl_args.postgres.application_name("solarscape-sector");
+	let database = runtime.block_on(PgPool::connect_with(cl_args.postgres))?;
+
 	let sector = {
 		let config: config::Sector = {
 			let string = read_to_string(cl_args.config)?;
 			hocon::de::from_str(&string)?
 		};
 
-		Sector::from(config)
+		Sector::new(database.clone(), config)
 	};
 
 	let shared_sector = sector.shared.clone();
-
-	let runtime = Runtime::new()?;
-
-	cl_args.postgres = cl_args.postgres.application_name("solarscape-sector");
-	let database = runtime.block_on(PgPool::connect_with(cl_args.postgres))?;
 
 	let mut allow_connection_listener = runtime.block_on(PgListener::connect_with(&database))?;
 	runtime.block_on(allow_connection_listener.listen(&sector.name))?;
