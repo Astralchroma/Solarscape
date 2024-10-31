@@ -1,38 +1,10 @@
 {
 	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
 	"extends": [
+		":automergeAll",
+		":dependencyDashboard",
+		":disableLockFiles",
+		":enableRenovate",
 		":semanticCommitsDisabled"
-	],
-	"packageRules": [
-		{
-			"automerge": true,
-			"automergeStrategy": "rebase",
-			"automergeType": "branch",
-			"matchCurrentVersion": "!/^0/",
-			"matchFileNames": [
-				"Cargo.toml",
-				"*/Cargo.toml"
-			],
-			"matchUpdateTypes": [
-				"major"
-			]
-		},
-		{
-			"automerge": true,
-			"automergeStrategy": "rebase",
-			"automergeType": "branch",
-			"matchCurrentVersion": "/^0/",
-			"matchFileNames": [
-				"Cargo.toml",
-				"*/Cargo.toml"
-			],
-			"matchUpdateTypes": [
-				"major",
-				"minor"
-			]
-		}
-	],
-	"lockFileMaintenance": {
-		"enabled": false
-	}
+	]
 }
