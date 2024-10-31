@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use crate::{client::AnyState, client::State, ClArgs};
 use egui::{Align2, Context, Window};
 
