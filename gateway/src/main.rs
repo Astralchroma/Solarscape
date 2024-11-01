@@ -1,12 +1,12 @@
 use crate::endpoints::{api, web};
 use argon2::Argon2;
 use axum::{http::StatusCode, Router};
-use clap::Parser;
+use clap::{Args, Parser};
 use env_logger::Env;
 use itertools::Itertools;
 use log::info;
 use sqlx::{postgres::PgConnectOptions, PgPool};
-use std::{net::SocketAddr, sync::Arc, sync::LazyLock, time::Instant};
+use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, str::FromStr, sync::Arc, sync::LazyLock, time::Instant};
 use tokio::{net::TcpListener, runtime::Runtime};
 
 mod extractors;
@@ -22,9 +22,8 @@ pub static ARGON_2: LazyLock<Argon2> = LazyLock::new(Argon2::default);
 #[derive(Parser)]
 #[command(version)]
 pub struct ClArgs {
-	/// Postgres Connection Url, see: https://docs.rs/sqlx/latest/sqlx/postgres/struct.PgConnectOptions.html
-	#[arg(long)]
-	pub postgres: PgConnectOptions,
+	#[group(flatten)]
+	pub postgres: PostgreSQL,
 
 	/// Socket address to accept connections on
 	#[arg(long)]
@@ -39,6 +38,18 @@ pub struct ClArgs {
 	pub sector_address: String,
 }
 
+#[derive(Args, Clone)]
+#[group(required = true, multiple = false)]
+pub struct PostgreSQL {
+	/// Postgres Connection Url, see: <https://docs.rs/sqlx/latest/sqlx/postgres/struct.PgConnectOptions.html>
+	#[arg(long)]
+	pub postgres: Option<PgConnectOptions>,
+
+	/// Path to file containing a Postgres Connection Url, see: <https://docs.rs/sqlx/latest/sqlx/postgres/struct.PgConnectOptions.html>
+	#[arg(long)]
+	pub postgres_file: Option<PathBuf>,
+}
+
 #[derive(Clone)]
 pub struct Gateway {
 	pub database: PgPool,
@@ -48,17 +59,29 @@ pub struct Gateway {
 fn main() {
 	let start_time = Instant::now();
 
-	let mut cl_args = ClArgs::parse();
+	let cl_args = ClArgs::parse();
 
 	env_logger::init_from_env(Env::default().default_filter_or(if cfg!(debug_assertions) { "debug" } else { "info" }));
-
 	info!("Solarscape (Gateway) v{}", env!("CARGO_PKG_VERSION"));
+
+	let postgres = cl_args.postgres.postgres.clone().unwrap_or_else(|| {
+		let file = cl_args
+			.postgres
+			.postgres_file
+		.as_ref()
+			.expect("file should be Some if url is None");
+
+		PgConnectOptions::from_str(
+			&read_to_string(file)
+				.expect("should exist and be readable")
+		)
+			.expect("file should contain a valid postgres connection url, see: https://docs.rs/sqlx/latest/sqlx/postgres/struct.PgConnectOptions.html")
+	}).application_name("solarscape-gateway");
 
 	let runtime = Runtime::new().expect("failed to start tokio runtime");
 
-	cl_args.postgres = cl_args.postgres.application_name("solarscape-gateway");
 	let database = runtime
-		.block_on(PgPool::connect_with(cl_args.postgres.clone()))
+		.block_on(PgPool::connect_with(postgres))
 		.expect("failed to connect to PostgreSQL database");
 
 	let listener = runtime
