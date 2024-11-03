@@ -101,7 +101,7 @@ impl Renderer {
 				required_features: Features::PUSH_CONSTANTS,
 				required_limits: Limits {
 					// General Limits
-					max_buffer_size: 54720,
+					max_buffer_size: u64::pow(2, 17),
 
 					// Solarscape Required Limits
 					max_bindings_per_bind_group: 2,
