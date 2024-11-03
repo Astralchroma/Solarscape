@@ -16,11 +16,11 @@ rapier3d.workspace = true
 rayon.workspace = true
 serde_json.workspace = true
 serde.workspace = true
-solarscape-shared.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
 nalgebra = { workspace = true, features = ["bytemuck"] }
+solarscape-shared = { workspace = true, features = ["world"] }
 
 bytemuck = "1"
 egui = "0.29"

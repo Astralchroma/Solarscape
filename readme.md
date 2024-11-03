@@ -18,9 +18,10 @@ Solarscape is split into 3 programs:
 - `gateway`:       A Http Api responsible for everything other then sector game state, it manages accounts,
                    authentication, and brokers connections between clients and the sector servers.
 
-Additionally there are 2 library crates used to avoid duplicate code:
-- `shared`: Code shared between the `client` and `sector-server`.
-- `backend-types`: Types used for the backend database and communication, used by `sector-server` and `gateway`.
+Additionally there is a library crate (`shared`) used to contain code shared between all applications, what code is
+available is controlled by features:
+- `backend`: Code shared between backend applications, currently `gateway` and `sector-server`.
+- `world`: Code shared between applications that interact with the game world, currently `client` and `sector-server`.
 
 PostgreSQL is used for both data storage and messaging.
 We have no plans to use a Redis/Redis-like service for the time being as PostgreSQL is sufficient.

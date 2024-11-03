@@ -4,7 +4,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{debug_handler, extract::Query, extract::State, http::StatusCode, routing::get, Json, Router};
 use chacha20poly1305::{aead::OsRng, ChaCha20Poly1305, KeyInit};
 use serde::{Deserialize, Serialize};
-use solarscape_backend_types::messages::AllowConnection;
+use solarscape_shared::message::backend::AllowConnection;
 use sqlx::{query, query_scalar};
 use thiserror::Error;
 

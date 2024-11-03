@@ -17,12 +17,11 @@ rapier3d.workspace = true
 rayon.workspace = true
 serde_json.workspace = true
 serde.workspace = true
-solarscape-backend-types.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
-solarscape-shared = { workspace = true, features = ["server"] }
+solarscape-shared = { workspace = true, features = ["backend", "world"] }
 
 futures = "0.3"
 hocon = "0.9"

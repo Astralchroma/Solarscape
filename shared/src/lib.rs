@@ -1,11 +1,18 @@
-pub mod message {
-	mod clientbound;
-	mod serverbound;
+#[cfg(feature = "world")]
+pub mod connection;
 
-	pub use clientbound::*;
-	pub use serverbound::*;
+pub mod message {
+	#[cfg(feature = "backend")]
+	pub mod backend;
+
+	#[cfg(feature = "world")]
+	pub mod clientbound;
+
+	#[cfg(feature = "world")]
+	pub mod serverbound;
 }
 
-pub mod connection;
+#[cfg(feature = "world")]
 pub mod triangulation_table;
+
 pub mod types;

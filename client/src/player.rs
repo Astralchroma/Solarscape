@@ -1,5 +1,5 @@
 use nalgebra::{vector, UnitQuaternion, Vector3};
-use solarscape_shared::{connection::ClientEnd, connection::Connection, types::Location};
+use solarscape_shared::{connection::ClientEnd, connection::Connection, types::world::Location};
 use std::{ops::Deref, ops::DerefMut};
 use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey::Code};

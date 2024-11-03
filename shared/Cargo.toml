@@ -18,5 +18,8 @@ sqlx = { workspace = true, optional = true }
 bincode = "1"
 serde_with = "3"
 
+time = { version = "0.3", optional = true, features = ["macros"] }
+
 [features]
-server = ["dep:sqlx"]
+backend = ["dep:sqlx", "dep:time"]
+world = []

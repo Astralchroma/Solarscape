@@ -1,5 +1,5 @@
 [workspace]
-members = [ "backend-types", "client", "gateway", "sector-server", "shared" ]
+members = [ "client", "gateway", "sector-server", "shared" ]
 resolver = "2"
 
 [workspace.package]
@@ -7,7 +7,6 @@ edition = "2021"
 version = "0.0.0"
 
 [workspace.dependencies]
-solarscape-backend-types = { path = "backend-types" }
 solarscape-shared = { path = "shared" }
 
 anyhow = "1"

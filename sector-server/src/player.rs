@@ -1,9 +1,8 @@
 use crate::sector::{ClientLock, Sector, SharedSector, TickLock};
 use nalgebra::{convert_unchecked, vector, IsometryMatrix3, Vector3};
-use solarscape_backend_types::types::Id;
-use solarscape_shared::connection::{Connection, ServerEnd};
-use solarscape_shared::message::{InventorySlot, Sync, Voxject};
-use solarscape_shared::types::{ChunkCoordinates, Item, Level, Location, LEVELS};
+use solarscape_shared::message::clientbound::{InventorySlot, Sync, Voxject};
+use solarscape_shared::types::world::{ChunkCoordinates, Item, Level, Location, LEVELS};
+use solarscape_shared::{connection::Connection, connection::ServerEnd, types::Id};
 use sqlx::{query_as, PgPool};
 use std::{collections::HashSet, ops::Deref, ops::DerefMut, sync::Arc};
 use tokio::runtime::Handle;

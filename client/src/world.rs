@@ -10,11 +10,12 @@ use rapier3d::geometry::{ColliderBuilder, ColliderSet, DefaultBroadPhase, Narrow
 use rapier3d::pipeline::PhysicsPipeline;
 use rapier3d::prelude::{ColliderHandle, RigidBodyHandle};
 use solarscape_shared::connection::{ClientEnd, Connection};
-use solarscape_shared::message::{
-	Clientbound, InventorySlot, RemoveChunk, Serverbound, Sync, SyncChunk, SyncInventory,
+use solarscape_shared::message::clientbound::{
+	Clientbound, InventorySlot, RemoveChunk, Sync, SyncChunk, SyncInventory,
 };
+use solarscape_shared::message::serverbound::Serverbound;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
-use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
+use solarscape_shared::types::{world::ChunkCoordinates, world::Material, Id};
 use std::collections::{HashMap, HashSet};
 use std::{fmt::Write, mem::drop as nom, ops::Deref, sync::Arc, time::Duration, time::Instant};
 use tokio::sync::mpsc::error::TryRecvError;
@@ -30,7 +31,7 @@ pub struct Sector {
 	inventory: Vec<InventorySlot>,
 	pub inventory_gui_open: bool,
 
-	pub voxjects: HashMap<VoxjectId, Voxject>,
+	pub voxjects: HashMap<Id, Voxject>,
 
 	last_tick_start: Instant,
 
@@ -443,7 +444,7 @@ impl Deref for Sector {
 }
 
 pub struct Voxject {
-	pub id: VoxjectId,
+	pub id: Id,
 	pub name: Box<str>,
 	pub location: Isometry3<f32>,
 }

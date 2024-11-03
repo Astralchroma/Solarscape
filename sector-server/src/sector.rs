@@ -8,11 +8,11 @@ use rapier3d::dynamics::{
 };
 use rapier3d::geometry::{ColliderBuilder, ColliderHandle, ColliderSet, DefaultBroadPhase, NarrowPhase};
 use rapier3d::pipeline::PhysicsPipeline;
-use solarscape_backend_types::types::Id;
 use solarscape_shared::connection::{Connection, ConnectionSend, ServerEnd};
-use solarscape_shared::message::{Clientbound, Serverbound, SyncChunk, SyncInventory};
+use solarscape_shared::message::clientbound::{Clientbound, SyncChunk, SyncInventory};
+use solarscape_shared::message::serverbound::Serverbound;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
-use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
+use solarscape_shared::types::{world::ChunkCoordinates, world::Material, Id};
 use sqlx::{query, PgPool};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
 use std::{collections::HashMap, mem::drop as nom, ops::Deref, thread, time::Duration, time::Instant};
@@ -64,7 +64,7 @@ pub struct SharedSector {
 	pub database: PgPool,
 	sender: Sender<Event>,
 
-	pub voxjects: HashMap<VoxjectId, Voxject>,
+	pub voxjects: HashMap<Id, Voxject>,
 	chunks: DashMap<ChunkCoordinates, Weak<Chunk>>,
 }
 
@@ -171,8 +171,8 @@ impl Sector {
 
 						player
 							.client_locks
-							// Retain will remove any chunks that aren't in the new list, remove will
-							// remove any chunks from the new list that were in the old list
+							// Retain will remove any chunks that aren't in the new list, remove will remove any chunks
+							// from the new list that were in the old list
 							.retain(|lock| new_client_locks.remove(&lock.chunk.coordinates));
 
 						for coordinates in new_client_locks {
@@ -265,14 +265,14 @@ pub enum Event {
 }
 
 pub struct Voxject {
-	pub id: VoxjectId,
+	pub id: Id,
 	pub name: Box<str>,
 	pub generator: Generator,
 }
 
 impl Voxject {
-	pub fn new(config::Voxject { name }: config::Voxject) -> (VoxjectId, Self) {
-		let id = VoxjectId::new();
+	pub fn new(config::Voxject { name }: config::Voxject) -> (Id, Self) {
+		let id = Id::new();
 		let voxject = Self {
 			id,
 			name,
@@ -330,8 +330,8 @@ impl Chunk {
 	}
 
 	fn generate_data<'a>(&'a self, mut data: RwLockWriteGuard<'a, Option<Data>>) -> RwLockReadGuard<'a, Option<Data>> {
-		// Another thread may synchronously generate chunks instead of waiting if the chunk is needed
-		// immediately. So if that has happened, don't re-generate the chunk.
+		// Another thread may synchronously generate chunks instead of waiting if the chunk is needed immediately. So
+		// if that has happened, don't re-generate the chunk.
 		if data.is_some() {
 			return data.downgrade();
 		}

@@ -1,4 +1,4 @@
-use crate::types::{ChunkCoordinates, Item, Material, VoxjectId};
+use crate::types::{world::ChunkCoordinates, world::Item, world::Material, Id};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -13,7 +13,7 @@ pub struct Sync {
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Voxject {
-	pub id: VoxjectId,
+	pub id: Id,
 	pub name: Box<str>,
 }
 
@@ -21,7 +21,7 @@ pub struct Voxject {
 pub struct SyncInventory(pub Vec<InventorySlot>);
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
-#[cfg_attr(feature = "server", derive(sqlx::Type))]
+#[cfg_attr(feature = "backend", derive(sqlx::Type))]
 pub struct InventorySlot {
 	pub item: Item,
 	pub quantity: i64,

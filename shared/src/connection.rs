@@ -1,4 +1,4 @@
-use crate::message::{Clientbound, Serverbound};
+use crate::message::{clientbound::Clientbound, serverbound::Serverbound};
 use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305};
 use log::warn;
 use serde::{de::DeserializeOwned, Serialize};
@@ -31,8 +31,8 @@ pub trait ConnectionSide: Default + Send + 'static {
 //
 // The requirements of a nonce are only that it is only used once, a counter achieves that.
 //
-// The server's counter gets inverted, mean it counts down from max, while the client counts up from 0,
-// this means a duplicate nonce should only be possible if we somehow send more then 2^96 packets.
+// The server's counter gets inverted, mean it counts down from max, while the client counts up from 0, this means a
+// duplicate nonce should only be possible if we somehow send more then 2^96 packets.
 pub struct NonceCounter<E: ConnectionSide> {
 	server: u128,
 	client: u128,
@@ -43,13 +43,15 @@ impl<E: ConnectionSide> NonceCounter<E> {
 	fn client_next(&mut self) -> [u8; 12] {
 		let nonce = u128::to_le_bytes(self.client);
 		self.client += 1;
-		*nonce.first_chunk().expect("getting the first 12 bytes of nonce should always work as nonce should always be 16 bytes because u128 is 16 bytes")
+		*nonce.first_chunk()
+			.expect("getting the first 12 bytes of nonce should always work as nonce should always be 16 bytes because u128 is 16 bytes")
 	}
 
 	fn server_next(&mut self) -> [u8; 12] {
 		let nonce = u128::to_le_bytes(!self.server);
 		self.server += 1;
-		*nonce.first_chunk().expect("getting the first 12 bytes of nonce should always work as nonce should always be 16 bytes because u128 is 16 bytes")
+		*nonce.first_chunk()
+			.expect("getting the first 12 bytes of nonce should always work as nonce should always be 16 bytes because u128 is 16 bytes")
 	}
 }
 
@@ -157,13 +159,13 @@ impl<E: ConnectionSide> Connection<E> {
 	) -> Result<Closed, ConnectionError> {
 		let mut nonce_counter = NonceCounter::<E>::default();
 
-		// read_u16_le is not cancellation safe, while we could pin the future to get around
-		// this, that would prevent us from writing to the stream, so instead we read the
-		// first byte, and then the second byte later, as reading a byte is cancellation safe.
+		// read_u16_le is not cancellation safe, while we could pin the future to get around this, that would prevent
+		// us from writing to the stream, so instead we read the first byte, and then the second byte later, as reading
+		// a byte is cancellation safe.
 		let mut length_first_byte = None;
 
-		// The `sleep` is not cancellation safe, we can work around this
-		// by pinning them, this means they never get cancelled.
+		// The `sleep` is not cancellation safe, we can work around this by pinning them, this means they never get
+		// cancelled.
 		pin! {
 			let keep_alive = sleep(Duration::from_secs(10));
 			let time_out = sleep(Duration::from_secs(20));

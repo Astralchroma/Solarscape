@@ -1,12 +1,12 @@
 use crate::sector::Data;
 use nalgebra::{vector, zero, Vector3};
-use solarscape_shared::types::{ChunkCoordinates, Material};
+use solarscape_shared::types::world::{ChunkCoordinates, Material};
 
 pub type Generator = fn(&ChunkCoordinates) -> Data;
 
 pub fn sphere_chunk_data(coordinates: &ChunkCoordinates, radius: f32, material_map: impl Fn(f32) -> Material) -> Data {
 	// temporary missing chunk so you can see the materials inside
-	if ***coordinates == zero::<Vector3<_>>() {
+	if **coordinates == zero::<Vector3<_>>() {
 		return Data::default();
 	}
 
