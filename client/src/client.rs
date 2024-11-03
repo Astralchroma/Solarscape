@@ -1,5 +1,6 @@
 use crate::{login::Login, renderer::Renderer, world::Sector, ClArgs};
 use egui::Context;
+use std::fmt::Write;
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::{application::ApplicationHandler, event_loop::ActiveEventLoop, window::WindowId};
 
@@ -40,7 +41,14 @@ impl ApplicationHandler for Client {
 					}
 				}
 
-				renderer.render(&self.cl_args, &mut self.state);
+				let mut debug_text = String::new();
+				writeln!(debug_text, "Solarscape (Client) v{}", env!("CARGO_PKG_VERSION"))
+					.expect("should be able to write to a string");
+
+				renderer.build_debug_text(&mut debug_text);
+				self.state.build_debug_text(&mut debug_text);
+
+				renderer.render(&self.cl_args, &mut self.state, debug_text);
 			}
 			_ => {
 				self.state.window_event(&event);
@@ -91,6 +99,8 @@ pub trait State {
 		None
 	}
 
+	fn build_debug_text(&mut self, debug_text: &mut String) {}
+
 	fn draw_ui(&mut self, cl_args: &ClArgs, context: &Context) {}
 
 	fn window_event(&mut self, event: &WindowEvent) {}
@@ -107,7 +117,7 @@ pub enum AnyState {
 }
 
 impl State for AnyState {
-	fn tick(&mut self) -> Option<AnyState> {
+	fn build_debug_text(&mut self, debug_text: &mut String) {
 		match self {
 			Self::Login(state) => state as &mut dyn State,
 			Self::Sector(state) => state as &mut dyn State,
@@ -115,7 +125,7 @@ impl State for AnyState {
 			#[cfg(debug)]
 			Self::GuiTest(state) => state as &mut dyn State,
 		}
-		.tick()
+		.build_debug_text(debug_text)
 	}
 
 	fn draw_ui(&mut self, cl_args: &ClArgs, context: &Context) {
@@ -127,6 +137,17 @@ impl State for AnyState {
 			Self::GuiTest(state) => state as &mut dyn State,
 		}
 		.draw_ui(cl_args, context)
+	}
+
+	fn tick(&mut self) -> Option<AnyState> {
+		match self {
+			Self::Login(state) => state as &mut dyn State,
+			Self::Sector(state) => state as &mut dyn State,
+
+			#[cfg(debug)]
+			Self::GuiTest(state) => state as &mut dyn State,
+		}
+		.tick()
 	}
 
 	fn window_event(&mut self, event: &WindowEvent) {

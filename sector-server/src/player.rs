@@ -3,7 +3,7 @@ use nalgebra::{convert_unchecked, vector, IsometryMatrix3, Vector3};
 use solarscape_backend_types::types::Id;
 use solarscape_shared::connection::{Connection, ServerEnd};
 use solarscape_shared::message::{InventorySlot, Sync, Voxject};
-use solarscape_shared::types::{ChunkCoordinates, Item, Level, LEVELS};
+use solarscape_shared::types::{ChunkCoordinates, Item, Level, Location, LEVELS};
 use sqlx::{query_as, PgPool};
 use std::{collections::HashSet, ops::Deref, ops::DerefMut, sync::Arc};
 use tokio::runtime::Handle;
@@ -12,7 +12,7 @@ pub struct Player {
 	pub id: Id,
 	pub connection: Connection<ServerEnd>,
 
-	pub location: IsometryMatrix3<f32>,
+	pub location: Location,
 
 	pub client_locks: Vec<ClientLock>,
 	pub tick_locks: Vec<TickLock>,
@@ -36,7 +36,7 @@ impl Player {
 		Self {
 			id,
 			connection,
-			location: IsometryMatrix3::default(),
+			location: Location::default(),
 			client_locks: vec![],
 			tick_locks: vec![],
 		}
@@ -70,7 +70,7 @@ impl Player {
 
 			// Voxjects temporarily do not have a position until we intograte Rapier
 			let mut player_position =
-				IsometryMatrix3::default().inverse_transform_vector(&self.location.translation.vector) / 16.0;
+				IsometryMatrix3::default().inverse_transform_vector(&self.location.position.coords) / 16.0;
 			let mut player_chunk = ChunkCoordinates::new(voxject.id, convert_unchecked(player_position), Level::new(0));
 			let mut level_chunks = HashSet::new();
 

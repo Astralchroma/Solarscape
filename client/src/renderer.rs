@@ -5,8 +5,8 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use egui_winit::State as EguiState;
 use image::GenericImageView;
 use log::error;
-use nalgebra::Perspective3;
-use std::{collections::VecDeque, iter::once, time::Duration, time::Instant};
+use nalgebra::{Perspective3, Translation3};
+use std::{collections::VecDeque, fmt::Write, iter::once, time::Duration, time::Instant};
 use thiserror::Error;
 use tokio::runtime::Handle;
 use wgpu::{
@@ -392,7 +392,16 @@ impl Renderer {
 		self.perspective.set_aspect(width as f32 / height as f32);
 	}
 
-	pub fn render(&mut self, cl_args: &ClArgs, state: &mut AnyState) {
+	pub fn build_debug_text(&mut self, debug_text: &mut String) {
+		writeln!(
+			debug_text,
+			"{} FPS ({:.0?}/frame)",
+			self.frames_per_second, self.frame_time_average
+		)
+		.expect("should be able to write to string");
+	}
+
+	pub fn render(&mut self, cl_args: &ClArgs, state: &mut AnyState, debug_text: String) {
 		let frame_start = Instant::now();
 
 		let output = match self.surface.get_current_texture() {
@@ -411,12 +420,7 @@ impl Renderer {
 				Pos2::default(),
 				Align2::LEFT_TOP,
 				Color32::WHITE,
-				format!(
-					"Solarscape v{}\n{} FPS / {:.0?} Frame Time",
-					env!("CARGO_PKG_VERSION"),
-					self.frames_per_second,
-					self.frame_time_average
-				),
+				debug_text.trim_end(),
 			);
 		});
 
@@ -539,7 +543,10 @@ impl Render for Sector {
 
 		render_pass.set_pipeline(&renderer.chunk_pipeline);
 
-		let camera_matrix = renderer.perspective.to_homogeneous() * self.player.location.to_homogeneous();
+		let mut view = self.player.location.rotation.to_rotation_matrix().to_homogeneous()
+			* Translation3::from(-self.player.location.position.coords).to_homogeneous();
+		let camera_matrix = renderer.perspective.to_homogeneous() * view;
+
 		render_pass.set_push_constants(ShaderStages::VERTEX, 0, cast_slice(&[camera_matrix]));
 
 		render_pass.set_bind_group(0, &renderer.terrain_textures_bind_group, &[]);

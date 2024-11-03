@@ -16,7 +16,7 @@ use solarscape_shared::message::{
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::types::{ChunkCoordinates, Material, VoxjectId};
 use std::collections::{HashMap, HashSet};
-use std::{mem::drop as nom, ops::Deref, sync::Arc, time::Duration, time::Instant};
+use std::{fmt::Write, mem::drop as nom, ops::Deref, sync::Arc, time::Duration, time::Instant};
 use tokio::sync::mpsc::error::TryRecvError;
 use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device};
 use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
@@ -336,6 +336,20 @@ impl State for Sector {
 		);
 
 		None
+	}
+
+	fn build_debug_text(&mut self, debug_text: &mut String) {
+		let (x, y, z) = self.player.location.rotation.euler_angles();
+
+		writeln!(
+			debug_text,
+			"{:.2?} [{:.2?}, {:.2?}, {:.2?}]",
+			self.player.location.position,
+			f32::to_degrees(x),
+			f32::to_degrees(y),
+			f32::to_degrees(z),
+		)
+		.expect("should be able to write to string");
 	}
 
 	fn draw_ui(&mut self, _: &crate::ClArgs, context: &egui::Context) {

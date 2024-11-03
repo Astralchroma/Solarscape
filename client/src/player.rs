@@ -1,5 +1,5 @@
-use nalgebra::{vector, IsometryMatrix3, Rotation3, Translation3};
-use solarscape_shared::connection::{ClientEnd, Connection};
+use nalgebra::{vector, UnitQuaternion, Vector3};
+use solarscape_shared::{connection::ClientEnd, connection::Connection, types::Location};
 use std::{ops::Deref, ops::DerefMut};
 use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey::Code};
@@ -9,7 +9,7 @@ use winit::keyboard::{KeyCode, PhysicalKey::Code};
 pub trait Locality {}
 
 pub struct Player<L: Locality> {
-	pub location: IsometryMatrix3<f32>,
+	pub location: Location,
 
 	locality: L,
 }
@@ -60,7 +60,7 @@ impl Locality for Local {}
 impl Player<Local> {
 	pub fn new(connection: Connection<ClientEnd>) -> Self {
 		Self {
-			location: IsometryMatrix3::translation(0.0, 0.0, 0.0),
+			location: Location::default(),
 
 			locality: Local {
 				connection,
@@ -80,12 +80,12 @@ impl Player<Local> {
 		}
 	}
 
-	pub fn translate_local(&mut self, translation: Translation3<f32>) {
-		self.location.append_translation_mut(&translation);
+	pub fn translate_local(&mut self, vector: Vector3<f32>) {
+		self.location.position += self.location.rotation.inverse_transform_vector(&vector);
 	}
 
-	pub fn rotate(&mut self, rotation: Rotation3<f32>) {
-		self.location.append_rotation_mut(&rotation)
+	pub fn rotate(&mut self, rotation: UnitQuaternion<f32>) {
+		self.location.rotation = rotation * self.location.rotation;
 	}
 
 	pub fn handle_window_event(&mut self, event: &WindowEvent) {
@@ -130,8 +130,8 @@ impl Player<Local> {
 				}
 
 				match code {
-					KeyCode::KeyA => handle_key_state!(self.right_state, self.left_state),
-					KeyCode::KeyD => handle_key_state!(self.left_state, self.right_state),
+					KeyCode::KeyA => handle_key_state!(self.left_state, self.right_state),
+					KeyCode::KeyD => handle_key_state!(self.right_state, self.left_state),
 
 					KeyCode::KeyW => handle_key_state!(self.forward_state, self.backward_state),
 					KeyCode::KeyS => handle_key_state!(self.backward_state, self.forward_state),
@@ -150,7 +150,7 @@ impl Player<Local> {
 
 	pub fn handle_device_event(&mut self, event: &DeviceEvent) {
 		if let DeviceEvent::MouseMotion { delta: (x, y) } = event {
-			self.rotate(Rotation3::from_euler_angles(
+			self.rotate(UnitQuaternion::from_euler_angles(
 				*y as f32 / 1000.0,
 				*x as f32 / 1000.0,
 				0.0,
@@ -175,8 +175,8 @@ impl Player<Local> {
 
 		let mut translation = vector![
 			key_state_to_float(&self.left_state, &self.right_state),
-			key_state_to_float(&self.up_state, &self.down_state),
-			key_state_to_float(&self.backward_state, &self.forward_state),
+			key_state_to_float(&self.down_state, &self.up_state),
+			key_state_to_float(&self.forward_state, &self.backward_state),
 		];
 
 		if translation.normalize_mut().is_normal() {
@@ -184,7 +184,7 @@ impl Player<Local> {
 			self.translate_local(translation.into());
 		}
 
-		let rotation = Rotation3::from_euler_angles(
+		let rotation = UnitQuaternion::from_euler_angles(
 			0.0,
 			0.0,
 			key_state_to_float(&self.roll_left_state, &self.roll_right_state) * delta,

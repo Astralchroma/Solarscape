@@ -1,14 +1,14 @@
-use nalgebra::IsometryMatrix3;
+use crate::types::Location;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub enum Serverbound {
-	PlayerLocation(IsometryMatrix3<f32>),
+	PlayerLocation(Location),
 	GiveTestItem,
 }
 
-impl From<IsometryMatrix3<f32>> for Serverbound {
-	fn from(location: IsometryMatrix3<f32>) -> Self {
+impl From<Location> for Serverbound {
+	fn from(location: Location) -> Self {
 		Self::PlayerLocation(location)
 	}
 }

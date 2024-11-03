@@ -1,4 +1,4 @@
-use nalgebra::{vector, Vector3};
+use nalgebra::{vector, Point3, UnitQuaternion, Vector3};
 use serde::{de::Error, Deserialize, Deserializer, Serialize};
 use std::{fmt, fmt::Display, fmt::Formatter, ops::Add, ops::Deref, sync::atomic::AtomicUsize, sync::atomic::Ordering};
 
@@ -223,6 +223,12 @@ impl Deref for ChunkCoordinates {
 	fn deref(&self) -> &Self::Target {
 		&self.0
 	}
+}
+
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+pub struct Location {
+	pub position: Point3<f32>,
+	pub rotation: UnitQuaternion<f32>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
