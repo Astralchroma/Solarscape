@@ -40,7 +40,7 @@ pub struct Renderer {
 	device: Device,
 	queue: Queue,
 
-	// Frame time information, we will probably improve the infrustructure
+	// Frame time information, we will probably improve the infrastructure
 	// around this later to deliver a more detailed breakdown
 	frame_times: VecDeque<Duration>,
 	frame_time_total: Duration,
@@ -543,7 +543,7 @@ impl Render for Sector {
 
 		render_pass.set_pipeline(&renderer.chunk_pipeline);
 
-		let mut view = self.player.location.rotation.to_rotation_matrix().to_homogeneous()
+		let view = self.player.location.rotation.to_rotation_matrix().to_homogeneous()
 			* Translation3::from(-self.player.location.position.coords).to_homogeneous();
 		let camera_matrix = renderer.perspective.to_homogeneous() * view;
 

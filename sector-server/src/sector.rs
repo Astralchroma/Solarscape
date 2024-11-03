@@ -171,7 +171,7 @@ impl Sector {
 
 						player
 							.client_locks
-							// Retain will remove any chunks that arent in the new list, remove will
+							// Retain will remove any chunks that aren't in the new list, remove will
 							// remove any chunks from the new list that were in the old list
 							.retain(|lock| new_client_locks.remove(&lock.chunk.coordinates));
 
@@ -183,7 +183,7 @@ impl Sector {
 							));
 						}
 
-						// Same as before, though there probably isn't a performence gain to doing it here
+						// Same as before, though there probably isn't a performance gain to doing it here
 						player
 							.tick_locks
 							.retain(|lock| new_tick_locks.remove(&lock.0.coordinates));
@@ -319,7 +319,7 @@ impl Chunk {
 		let chunk = return_chunk.clone();
 		rayon::spawn(move || {
 			// If try_unwrap returns Ok then nothing else wanted the chunk, so to avoid doing work that will be
-			// immidately discarded, we only generate the chunk if we cannot take exclusive ownership of it.
+			// immediately discarded, we only generate the chunk if we cannot take exclusive ownership of it.
 			if let Err(chunk) = Arc::try_unwrap(chunk) {
 				let data = chunk.data.blocking_write();
 				let _ = chunk.generate_data(data);
@@ -509,7 +509,8 @@ impl Chunk {
 	pub fn trigger_collision_mesh_rebuild(self: Arc<Self>) {
 		rayon::spawn(move || {
 			// If try_unwrap returns Ok then nothing else wanted the chunk, so to avoid doing work that will be
-			// immidately discarded, we only generate the chunk's collision mesh if we cannot take exclusive ownership of it.
+			// immediately discarded, we only generate the chunk's collision mesh if we cannot take exclusive ownership
+			// of it.
 			if let Err(chunk) = Arc::try_unwrap(self) {
 				let collision = chunk.collision.blocking_write();
 				let _ = chunk.generate_collision(collision);

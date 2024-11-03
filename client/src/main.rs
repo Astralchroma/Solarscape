@@ -36,11 +36,11 @@ pub struct ClArgs {
 #[derive(Args, Clone)]
 #[group(requires_all(["email", "password"]))]
 pub struct Authentication {
-	/// Email Address to log in with, only avalible in debug builds due to security concerns
+	/// Email Address to log in with, only available in debug builds due to security concerns
 	#[arg(long, required = false)]
 	email: String,
 
-	/// Password to log in with, only avalible in debug builds due to security concerns
+	/// Password to log in with, only available in debug builds due to security concerns
 	#[arg(long, required = false)]
 	password: String,
 }

@@ -19,7 +19,7 @@ impl State for GuiTest {
 			.auto_sized()
 			.max_width(400.0)
 			.show(context, |window| {
-				window.label("Hello, World!\n\nThis is an experimental space for designing new UIs without having to worry about game state straight away, it is only avalible in debug builds, and is accessible through the --gui-test command line flag.");
+				window.label("Hello, World!\n\nThis is an experimental space for designing new UIs without having to worry about game state straight away, it is only available in debug builds, and is accessible through the --gui-test command line flag.");
 			});
 	}
 }

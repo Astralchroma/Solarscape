@@ -9,9 +9,7 @@ use sector::{Event, Sector};
 use solarscape_backend_types::messages::AllowConnection;
 use solarscape_shared::connection::{Connection, ServerEnd};
 use sqlx::{postgres::PgConnectOptions, postgres::PgListener, PgPool};
-use std::{
-	collections::HashMap, env, fs::read_to_string, io, net::SocketAddr, path::PathBuf, sync::LazyLock, time::Instant,
-};
+use std::{collections::HashMap, env, fs::read_to_string, io, net::SocketAddr, path::PathBuf, time::Instant};
 use thiserror::Error;
 use thread_priority::ThreadPriority;
 use tokio::{io::AsyncReadExt, net::TcpListener, runtime::Runtime, select};

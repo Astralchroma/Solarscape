@@ -9,7 +9,7 @@ pub const LEVELS: u8 = 28;
 #[repr(transparent)]
 pub struct VoxjectId(usize);
 
-// `VoxjectId`s must be explicitly created, as unless the server is initialising a new Voxject, it shouldn't happen.
+// `VoxjectId`s must be explicitly created, as unless the server is initializing a new Voxject, it shouldn't happen.
 #[allow(clippy::new_without_default)]
 impl VoxjectId {
 	pub fn new() -> Self {

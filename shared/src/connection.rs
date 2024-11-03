@@ -53,7 +53,7 @@ impl<E: ConnectionSide> NonceCounter<E> {
 	}
 }
 
-// We initialise as 1 because a single message is sent before the connection is constructed
+// We initialize as 1 because a single message is sent before the connection is constructed
 impl<E: ConnectionSide> Default for NonceCounter<E> {
 	fn default() -> Self {
 		Self {
@@ -159,7 +159,7 @@ impl<E: ConnectionSide> Connection<E> {
 
 		// read_u16_le is not cancellation safe, while we could pin the future to get around
 		// this, that would prevent us from writing to the stream, so instead we read the
-		// first byte, and then the second byte later, as reading a byte is cancelation safe.
+		// first byte, and then the second byte later, as reading a byte is cancellation safe.
 		let mut length_first_byte = None;
 
 		// The `sleep` is not cancellation safe, we can work around this
