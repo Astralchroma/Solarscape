@@ -1,6 +1,8 @@
 #[cfg(feature = "world")]
 pub mod connection;
 
+pub mod data;
+
 pub mod message {
 	#[cfg(feature = "backend")]
 	pub mod backend;
@@ -14,5 +16,3 @@ pub mod message {
 
 #[cfg(feature = "world")]
 pub mod triangulation_table;
-
-pub mod types;

@@ -4,7 +4,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::{debug_handler, extract::Query, extract::State, routing::get, Router};
 use serde::Deserialize;
-use solarscape_shared::types::Id;
+use solarscape_shared::data::Id;
 use sqlx::{error::ErrorKind::UniqueViolation, query, Error::Database};
 use thiserror::Error;
 

@@ -10,12 +10,12 @@ use rapier3d::geometry::{ColliderBuilder, ColliderSet, DefaultBroadPhase, Narrow
 use rapier3d::pipeline::PhysicsPipeline;
 use rapier3d::prelude::{ColliderHandle, RigidBodyHandle};
 use solarscape_shared::connection::{ClientEnd, Connection};
+use solarscape_shared::data::{world::ChunkCoordinates, world::Material, Id};
 use solarscape_shared::message::clientbound::{
 	Clientbound, InventorySlot, RemoveChunk, Sync, SyncChunk, SyncInventory,
 };
 use solarscape_shared::message::serverbound::Serverbound;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
-use solarscape_shared::types::{world::ChunkCoordinates, world::Material, Id};
 use std::collections::{HashMap, HashSet};
 use std::{fmt::Write, mem::drop as nom, ops::Deref, sync::Arc, time::Duration, time::Instant};
 use tokio::sync::mpsc::error::TryRecvError;

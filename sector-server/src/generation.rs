@@ -1,6 +1,6 @@
 use crate::sector::Data;
 use nalgebra::{vector, zero, Vector3};
-use solarscape_shared::types::world::{ChunkCoordinates, Material};
+use solarscape_shared::data::world::{ChunkCoordinates, Material};
 
 pub type Generator = fn(&ChunkCoordinates) -> Data;
 

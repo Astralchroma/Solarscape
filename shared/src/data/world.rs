@@ -1,4 +1,4 @@
-use crate::types::Id;
+use crate::data::Id;
 use nalgebra::{vector, Point3, UnitQuaternion, Vector3};
 use serde::{de::Error, Deserialize, Deserializer, Serialize};
 use std::{fmt, fmt::Display, fmt::Formatter, ops::Add, ops::Deref};

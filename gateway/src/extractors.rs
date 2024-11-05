@@ -1,7 +1,7 @@
 use crate::{types::InternalError, types::Token, Gateway};
 use axum::response::{IntoResponse, Response};
 use axum::{async_trait, extract::FromRequestParts, http::request::Parts, http::StatusCode};
-use solarscape_shared::types::Id;
+use solarscape_shared::data::Id;
 use sqlx::{query, query_scalar};
 use thiserror::Error;
 

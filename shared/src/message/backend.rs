@@ -1,4 +1,4 @@
-use crate::types::Id;
+use crate::data::Id;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]

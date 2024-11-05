@@ -9,10 +9,10 @@ use rapier3d::dynamics::{
 use rapier3d::geometry::{ColliderBuilder, ColliderHandle, ColliderSet, DefaultBroadPhase, NarrowPhase};
 use rapier3d::pipeline::PhysicsPipeline;
 use solarscape_shared::connection::{Connection, ConnectionSend, ServerEnd};
+use solarscape_shared::data::{world::ChunkCoordinates, world::Material, Id};
 use solarscape_shared::message::clientbound::{Clientbound, SyncChunk, SyncInventory};
 use solarscape_shared::message::serverbound::Serverbound;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
-use solarscape_shared::types::{world::ChunkCoordinates, world::Material, Id};
 use sqlx::{query, PgPool};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
 use std::{collections::HashMap, mem::drop as nom, ops::Deref, thread, time::Duration, time::Instant};
