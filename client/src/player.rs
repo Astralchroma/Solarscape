@@ -1,5 +1,5 @@
 use nalgebra::{vector, UnitQuaternion, Vector3};
-use solarscape_shared::message::serverbound::Serverbound;
+use solarscape_shared::message::serverbound::CreateStructure;
 use solarscape_shared::{connection::ClientEnd, connection::Connection, data::world::Location};
 use std::{ops::Deref, ops::DerefMut};
 use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
@@ -165,9 +165,18 @@ impl Player<Local> {
 		}
 
 		match button {
-			MouseButton::Left => self.connection.send(Serverbound::CreateStructure),
+			MouseButton::Left => self.place_structure_block(),
 			_ => {}
 		}
+	}
+
+	fn place_structure_block(&self) {
+		self.connection.send(CreateStructure {
+			location: Location {
+				position: self.location.position + (self.location.rotation.transform_vector(&-Vector3::z()) * 2.0),
+				rotation: self.location.rotation,
+			},
+		})
 	}
 
 	pub fn handle_device_event(&mut self, event: &DeviceEvent) {

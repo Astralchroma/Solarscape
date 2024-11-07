@@ -11,6 +11,7 @@ use rapier3d::pipeline::PhysicsPipeline;
 use solarscape_shared::connection::{Connection, ConnectionSend, ServerEnd};
 use solarscape_shared::data::{world::ChunkCoordinates, world::Material, Id};
 use solarscape_shared::message::clientbound::{Clientbound, SyncChunk, SyncInventory};
+use solarscape_shared::message::serverbound::CreateStructure;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use solarscape_shared::{message::serverbound::Serverbound, structure::Structure};
 use sqlx::{query, PgPool};
@@ -188,10 +189,13 @@ impl Sector {
 
 						player.send(SyncInventory(inventory_list));
 					}
-					Serverbound::CreateStructure => {
-						let structure = Structure::new();
+					Serverbound::CreateStructure(CreateStructure { location }) => {
+						let structure = Structure::new(location);
 
-						info!("Structure {:?} created!", structure.id);
+						info!(
+							"Structure {:?} created at {:?}!",
+							structure.id, structure.location.position
+						);
 
 						self.structures.push(structure);
 					}
