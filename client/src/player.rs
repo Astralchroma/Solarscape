@@ -1,7 +1,8 @@
 use nalgebra::{vector, UnitQuaternion, Vector3};
+use solarscape_shared::message::serverbound::Serverbound;
 use solarscape_shared::{connection::ClientEnd, connection::Connection, data::world::Location};
 use std::{ops::Deref, ops::DerefMut};
-use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey::Code};
 
 /// Locality is used to distinguish between Local and Remote players, though Remote
@@ -80,6 +81,7 @@ impl Player<Local> {
 		}
 	}
 
+	// Perhaps these two methods should be in location?
 	pub fn translate_local(&mut self, vector: Vector3<f32>) {
 		self.location.position += self.location.rotation.inverse_transform_vector(&vector);
 	}
@@ -89,62 +91,82 @@ impl Player<Local> {
 	}
 
 	pub fn handle_window_event(&mut self, event: &WindowEvent) {
-		if let WindowEvent::KeyboardInput {
-			event: KeyEvent {
-				physical_key,
-				state,
-				repeat: false,
-				..
-			},
+		match event {
+			WindowEvent::KeyboardInput { event, .. } => self.handle_keyboard_input(event),
+			WindowEvent::MouseInput { state, button, .. } => self.handle_mouse_input(state, button),
+			_ => {}
+		}
+	}
+
+	fn handle_keyboard_input(
+		&mut self,
+		KeyEvent {
+			physical_key,
+			state,
+			repeat,
 			..
-		} = event
-		{
-			if let Code(code) = physical_key {
-				// Really this should be a function, but borrowing rules got in the way
-				macro_rules! handle_key_state {
-					($old_state:expr, $other_state:expr) => {
-						match state {
-							ElementState::Pressed => match $other_state {
-								OppositeKeyState::PressedFirst => $old_state = OppositeKeyState::PressedSecond,
+		}: &KeyEvent,
+	) {
+		if *repeat {
+			return;
+		}
 
-								// Technically an invalid state, oh well
-								OppositeKeyState::PressedSecond => {
-									$other_state = OppositeKeyState::PressedFirst;
-									$old_state = OppositeKeyState::PressedSecond;
-								}
+		if let Code(code) = physical_key {
+			// Really this should be a function, but borrowing rules got in the way
+			macro_rules! handle_key_state {
+				($old_state:expr, $other_state:expr) => {
+					match state {
+						ElementState::Pressed => match $other_state {
+							OppositeKeyState::PressedFirst => $old_state = OppositeKeyState::PressedSecond,
 
-								OppositeKeyState::Released => $old_state = OppositeKeyState::PressedFirst,
-							},
-							ElementState::Released => match $other_state {
-								OppositeKeyState::PressedFirst => $old_state = OppositeKeyState::Released,
+							// Technically an invalid state, oh well
+							OppositeKeyState::PressedSecond => {
+								$other_state = OppositeKeyState::PressedFirst;
+								$old_state = OppositeKeyState::PressedSecond;
+							}
 
-								OppositeKeyState::PressedSecond => {
-									$other_state = OppositeKeyState::PressedFirst;
-									$old_state = OppositeKeyState::Released;
-								}
+							OppositeKeyState::Released => $old_state = OppositeKeyState::PressedFirst,
+						},
+						ElementState::Released => match $other_state {
+							OppositeKeyState::PressedFirst => $old_state = OppositeKeyState::Released,
 
-								OppositeKeyState::Released => $old_state = OppositeKeyState::Released,
-							},
-						}
-					};
-				}
+							OppositeKeyState::PressedSecond => {
+								$other_state = OppositeKeyState::PressedFirst;
+								$old_state = OppositeKeyState::Released;
+							}
 
-				match code {
-					KeyCode::KeyA => handle_key_state!(self.left_state, self.right_state),
-					KeyCode::KeyD => handle_key_state!(self.right_state, self.left_state),
-
-					KeyCode::KeyW => handle_key_state!(self.forward_state, self.backward_state),
-					KeyCode::KeyS => handle_key_state!(self.backward_state, self.forward_state),
-
-					KeyCode::KeyR => handle_key_state!(self.up_state, self.down_state),
-					KeyCode::KeyF => handle_key_state!(self.down_state, self.up_state),
-
-					KeyCode::KeyQ => handle_key_state!(self.roll_left_state, self.roll_right_state),
-					KeyCode::KeyE => handle_key_state!(self.roll_right_state, self.roll_left_state),
-
-					_ => {}
-				}
+							OppositeKeyState::Released => $old_state = OppositeKeyState::Released,
+						},
+					}
+				};
 			}
+
+			match code {
+				KeyCode::KeyA => handle_key_state!(self.left_state, self.right_state),
+				KeyCode::KeyD => handle_key_state!(self.right_state, self.left_state),
+
+				KeyCode::KeyW => handle_key_state!(self.forward_state, self.backward_state),
+				KeyCode::KeyS => handle_key_state!(self.backward_state, self.forward_state),
+
+				KeyCode::KeyR => handle_key_state!(self.up_state, self.down_state),
+				KeyCode::KeyF => handle_key_state!(self.down_state, self.up_state),
+
+				KeyCode::KeyQ => handle_key_state!(self.roll_left_state, self.roll_right_state),
+				KeyCode::KeyE => handle_key_state!(self.roll_right_state, self.roll_left_state),
+
+				_ => {}
+			}
+		}
+	}
+
+	fn handle_mouse_input(&self, state: &ElementState, button: &MouseButton) {
+		if matches!(state, ElementState::Pressed) {
+			return;
+		}
+
+		match button {
+			MouseButton::Left => self.connection.send(Serverbound::CreateStructure),
+			_ => {}
 		}
 	}
 

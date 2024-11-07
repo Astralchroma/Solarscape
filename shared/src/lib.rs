@@ -3,6 +3,9 @@ pub mod connection;
 
 pub mod data;
 
+#[cfg(feature = "world")]
+pub mod structure;
+
 pub mod message {
 	#[cfg(feature = "backend")]
 	pub mod backend;

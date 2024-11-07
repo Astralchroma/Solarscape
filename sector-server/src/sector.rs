@@ -1,6 +1,6 @@
 use crate::{generation::sphere_generator, generation::Generator, player::Player};
 use dashmap::DashMap;
-use log::warn;
+use log::{info, warn};
 use nalgebra::{point, vector, Point3};
 use rapier3d::dynamics::{
 	CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder,
@@ -11,8 +11,8 @@ use rapier3d::pipeline::PhysicsPipeline;
 use solarscape_shared::connection::{Connection, ConnectionSend, ServerEnd};
 use solarscape_shared::data::{world::ChunkCoordinates, world::Material, Id};
 use solarscape_shared::message::clientbound::{Clientbound, SyncChunk, SyncInventory};
-use solarscape_shared::message::serverbound::Serverbound;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
+use solarscape_shared::{message::serverbound::Serverbound, structure::Structure};
 use sqlx::{query, PgPool};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
 use std::{collections::HashMap, mem::drop as nom, ops::Deref, thread, time::Duration, time::Instant};
@@ -39,33 +39,11 @@ pub struct Sector {
 
 	events: Receiver<Event>,
 
-	ticking_chunks: HashMap<ChunkCoordinates, TickingChunk>,
 	players: Vec<Player>,
+	ticking_chunks: HashMap<ChunkCoordinates, TickingChunk>,
+	structures: Vec<Structure>,
 
-	// A bunch of different data used by Rapier, most of it isn't important
-	physics_pipeline: PhysicsPipeline,
-	rigid_bodies: RigidBodySet,
-	integration_parameters: IntegrationParameters,
-	islands: IslandManager,
-	broad_phase: DefaultBroadPhase,
-	narrow_phase: NarrowPhase,
-	colliders: ColliderSet,
-	impulse_joints: ImpulseJointSet,
-	multibody_joints: MultibodyJointSet,
-	ccd_solver: CCDSolver,
-}
-
-/// A [`SharedSector`] allows accessing shared information about a [`Sector`], as well as sending events to be
-/// processed at the start of the next tick. It does not allow directly accessing the [`Sector`]'s internal state
-/// however.
-pub struct SharedSector {
-	pub name: Box<str>,
-
-	pub database: PgPool,
-	sender: Sender<Event>,
-
-	pub voxjects: HashMap<Id, Voxject>,
-	chunks: DashMap<ChunkCoordinates, Weak<Chunk>>,
+	physics: Physics,
 }
 
 impl Sector {
@@ -85,19 +63,11 @@ impl Sector {
 
 			events,
 
-			ticking_chunks: HashMap::new(),
 			players: vec![],
+			ticking_chunks: HashMap::new(),
+			structures: vec![],
 
-			physics_pipeline: PhysicsPipeline::new(),
-			integration_parameters: IntegrationParameters::default(),
-			islands: IslandManager::new(),
-			broad_phase: DefaultBroadPhase::new(),
-			narrow_phase: NarrowPhase::new(),
-			rigid_bodies: RigidBodySet::new(),
-			colliders: ColliderSet::new(),
-			impulse_joints: ImpulseJointSet::new(),
-			multibody_joints: MultibodyJointSet::new(),
-			ccd_solver: CCDSolver::new(),
+			physics: Physics::default(),
 		}
 	}
 
@@ -121,22 +91,7 @@ impl Sector {
 	fn tick(&mut self) {
 		self.handle_events();
 		self.process_players();
-
-		self.physics_pipeline.step(
-			&vector![0.0, 0.0, 0.0],
-			&self.integration_parameters,
-			&mut self.islands,
-			&mut self.broad_phase,
-			&mut self.narrow_phase,
-			&mut self.rigid_bodies,
-			&mut self.colliders,
-			&mut self.impulse_joints,
-			&mut self.multibody_joints,
-			&mut self.ccd_solver,
-			None,
-			&(),
-			&(),
-		);
+		self.physics.tick();
 	}
 
 	fn handle_events(&mut self) {
@@ -145,6 +100,16 @@ impl Sector {
 				Event::PlayerConnected(id, connection) => {
 					let player = Player::accept(self, id, connection);
 					self.players.push(player);
+				}
+				Event::RigidBodyDropped(rigid_body) => {
+					self.physics.rigid_bodies.remove(
+						rigid_body,
+						&mut self.physics.islands,
+						&mut self.physics.colliders,
+						&mut self.physics.impulse_joints,
+						&mut self.physics.multibody_joints,
+						true,
+					);
 				}
 				Event::TickLockChunk(coordinates) => {
 					let chunk = self.get_chunk(coordinates);
@@ -223,10 +188,64 @@ impl Sector {
 
 						player.send(SyncInventory(inventory_list));
 					}
+					Serverbound::CreateStructure => {
+						let structure = Structure::new();
+
+						info!("Structure {:?} created!", structure.id);
+
+						self.structures.push(structure);
+					}
 				}
 			}
 		}
 	}
+}
+
+#[derive(Default)]
+pub struct Physics {
+	pipeline: PhysicsPipeline,
+	integration_parameters: IntegrationParameters,
+	pub islands: IslandManager,
+	broad_phase: DefaultBroadPhase,
+	narrow_phase: NarrowPhase,
+	pub rigid_bodies: RigidBodySet,
+	pub colliders: ColliderSet,
+	impulse_joints: ImpulseJointSet,
+	multibody_joints: MultibodyJointSet,
+	ccd_solver: CCDSolver,
+}
+
+impl Physics {
+	fn tick(&mut self) {
+		self.pipeline.step(
+			&vector![0.0, 0.0, 0.0],
+			&self.integration_parameters,
+			&mut self.islands,
+			&mut self.broad_phase,
+			&mut self.narrow_phase,
+			&mut self.rigid_bodies,
+			&mut self.colliders,
+			&mut self.impulse_joints,
+			&mut self.multibody_joints,
+			&mut self.ccd_solver,
+			None,
+			&(),
+			&(),
+		);
+	}
+}
+
+/// A [`SharedSector`] allows accessing shared information about a [`Sector`], as well as sending events to be
+/// processed at the start of the next tick. It does not allow directly accessing the [`Sector`]'s internal state
+/// however.
+pub struct SharedSector {
+	pub name: Box<str>,
+
+	pub database: PgPool,
+	sender: Sender<Event>,
+
+	pub voxjects: HashMap<Id, Voxject>,
+	chunks: DashMap<ChunkCoordinates, Weak<Chunk>>,
 }
 
 impl SharedSector {
@@ -260,6 +279,7 @@ impl Deref for Sector {
 /// [`Event`]s are sent to [`Sector`]s and are processed at the start of the next tick.
 pub enum Event {
 	PlayerConnected(Id, Connection<ServerEnd>),
+	RigidBodyDropped(RigidBodyHandle),
 	TickLockChunk(ChunkCoordinates),
 	TickReleaseChunk(ChunkCoordinates),
 }
@@ -537,7 +557,7 @@ struct TickingChunk {
 
 impl TickingChunk {
 	fn register(sector: &mut Sector, chunk: Arc<Chunk>) {
-		let rigid_body = sector.rigid_bodies.insert(
+		let rigid_body = sector.physics.rigid_bodies.insert(
 			RigidBodyBuilder::fixed()
 				.translation(chunk.coordinates.voxject_relative_translation())
 				.build(),
@@ -548,11 +568,11 @@ impl TickingChunk {
 
 			match collision.vertices.is_empty() {
 				true => None,
-				false => Some(sector.colliders.insert_with_parent(
+				false => Some(sector.physics.colliders.insert_with_parent(
 					// It hurts to have to call clone here.
 					ColliderBuilder::trimesh(collision.vertices.clone(), collision.indices.clone()).build(),
 					rigid_body,
-					&mut sector.rigid_bodies,
+					&mut sector.physics.rigid_bodies,
 				)),
 			}
 		};

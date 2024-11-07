@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum Serverbound {
 	PlayerLocation(Location),
 	GiveTestItem,
+	CreateStructure,
 }
 
 impl From<Location> for Serverbound {
