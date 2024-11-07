@@ -1,6 +1,6 @@
 use nalgebra::{vector, UnitQuaternion, Vector3};
 use solarscape_shared::message::serverbound::CreateStructure;
-use solarscape_shared::{connection::ClientEnd, connection::Connection, data::world::Location};
+use solarscape_shared::{connection::ClientEnd, connection::Connection, data::world::Block, data::world::Location};
 use std::{ops::Deref, ops::DerefMut};
 use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey::Code};
@@ -176,6 +176,7 @@ impl Player<Local> {
 				position: self.location.position + (self.location.rotation.transform_vector(&-Vector3::z()) * 2.0),
 				rotation: self.location.rotation,
 			},
+			block: Block::Block,
 		})
 	}
 

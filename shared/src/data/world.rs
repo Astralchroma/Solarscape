@@ -1,7 +1,8 @@
 use crate::data::Id;
 use nalgebra::{vector, Point3, UnitQuaternion, Vector3};
 use serde::{de::Error, Deserialize, Deserializer, Serialize};
-use std::{fmt, fmt::Display, fmt::Formatter, ops::Add, ops::Deref};
+use std::{fmt, fmt::Display, fmt::Formatter, ops::Add, ops::Deref, str::FromStr};
+use thiserror::Error;
 
 pub const LEVELS: u8 = 28;
 
@@ -222,3 +223,30 @@ impl Item {
 		}
 	}
 }
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub enum Block {
+	Block,
+
+	TestBlock = 0xFF,
+}
+
+impl Block {
+	pub const ALL: &'static [Self] = &[Self::Block, Self::TestBlock];
+}
+
+impl FromStr for Block {
+	type Err = NotFound;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		Ok(match s {
+			"Block" => Self::Block,
+			"TestBlock" => Self::TestBlock,
+			_ => Err(NotFound)?,
+		})
+	}
+}
+
+#[derive(Debug, Error)]
+#[error("not found")]
+pub struct NotFound;
