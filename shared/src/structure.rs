@@ -1,7 +1,10 @@
 use crate::data::{world::Block, world::Location, Id};
-use crate::{message::clientbound::SyncStructure, message::serverbound::CreateStructure, ShiftHasherBuilder};
-use nalgebra::{vector, Vector3};
+use crate::{message::clientbound::SyncStructure, ShiftHasherBuilder};
+use nalgebra::Vector3;
 use std::collections::HashMap;
+
+#[cfg(feature = "backend")]
+use crate::message::serverbound::CreateStructure;
 
 pub struct Structure {
 	pub id: Id,
@@ -22,13 +25,17 @@ impl Structure {
 	pub fn iter_blocks(&self) -> impl Iterator<Item = (&Vector3<i16>, &Block)> {
 		self.blocks.iter()
 	}
+
+	pub fn num_blocks(&self) -> usize {
+		self.blocks.len()
+	}
 }
 
 #[cfg(feature = "backend")]
 impl From<CreateStructure> for Structure {
 	fn from(CreateStructure { location, block }: CreateStructure) -> Self {
 		let mut blocks = HashMap::with_capacity_and_hasher(1, ShiftHasherBuilder);
-		blocks.insert(vector![0, 0, 0], block);
+		blocks.insert(nalgebra::vector![0, 0, 0], block);
 
 		Self {
 			id: Id::new(),

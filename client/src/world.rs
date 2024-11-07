@@ -358,6 +358,14 @@ impl State for Sector {
 			f32::to_degrees(z),
 		)
 		.expect("should be able to write to string");
+
+		writeln!(debug_text, "Structures: {}", self.structures.len()).expect("should be able to write to string");
+		writeln!(
+			debug_text,
+			"Blocks: {}",
+			self.structures.iter().map(|structure| structure.num_blocks()).count()
+		)
+		.expect("should be able to write to string");
 	}
 
 	fn draw_ui(&mut self, _: &crate::ClArgs, context: &egui::Context) {
