@@ -173,7 +173,8 @@ impl Player<Local> {
 	fn place_structure_block(&self) {
 		self.connection.send(CreateStructure {
 			location: Location {
-				position: self.location.position + (self.location.rotation.transform_vector(&-Vector3::z()) * 2.0),
+				position: self.location.position
+					+ (self.location.rotation.inverse_transform_vector(&-Vector3::z()) * 2.0),
 				rotation: self.location.rotation,
 			},
 			block: Block::Block,
