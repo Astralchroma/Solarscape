@@ -18,6 +18,10 @@ impl Structure {
 			blocks: self.blocks.clone(),
 		}
 	}
+
+	pub fn iter_blocks(&self) -> impl Iterator<Item = (&Vector3<i16>, &Block)> {
+		self.blocks.iter()
+	}
 }
 
 #[cfg(feature = "backend")]

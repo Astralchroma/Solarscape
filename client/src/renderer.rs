@@ -4,26 +4,30 @@ use egui::{Align2, Color32, Context, Pos2, ViewportId};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use egui_winit::State as EguiState;
 use image::GenericImageView;
-use log::error;
+use log::{error, info, warn};
 use nalgebra::{Perspective3, Translation3};
-use std::{collections::VecDeque, fmt::Write, iter::once, time::Duration, time::Instant};
+use solarscape_shared::data::world::Block;
+use std::collections::{HashMap, VecDeque};
+use std::{fmt::Write, iter::once, str::FromStr, sync::Arc, time::Duration, time::Instant};
 use thiserror::Error;
+use tobj::GPU_LOAD_OPTIONS;
 use tokio::runtime::Handle;
 use wgpu::{
-	include_wgsl, rwh::HandleError, vertex_attr_array, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry,
-	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Color, ColorTargetState,
+	include_wgsl, rwh::HandleError, util::BufferInitDescriptor, util::DeviceExt, util::TextureDataOrder::LayerMajor,
+	vertex_attr_array, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
+	BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferUsages, Color, ColorTargetState,
 	ColorWrites, CommandEncoderDescriptor, CompareFunction::LessEqual, CompositeAlphaMode::Opaque, CreateSurfaceError,
 	DepthStencilState, Device, DeviceDescriptor, Dx12Compiler, Extent3d, Face::Back, Features, FragmentState,
-	FrontFace::Ccw, Gles3MinorVersion::Version0, ImageCopyTexture, ImageDataLayout, Instance, InstanceDescriptor,
-	InstanceFlags, Limits, LoadOp::Clear, MemoryHints::Performance, MultisampleState, Operations, Origin3d,
-	PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode::Fill, PowerPreference::HighPerformance,
-	PresentMode::AutoNoVsync, PrimitiveState, PrimitiveTopology::TriangleList, PushConstantRange, Queue, RenderPass,
-	RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline,
-	RenderPipelineDescriptor, RequestAdapterOptions, RequestDeviceError, SamplerBindingType::NonFiltering,
-	SamplerDescriptor, ShaderStages, StoreOp::Store, Surface, SurfaceConfiguration, SurfaceTargetUnsafe, Texture,
-	TextureAspect::All, TextureDescriptor, TextureDimension, TextureDimension::D2, TextureFormat,
-	TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb, TextureSampleType::Float, TextureUsages, TextureView,
-	TextureViewDescriptor, TextureViewDimension, VertexBufferLayout, VertexState, VertexStepMode,
+	FrontFace::Ccw, Gles3MinorVersion::Version0, IndexFormat, Instance, InstanceDescriptor, InstanceFlags, Limits,
+	LoadOp::Clear, MemoryHints::Performance, MultisampleState, Operations, PipelineCompilationOptions,
+	PipelineLayoutDescriptor, PolygonMode::Fill, PowerPreference::HighPerformance, PresentMode::AutoNoVsync,
+	PrimitiveState, PrimitiveTopology::TriangleList, PushConstantRange, Queue, RenderPass, RenderPassColorAttachment,
+	RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
+	RequestAdapterOptions, RequestDeviceError, SamplerBindingType::NonFiltering, SamplerDescriptor, ShaderStages,
+	StoreOp::Store, Surface, SurfaceConfiguration, SurfaceTargetUnsafe, Texture, TextureDescriptor, TextureDimension,
+	TextureDimension::D2, TextureFormat, TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb,
+	TextureSampleType::Float, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
+	VertexBufferLayout, VertexState, VertexStepMode,
 };
 use winit::window::{CursorGrabMode, Window};
 use winit::{dpi::LogicalPosition, dpi::PhysicalSize, error::OsError, event::WindowEvent, event_loop::ActiveEventLoop};
@@ -64,10 +68,26 @@ pub struct Renderer {
 	// Might be worth moving later
 	chunk_pipeline: RenderPipeline,
 	terrain_textures_bind_group: BindGroup,
+
+	// Structure Rendering
+	// Might also be worth moving later
+	structure_block_pipeline: RenderPipeline,
+	structure_block_data: HashMap<Block, Arc<BlockRenderData>>,
+	structure_block_bind_group: BindGroup,
+}
+
+struct BlockRenderData {
+	positions: Buffer,
+	texture_coordinates: Buffer,
+	indices: Buffer,
+
+	index_count: u32,
 }
 
 impl Renderer {
 	pub fn new(event_loop: &ActiveEventLoop) -> Result<Self, RenderInitError> {
+		let start_time = Instant::now();
+
 		let instance = Instance::new(InstanceDescriptor {
 			backends: Backends::VULKAN | Backends::GL,
 			flags: InstanceFlags::empty(),
@@ -108,7 +128,7 @@ impl Renderer {
 					max_color_attachment_bytes_per_sample: 8,
 					max_color_attachments: 1,
 					max_inter_stage_shader_components: 11,
-					max_push_constant_size: 64,
+					max_push_constant_size: 76,
 					max_sampled_textures_per_shader_stage: 1,
 					max_samplers_per_shader_stage: 1,
 					max_texture_array_layers: 1,
@@ -175,7 +195,7 @@ impl Renderer {
 
 		surface.configure(&device, &config);
 
-		let terrain_textures_image = image::load_from_memory(include_bytes!("terrain_textures.png"))
+		let terrain_textures_image = image::load_from_memory(include_bytes!("resources/terrain_textures.png"))
 			.expect("terrain_textures.png must be valid");
 		let terrain_textures_rgba8 = terrain_textures_image.to_rgba8();
 		let (terrain_textures_width, terrain_textures_height) = terrain_textures_image.dimensions();
@@ -185,31 +205,20 @@ impl Renderer {
 			depth_or_array_layers: 1,
 		};
 
-		let terrain_textures = device.create_texture(&TextureDescriptor {
-			label: Some("renderer.voxject#texture"),
-			size: terrain_textures_size,
-			mip_level_count: 1,
-			sample_count: 1,
-			dimension: TextureDimension::D2,
-			format: Rgba8UnormSrgb,
-			usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-			view_formats: &[],
-		});
-
-		queue.write_texture(
-			ImageCopyTexture {
-				texture: &terrain_textures,
-				mip_level: 0,
-				origin: Origin3d::ZERO,
-				aspect: All,
+		let terrain_textures = device.create_texture_with_data(
+			&queue,
+			&TextureDescriptor {
+				label: Some("renderer.voxject#texture"),
+				size: terrain_textures_size,
+				mip_level_count: 1,
+				sample_count: 1,
+				dimension: TextureDimension::D2,
+				format: Rgba8UnormSrgb,
+				usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+				view_formats: &[],
 			},
+			LayerMajor,
 			&terrain_textures_rgba8,
-			ImageDataLayout {
-				offset: 0,
-				bytes_per_row: Some(4 * terrain_textures_width),
-				rows_per_image: Some(terrain_textures_height),
-			},
-			terrain_textures_size,
 		);
 
 		let terrain_textures_view = terrain_textures.create_view(&TextureViewDescriptor::default());
@@ -259,7 +268,7 @@ impl Renderer {
 			bind_group_layouts: &[&terrain_textures_bind_group_layout],
 			push_constant_ranges: &[PushConstantRange {
 				stages: ShaderStages::VERTEX,
-				range: 0..64,
+				range: 0..76,
 			}],
 		});
 
@@ -323,6 +332,211 @@ impl Renderer {
 			cache: None,
 		});
 
+		let structure_block_data = {
+			let (structure_block_models, _) = tobj::load_obj_buf(
+				&mut &include_bytes!("resources/structure_blocks.obj")[..],
+				&GPU_LOAD_OPTIONS,
+				// We don't care about the material, but this is required so...
+				|path| match path.file_name().unwrap().to_str().unwrap() == "structure_blocks.mtl" {
+					true => tobj::load_mtl_buf(&mut &include_bytes!("resources/structure_blocks.mtl")[..]),
+					false => panic!("attempted to use unknown material resource"),
+				},
+			)
+			.expect("resources/structure_blocks.obj provided at compile time should be a valid .obj file");
+
+			let mut missing_block = None;
+			let mut structure_blocks = HashMap::with_capacity(Block::ALL.len());
+
+			for mut model in structure_block_models {
+				for coord in model.mesh.texcoords.iter_mut().skip(1).step_by(2) {
+					*coord = 1.0 - *coord;
+				}
+
+				let block_render_data = Arc::new(BlockRenderData {
+					positions: device.create_buffer_init(&BufferInitDescriptor {
+						label: Some(&format!("Block Renderer > Block '{}' > Positions", model.name)),
+						contents: cast_slice(&model.mesh.positions),
+						usage: BufferUsages::VERTEX,
+					}),
+					texture_coordinates: device.create_buffer_init(&BufferInitDescriptor {
+						label: Some(&format!(
+							"Block Renderer > Block '{}' > Texture Coordinates",
+							model.name
+						)),
+						contents: cast_slice(&model.mesh.texcoords),
+						usage: BufferUsages::VERTEX,
+					}),
+					indices: device.create_buffer_init(&BufferInitDescriptor {
+						label: Some(&format!("Block Renderer > Block '{}' > Indices", model.name)),
+						contents: cast_slice(&model.mesh.indices),
+						usage: BufferUsages::INDEX,
+					}),
+					index_count: model.mesh.indices.len() as u32,
+				});
+
+				match Block::from_str(&model.name) {
+					Ok(block) => {
+						if structure_blocks.insert(block, block_render_data).is_some() {
+							warn!("Found duplicate model for block {block:?}! This may be a modelling error and could result in broken block models.");
+						}
+					}
+					Err(_) if model.name == "MissingBlock" => {
+						if missing_block.replace(block_render_data).is_some() {
+							warn!("Found duplicate model for block MissingBlock! This may be a modelling error and could result in broken block models.");
+						}
+					}
+					Err(_) => {}
+				}
+			}
+
+			let missing_block = match missing_block {
+				Some(missing_block) => missing_block,
+				None => panic!("No model found for MissingBlock. This block is required as it serves as a placeholder for other missing blocks."),
+			};
+
+			for block in Block::ALL {
+				if !structure_blocks.contains_key(block) {
+					warn!("No model found for block {block:?}, a placeholder will be used instead. This will result in broken block models");
+					structure_blocks.insert(*block, missing_block.clone());
+				}
+			}
+
+			structure_blocks
+		};
+
+		let structure_block_textures_raw =
+			image::load_from_memory(include_bytes!("resources/structure_block_textures.png"))
+				.expect("structure_block_textures.png must be valid")
+				.to_rgba8();
+		let (structure_block_textures_width, structure_block_textures_height) =
+			structure_block_textures_raw.dimensions();
+
+		let structure_block_texture = device.create_texture_with_data(
+			&queue,
+			&TextureDescriptor {
+				label: Some("Block Renderer > Texture"),
+				size: Extent3d {
+					width: structure_block_textures_width,
+					height: structure_block_textures_height,
+					depth_or_array_layers: 1,
+				},
+				mip_level_count: 1,
+				sample_count: 1,
+				dimension: D2,
+				format: Rgba8UnormSrgb,
+				usage: TextureUsages::TEXTURE_BINDING,
+				view_formats: &[],
+			},
+			LayerMajor,
+			&structure_block_textures_raw,
+		);
+
+		let structure_block_texture_view = structure_block_texture.create_view(&TextureViewDescriptor::default());
+		let structure_block_texture_sampler = device.create_sampler(&SamplerDescriptor::default());
+
+		let structure_blocks_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+			label: Some("Block Renderer > Bind Group Layout"),
+			entries: &[
+				BindGroupLayoutEntry {
+					binding: 0,
+					visibility: ShaderStages::FRAGMENT,
+					ty: BindingType::Texture {
+						sample_type: Float { filterable: false },
+						view_dimension: TextureViewDimension::D2,
+						multisampled: false,
+					},
+					count: None,
+				},
+				BindGroupLayoutEntry {
+					binding: 1,
+					visibility: ShaderStages::FRAGMENT,
+					ty: BindingType::Sampler(NonFiltering),
+					count: None,
+				},
+			],
+		});
+
+		let structure_block_bind_group = device.create_bind_group(&BindGroupDescriptor {
+			label: Some("Block Renderer > Bind Group"),
+			layout: &structure_blocks_bind_group_layout,
+			entries: &[
+				BindGroupEntry {
+					binding: 0,
+					resource: BindingResource::TextureView(&structure_block_texture_view),
+				},
+				BindGroupEntry {
+					binding: 1,
+					resource: BindingResource::Sampler(&structure_block_texture_sampler),
+				},
+			],
+		});
+
+		let structure_block_shader = device.create_shader_module(include_wgsl!("structure.wgsl"));
+
+		let structure_block_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+			label: Some("Block Renderer > Pipeline Layout"),
+			bind_group_layouts: &[&structure_blocks_bind_group_layout],
+			push_constant_ranges: &[PushConstantRange {
+				stages: ShaderStages::VERTEX,
+				range: 0..76,
+			}],
+		});
+
+		let structure_block_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+			label: Some("Block Renderer > Pipeline"),
+			layout: Some(&structure_block_pipeline_layout),
+			vertex: VertexState {
+				module: &structure_block_shader,
+				entry_point: "vertex",
+				compilation_options: PipelineCompilationOptions::default(),
+				buffers: &[
+					VertexBufferLayout {
+						array_stride: 12,
+						step_mode: VertexStepMode::Vertex,
+						attributes: &vertex_attr_array![0 => Float32x3],
+					},
+					VertexBufferLayout {
+						array_stride: 8,
+						step_mode: VertexStepMode::Vertex,
+						attributes: &vertex_attr_array![1 => Float32x2],
+					},
+				],
+			},
+			primitive: PrimitiveState {
+				topology: TriangleList,
+				strip_index_format: None,
+				front_face: Ccw,
+				cull_mode: Some(Back),
+				unclipped_depth: false,
+				polygon_mode: Fill,
+				conservative: false,
+			},
+			depth_stencil: Some(DepthStencilState {
+				format: Depth32Float,
+				depth_write_enabled: true,
+				depth_compare: LessEqual,
+				stencil: Default::default(),
+				bias: Default::default(),
+			}),
+			multisample: MultisampleState {
+				count: 1,
+				mask: !0,
+				alpha_to_coverage_enabled: false,
+			},
+			fragment: Some(FragmentState {
+				module: &structure_block_shader,
+				entry_point: "fragment",
+				compilation_options: PipelineCompilationOptions::default(),
+				targets: &[Some(ColorTargetState {
+					format: config.format,
+					blend: Some(BlendState::REPLACE),
+					write_mask: ColorWrites::ALL,
+				})],
+			}),
+			multiview: None,
+			cache: None,
+		});
+
 		let depth_buffer_descriptor = TextureDescriptor {
 			label: Some("renderer.depth_buffer#buffer"),
 			size: Extent3d {
@@ -349,6 +563,8 @@ impl Renderer {
 		let debug_state = EguiState::new(Context::default(), ViewportId::default(), &window, None, None, None);
 		let egui_renderer = EguiRenderer::new(&device, config.format, Some(Depth32Float), 1, false);
 
+		info!("Renderer initialized in {:.0?}", Instant::now() - start_time);
+
 		Ok(Self {
 			window,
 			surface,
@@ -373,6 +589,10 @@ impl Renderer {
 
 			chunk_pipeline,
 			terrain_textures_bind_group,
+
+			structure_block_pipeline,
+			structure_block_data,
+			structure_block_bind_group,
 		})
 	}
 
@@ -541,14 +761,12 @@ impl Render for Sector {
 
 		self.process_messages(&renderer.device);
 
-		render_pass.set_pipeline(&renderer.chunk_pipeline);
-
 		let view = self.player.location.rotation.to_rotation_matrix().to_homogeneous()
 			* Translation3::from(-self.player.location.position.coords).to_homogeneous();
 		let camera_matrix = renderer.perspective.to_homogeneous() * view;
 
+		render_pass.set_pipeline(&renderer.chunk_pipeline);
 		render_pass.set_push_constants(ShaderStages::VERTEX, 0, cast_slice(&[camera_matrix]));
-
 		render_pass.set_bind_group(0, &renderer.terrain_textures_bind_group, &[]);
 
 		for chunk in self.chunks.iter() {
@@ -561,6 +779,25 @@ impl Render for Sector {
 				render_pass.set_vertex_buffer(1, mesh.vertex_data_buffer.slice(..));
 				render_pass.set_vertex_buffer(2, mesh.instance_buffer.slice(..));
 				render_pass.draw(0..mesh.vertex_count, 0..1);
+			}
+		}
+
+		render_pass.set_pipeline(&renderer.structure_block_pipeline);
+		render_pass.set_push_constants(ShaderStages::VERTEX, 0, cast_slice(&[camera_matrix]));
+
+		for structure in &self.structures {
+			for (position, block) in structure.iter_blocks() {
+				let position = structure.location.position + position.cast();
+
+				render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[position]));
+
+				let block_data = &renderer.structure_block_data[block];
+
+				render_pass.set_vertex_buffer(0, block_data.positions.slice(..));
+				render_pass.set_vertex_buffer(1, block_data.texture_coordinates.slice(..));
+				render_pass.set_index_buffer(block_data.indices.slice(..), IndexFormat::Uint32);
+				render_pass.set_bind_group(0, &renderer.structure_block_bind_group, &[]);
+				render_pass.draw_indexed(0..block_data.index_count, 0, 0..1);
 			}
 		}
 	}

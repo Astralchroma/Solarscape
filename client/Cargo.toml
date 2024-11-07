@@ -27,7 +27,8 @@ egui = "0.29"
 egui-wgpu = "0.29"
 egui-winit = "0.29"
 reqwest = "0.12"
+tobj = "4"
 winit = "0.30"
 
-wgpu = { version = "22", default-features = false, features = ["wgsl"] }
 image = { version = "0.25", default-features = false, features = ["png", "rayon"] }
+wgpu = { version = "22", default-features = false, features = ["wgsl"] }
