@@ -1,6 +1,9 @@
-use crate::data::{world::ChunkCoordinates, world::Item, world::Material, Id};
+use crate::data::{world::Block, world::ChunkCoordinates, world::Item, world::Location, world::Material, Id};
+use crate::ShiftHasherBuilder;
+use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use std::collections::HashMap;
 
 #[derive(Clone, Deserialize, Serialize)]
 pub enum Clientbound {
@@ -8,6 +11,7 @@ pub enum Clientbound {
 	SyncInventory(SyncInventory),
 	SyncChunk(SyncChunk),
 	RemoveChunk(RemoveChunk),
+	SyncStructure(SyncStructure),
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -71,5 +75,21 @@ pub struct RemoveChunk(pub ChunkCoordinates);
 impl From<RemoveChunk> for Clientbound {
 	fn from(value: RemoveChunk) -> Self {
 		Self::RemoveChunk(value)
+	}
+}
+
+/// Initial sync of a [Structure](crate::structure::Structure) when the Player logs in, the Structure is created, or
+/// the Structure comes into view. This is not used for subsequent updates to the Structure.
+#[derive(Clone, Deserialize, Serialize)]
+pub struct SyncStructure {
+	pub id: Id,
+	pub location: Location,
+
+	pub blocks: HashMap<Vector3<i16>, Block, ShiftHasherBuilder<3>>,
+}
+
+impl From<SyncStructure> for Clientbound {
+	fn from(value: SyncStructure) -> Self {
+		Self::SyncStructure(value)
 	}
 }

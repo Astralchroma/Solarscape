@@ -1,6 +1,6 @@
 use crate::{generation::sphere_generator, generation::Generator, player::Player};
 use dashmap::DashMap;
-use log::{info, warn};
+use log::{debug, warn};
 use nalgebra::{point, vector, Point3};
 use rapier3d::dynamics::{
 	CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder,
@@ -118,6 +118,18 @@ impl Sector {
 				Event::TickReleaseChunk(coordinates) => {
 					self.ticking_chunks.remove(&coordinates);
 				}
+				Event::CreateStructure(structure) => {
+					for player in &self.players {
+						player.send(structure.sync())
+					}
+
+					debug!(
+						"Structure {:?} created at {:?}!",
+						structure.id, structure.location.position
+					);
+
+					self.structures.push(structure);
+				}
 			}
 		}
 	}
@@ -190,13 +202,7 @@ impl Sector {
 					}
 					Serverbound::CreateStructure(create_structure) => {
 						let structure = Structure::from(create_structure);
-
-						info!(
-							"Structure {:?} created at {:?}!",
-							structure.id, structure.location.position
-						);
-
-						self.structures.push(structure);
+						let _ = self.shared.sender.send(Event::CreateStructure(structure));
 					}
 				}
 			}
@@ -285,6 +291,7 @@ pub enum Event {
 	RigidBodyDropped(RigidBodyHandle),
 	TickLockChunk(ChunkCoordinates),
 	TickReleaseChunk(ChunkCoordinates),
+	CreateStructure(Structure),
 }
 
 pub struct Voxject {

@@ -22,6 +22,7 @@ pub mod triangulation_table;
 
 use std::{hash::BuildHasher, hash::Hasher};
 
+#[derive(Clone, Copy, Default)]
 pub struct ShiftHasherBuilder<const E: usize>;
 
 impl<const E: usize> BuildHasher for ShiftHasherBuilder<E> {

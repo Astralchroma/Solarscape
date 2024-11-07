@@ -1,5 +1,5 @@
 use crate::data::{world::Block, world::Location, Id};
-use crate::{message::serverbound::CreateStructure, ShiftHasherBuilder};
+use crate::{message::clientbound::SyncStructure, message::serverbound::CreateStructure, ShiftHasherBuilder};
 use nalgebra::{vector, Vector3};
 use std::collections::HashMap;
 
@@ -8,6 +8,16 @@ pub struct Structure {
 	pub location: Location,
 
 	blocks: HashMap<Vector3<i16>, Block, ShiftHasherBuilder<3>>,
+}
+
+impl Structure {
+	pub fn sync(&self) -> SyncStructure {
+		SyncStructure {
+			id: self.id,
+			location: self.location,
+			blocks: self.blocks.clone(),
+		}
+	}
 }
 
 #[cfg(feature = "backend")]
@@ -22,5 +32,11 @@ impl From<CreateStructure> for Structure {
 
 			blocks,
 		}
+	}
+}
+
+impl From<SyncStructure> for Structure {
+	fn from(SyncStructure { id, location, blocks }: SyncStructure) -> Self {
+		Self { id, location, blocks }
 	}
 }

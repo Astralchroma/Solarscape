@@ -2,6 +2,7 @@ use crate::{client::AnyState, client::State, player::Local, player::Player};
 use bytemuck::{cast_slice, Pod, Zeroable};
 use dashmap::DashMap;
 use egui::{Align::Min, Align2, Layout, Window};
+use log::debug;
 use nalgebra::{point, vector, Isometry3, Vector2, Vector3};
 use rapier3d::dynamics::{
 	CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder, RigidBodySet,
@@ -12,10 +13,10 @@ use rapier3d::prelude::{ColliderHandle, RigidBodyHandle};
 use solarscape_shared::connection::{ClientEnd, Connection};
 use solarscape_shared::data::{world::ChunkCoordinates, world::Material, Id};
 use solarscape_shared::message::clientbound::{
-	Clientbound, InventorySlot, RemoveChunk, Sync, SyncChunk, SyncInventory,
+	Clientbound, InventorySlot, RemoveChunk, Sync, SyncChunk, SyncInventory, SyncStructure,
 };
-use solarscape_shared::message::serverbound::Serverbound;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
+use solarscape_shared::{message::serverbound::Serverbound, structure::Structure};
 use std::collections::{HashMap, HashSet};
 use std::{fmt::Write, mem::drop as nom, ops::Deref, sync::Arc, time::Duration, time::Instant};
 use tokio::sync::mpsc::error::TryRecvError;
@@ -31,6 +32,7 @@ pub struct Sector {
 	inventory: Vec<InventorySlot>,
 	pub inventory_gui_open: bool,
 
+	pub structures: Vec<Structure>,
 	pub voxjects: HashMap<Id, Voxject>,
 
 	last_tick_start: Instant,
@@ -91,6 +93,7 @@ impl Sector {
 					)
 				})
 				.collect(),
+			structures: vec![],
 
 			last_tick_start: Instant::now(),
 
@@ -138,6 +141,10 @@ impl Sector {
 					},
 				),
 				Clientbound::RemoveChunk(RemoveChunk(coordinates)) => self.remove_chunk(device, coordinates),
+				Clientbound::SyncStructure(sync_structure) => {
+					debug!("Synced structure {}", sync_structure.id);
+					self.structures.push(Structure::from(sync_structure));
+				}
 			}
 		}
 	}
