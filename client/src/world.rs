@@ -127,7 +127,8 @@ impl Sector {
 				Clientbound::RemoveChunk(RemoveChunk(coordinates)) => self.remove_chunk(device, coordinates),
 				Clientbound::SyncStructure(sync_structure) => {
 					debug!("Synced structure {}", sync_structure.id);
-					self.structures.push(Structure::from(sync_structure));
+					self.structures
+						.push(Structure::new_from_sync(&mut self.physics, sync_structure));
 				}
 			}
 		}

@@ -116,7 +116,7 @@ impl Sector {
 				}
 				Event::CreateStructure(structure) => {
 					for player in &self.players {
-						player.send(structure.sync())
+						player.send(structure.build_sync())
 					}
 
 					debug!(
@@ -197,7 +197,7 @@ impl Sector {
 						player.send(SyncInventory(inventory_list));
 					}
 					Serverbound::CreateStructure(create_structure) => {
-						let structure = Structure::from(create_structure);
+						let structure = Structure::new(&mut self.physics, create_structure);
 						let _ = self.shared.sender.send(Event::CreateStructure(structure));
 					}
 				}
