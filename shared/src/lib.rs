@@ -4,6 +4,9 @@ pub mod connection;
 pub mod data;
 
 #[cfg(feature = "world")]
+pub mod physics;
+
+#[cfg(feature = "world")]
 pub mod structure;
 
 pub mod message {
@@ -20,7 +23,7 @@ pub mod message {
 #[cfg(feature = "world")]
 pub mod triangulation_table;
 
-use std::{hash::BuildHasher, hash::Hasher};
+use std::hash::{BuildHasher, Hasher};
 
 #[derive(Clone, Copy, Default)]
 pub struct ShiftHasherBuilder<const E: usize>;

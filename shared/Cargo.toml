@@ -13,6 +13,7 @@ serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
+rapier3d = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
 
 bincode = "1"
@@ -22,4 +23,4 @@ time = { version = "0.3", optional = true, features = ["macros"] }
 
 [features]
 backend = ["dep:sqlx", "dep:time"]
-world = []
+world = ["dep:rapier3d"]

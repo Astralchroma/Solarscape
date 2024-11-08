@@ -1,23 +1,26 @@
-use crate::{generation::sphere_generator, generation::Generator, player::Player};
+use crate::generation::{sphere_generator, Generator};
+use crate::player::Player;
 use dashmap::DashMap;
 use log::{debug, warn};
 use nalgebra::{point, vector, Point3};
-use rapier3d::dynamics::{
-	CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder,
-	RigidBodyHandle, RigidBodySet,
-};
-use rapier3d::geometry::{ColliderBuilder, ColliderHandle, ColliderSet, DefaultBroadPhase, NarrowPhase};
-use rapier3d::pipeline::PhysicsPipeline;
+use rapier3d::dynamics::{RigidBodyBuilder, RigidBodyHandle};
+use rapier3d::geometry::{ColliderBuilder, ColliderHandle};
 use solarscape_shared::connection::{Connection, ConnectionSend, ServerEnd};
-use solarscape_shared::data::{world::ChunkCoordinates, world::Material, Id};
+use solarscape_shared::data::world::{ChunkCoordinates, Material};
+use solarscape_shared::data::Id;
 use solarscape_shared::message::clientbound::{Clientbound, SyncChunk, SyncInventory};
+use solarscape_shared::message::serverbound::Serverbound;
+use solarscape_shared::physics::{AutoCleanup, Physics};
+use solarscape_shared::structure::Structure;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
-use solarscape_shared::{message::serverbound::Serverbound, structure::Structure};
 use sqlx::{query, PgPool};
-use std::sync::{atomic::AtomicUsize, atomic::Ordering::Relaxed, Arc, Weak};
-use std::{collections::HashMap, mem::drop as nom, ops::Deref, thread, time::Duration, time::Instant};
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
+use std::{collections::HashMap, mem::drop as nom, ops::Deref, thread};
+use tokio::runtime::Handle;
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
-use tokio::{runtime::Handle, sync::Mutex, sync::RwLock, sync::RwLockReadGuard, sync::RwLockWriteGuard};
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub mod config {
 	use serde::Deserialize;
@@ -67,17 +70,20 @@ impl Sector {
 			ticking_chunks: HashMap::new(),
 			structures: vec![],
 
-			physics: Physics::default(),
+			physics: Physics::new(),
 		}
 	}
 
 	pub fn run(mut self) {
 		let target_tick_time = Duration::from_secs(1) / 30;
+		let mut last_tick_start = Instant::now();
 
 		loop {
 			let tick_start = Instant::now();
+			let delta = (tick_start - last_tick_start).as_secs_f32();
+			last_tick_start = tick_start;
 
-			self.tick();
+			self.tick(delta);
 
 			let tick_duration = Instant::now() - tick_start;
 
@@ -88,10 +94,10 @@ impl Sector {
 		}
 	}
 
-	fn tick(&mut self) {
+	fn tick(&mut self, delta: f32) {
 		self.handle_events();
 		self.process_players();
-		self.physics.tick();
+		self.physics.tick(delta);
 	}
 
 	fn handle_events(&mut self) {
@@ -100,16 +106,6 @@ impl Sector {
 				Event::PlayerConnected(id, connection) => {
 					let player = Player::accept(self, id, connection);
 					self.players.push(player);
-				}
-				Event::RigidBodyDropped(rigid_body) => {
-					self.physics.rigid_bodies.remove(
-						rigid_body,
-						&mut self.physics.islands,
-						&mut self.physics.colliders,
-						&mut self.physics.impulse_joints,
-						&mut self.physics.multibody_joints,
-						true,
-					);
 				}
 				Event::TickLockChunk(coordinates) => {
 					let chunk = self.get_chunk(coordinates);
@@ -210,38 +206,12 @@ impl Sector {
 	}
 }
 
-#[derive(Default)]
-pub struct Physics {
-	pipeline: PhysicsPipeline,
-	integration_parameters: IntegrationParameters,
-	pub islands: IslandManager,
-	broad_phase: DefaultBroadPhase,
-	narrow_phase: NarrowPhase,
-	pub rigid_bodies: RigidBodySet,
-	pub colliders: ColliderSet,
-	impulse_joints: ImpulseJointSet,
-	multibody_joints: MultibodyJointSet,
-	ccd_solver: CCDSolver,
-}
-
-impl Physics {
-	fn tick(&mut self) {
-		self.pipeline.step(
-			&vector![0.0, 0.0, 0.0],
-			&self.integration_parameters,
-			&mut self.islands,
-			&mut self.broad_phase,
-			&mut self.narrow_phase,
-			&mut self.rigid_bodies,
-			&mut self.colliders,
-			&mut self.impulse_joints,
-			&mut self.multibody_joints,
-			&mut self.ccd_solver,
-			None,
-			&(),
-			&(),
-		);
-	}
+/// [`Event`]s are sent to [`Sector`]s and are processed at the start of the next tick.
+pub enum Event {
+	PlayerConnected(Id, Connection<ServerEnd>),
+	TickLockChunk(ChunkCoordinates),
+	TickReleaseChunk(ChunkCoordinates),
+	CreateStructure(Structure),
 }
 
 /// A [`SharedSector`] allows accessing shared information about a [`Sector`], as well as sending events to be
@@ -283,15 +253,6 @@ impl Deref for Sector {
 	fn deref(&self) -> &Self::Target {
 		&self.shared
 	}
-}
-
-/// [`Event`]s are sent to [`Sector`]s and are processed at the start of the next tick.
-pub enum Event {
-	PlayerConnected(Id, Connection<ServerEnd>),
-	RigidBodyDropped(RigidBodyHandle),
-	TickLockChunk(ChunkCoordinates),
-	TickReleaseChunk(ChunkCoordinates),
-	CreateStructure(Structure),
 }
 
 pub struct Voxject {
@@ -561,36 +522,33 @@ impl Drop for Chunk {
 /// accessible outside of the sector thread.
 struct TickingChunk {
 	inner: Arc<Chunk>,
-	rigid_body: RigidBodyHandle,
-	collider: Option<ColliderHandle>,
+	_rigid_body: AutoCleanup<RigidBodyHandle>,
+	_collider: Option<AutoCleanup<ColliderHandle>>,
 }
 
 impl TickingChunk {
 	fn register(sector: &mut Sector, chunk: Arc<Chunk>) {
-		let rigid_body = sector.physics.rigid_bodies.insert(
-			RigidBodyBuilder::fixed()
-				.translation(chunk.coordinates.voxject_relative_translation())
-				.build(),
-		);
+		let rigid_body = sector
+			.physics
+			.insert_rigid_body(RigidBodyBuilder::fixed().translation(chunk.coordinates.voxject_relative_translation()));
 
 		let collider = {
 			let collision = chunk.read_collision_immediately();
 
 			match collision.vertices.is_empty() {
 				true => None,
-				false => Some(sector.physics.colliders.insert_with_parent(
+				false => Some(sector.physics.insert_rigid_body_collider(
 					// It hurts to have to call clone here.
-					ColliderBuilder::trimesh(collision.vertices.clone(), collision.indices.clone()).build(),
-					rigid_body,
-					&mut sector.physics.rigid_bodies,
+					*rigid_body,
+					ColliderBuilder::trimesh(collision.vertices.clone(), collision.indices.clone()),
 				)),
 			}
 		};
 
 		let ticking_chunk = Self {
 			inner: chunk,
-			rigid_body,
-			collider,
+			_rigid_body: rigid_body,
+			_collider: collider,
 		};
 
 		sector.ticking_chunks.insert(ticking_chunk.coordinates, ticking_chunk);

@@ -1,26 +1,28 @@
-use crate::{client::AnyState, client::State, player::Local, player::Player};
+use crate::client::{AnyState, State};
+use crate::player::{Local, Player};
 use bytemuck::{cast_slice, Pod, Zeroable};
 use dashmap::DashMap;
 use egui::{Align::Min, Align2, Layout, Window};
 use log::debug;
 use nalgebra::{point, vector, Isometry3, Vector2, Vector3};
-use rapier3d::dynamics::{
-	CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, RigidBodyBuilder, RigidBodySet,
-};
-use rapier3d::geometry::{ColliderBuilder, ColliderSet, DefaultBroadPhase, NarrowPhase};
-use rapier3d::pipeline::PhysicsPipeline;
-use rapier3d::prelude::{ColliderHandle, RigidBodyHandle};
+use rapier3d::dynamics::{RigidBodyBuilder, RigidBodyHandle};
+use rapier3d::geometry::{ColliderBuilder, ColliderHandle};
 use solarscape_shared::connection::{ClientEnd, Connection};
-use solarscape_shared::data::{world::ChunkCoordinates, world::Material, Id};
+use solarscape_shared::data::world::{ChunkCoordinates, Material};
+use solarscape_shared::data::Id;
 use solarscape_shared::message::clientbound::{
-	Clientbound, InventorySlot, RemoveChunk, Sync, SyncChunk, SyncInventory, SyncStructure,
+	Clientbound, InventorySlot, RemoveChunk, Sync, SyncChunk, SyncInventory,
 };
+use solarscape_shared::message::serverbound::Serverbound;
+use solarscape_shared::physics::{AutoCleanup, Physics};
+use solarscape_shared::structure::Structure;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
-use solarscape_shared::{message::serverbound::Serverbound, structure::Structure};
 use std::collections::{HashMap, HashSet};
-use std::{fmt::Write, mem::drop as nom, ops::Deref, sync::Arc, time::Duration, time::Instant};
+use std::time::{Duration, Instant};
+use std::{fmt::Write, mem::drop as nom, ops::Deref, sync::Arc};
 use tokio::sync::mpsc::error::TryRecvError;
-use wgpu::{util::BufferInitDescriptor, util::DeviceExt, Buffer, BufferUsages, Device};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::{Buffer, BufferUsages, Device};
 use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
@@ -37,16 +39,7 @@ pub struct Sector {
 
 	last_tick_start: Instant,
 
-	physics_pipeline: PhysicsPipeline,
-	integration_parameters: IntegrationParameters,
-	islands: IslandManager,
-	broad_phase: DefaultBroadPhase,
-	narrow_phase: NarrowPhase,
-	rigid_bodies: RigidBodySet,
-	colliders: ColliderSet,
-	impulse_joints: ImpulseJointSet,
-	multibody_joints: MultibodyJointSet,
-	ccd_solver: CCDSolver,
+	physics: Physics,
 }
 
 pub struct SharedSector {
@@ -97,16 +90,7 @@ impl Sector {
 
 			last_tick_start: Instant::now(),
 
-			physics_pipeline: PhysicsPipeline::new(),
-			integration_parameters: IntegrationParameters::default(),
-			islands: IslandManager::new(),
-			broad_phase: DefaultBroadPhase::new(),
-			narrow_phase: NarrowPhase::new(),
-			rigid_bodies: RigidBodySet::new(),
-			colliders: ColliderSet::new(),
-			impulse_joints: ImpulseJointSet::new(),
-			multibody_joints: MultibodyJointSet::new(),
-			ccd_solver: CCDSolver::new(),
+			physics: Physics::new(),
 		}
 	}
 
@@ -325,23 +309,7 @@ impl State for Sector {
 
 		self.player.tick(delta);
 
-		self.integration_parameters.dt = delta;
-
-		self.physics_pipeline.step(
-			&vector![0.0, 0.0, 0.0],
-			&self.integration_parameters,
-			&mut self.islands,
-			&mut self.broad_phase,
-			&mut self.narrow_phase,
-			&mut self.rigid_bodies,
-			&mut self.colliders,
-			&mut self.impulse_joints,
-			&mut self.multibody_joints,
-			&mut self.ccd_solver,
-			None,
-			&(),
-			&(),
-		);
+		self.physics.tick(delta);
 
 		None
 	}
@@ -479,8 +447,8 @@ pub struct ChunkMesh {
 	pub vertex_data_buffer: Buffer,
 	pub instance_buffer: Buffer,
 
-	collider: ColliderHandle,
-	rigid_body: RigidBodyHandle,
+	collider: AutoCleanup<ColliderHandle>,
+	rigid_body: AutoCleanup<RigidBodyHandle>,
 }
 
 #[allow(unused)]
@@ -610,11 +578,9 @@ impl Chunk {
 		unsafe impl Zeroable for InstanceData {}
 		unsafe impl Pod for InstanceData {}
 
-		let rigid_body = sector.rigid_bodies.insert(
-			RigidBodyBuilder::fixed()
-				.translation(self.coordinates.voxject_relative_translation())
-				.build(),
-		);
+		let rigid_body = sector
+			.physics
+			.insert_rigid_body(RigidBodyBuilder::fixed().translation(self.coordinates.voxject_relative_translation()));
 
 		let vertex_indices = (0..vertex_positions.len() as u32)
 			.collect::<Vec<_>>()
@@ -644,11 +610,9 @@ impl Chunk {
 				usage: BufferUsages::VERTEX,
 			}),
 
-			collider: sector.colliders.insert_with_parent(
-				ColliderBuilder::trimesh(vertex_positions, vertex_indices).build(),
-				rigid_body,
-				&mut sector.rigid_bodies,
-			),
+			collider: sector
+				.physics
+				.insert_rigid_body_collider(*rigid_body, ColliderBuilder::trimesh(vertex_positions, vertex_indices)),
 			rigid_body,
 		});
 	}
