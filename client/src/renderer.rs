@@ -1,36 +1,41 @@
-use crate::{client::AnyState, client::State, login::Login, world::Sector, ClArgs};
+use crate::client::{AnyState, State};
+use crate::{login::Login, world::Sector, ClArgs};
 use bytemuck::cast_slice;
 use egui::{Align2, Color32, Context, Pos2, ViewportId};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use egui_winit::State as EguiState;
 use image::GenericImageView;
 use log::{error, info, warn};
-use nalgebra::{Perspective3, Translation3};
+use nalgebra::{vector, Perspective3, Translation3};
 use solarscape_shared::data::world::Block;
 use std::collections::{HashMap, VecDeque};
-use std::{fmt::Write, iter::once, str::FromStr, sync::Arc, time::Duration, time::Instant};
+use std::time::{Duration, Instant};
+use std::{fmt::Write, iter::once, str::FromStr, sync::Arc};
 use thiserror::Error;
 use tobj::GPU_LOAD_OPTIONS;
 use tokio::runtime::Handle;
+use wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder::LayerMajor};
+use wgpu::PrimitiveTopology::{LineList, TriangleList};
+use wgpu::TextureDimension::{self, D2};
+use wgpu::TextureFormat::{self, Depth32Float, Rgba8UnormSrgb};
 use wgpu::{
-	include_wgsl, rwh::HandleError, util::BufferInitDescriptor, util::DeviceExt, util::TextureDataOrder::LayerMajor,
-	vertex_attr_array, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-	BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferUsages, Color, ColorTargetState,
-	ColorWrites, CommandEncoderDescriptor, CompareFunction::LessEqual, CompositeAlphaMode::Opaque, CreateSurfaceError,
-	DepthStencilState, Device, DeviceDescriptor, Dx12Compiler, Extent3d, Face::Back, Features, FragmentState,
-	FrontFace::Ccw, Gles3MinorVersion::Version0, IndexFormat, Instance, InstanceDescriptor, InstanceFlags, Limits,
-	LoadOp::Clear, MemoryHints::Performance, MultisampleState, Operations, PipelineCompilationOptions,
-	PipelineLayoutDescriptor, PolygonMode::Fill, PowerPreference::HighPerformance, PresentMode::AutoNoVsync,
-	PrimitiveState, PrimitiveTopology::TriangleList, PushConstantRange, Queue, RenderPass, RenderPassColorAttachment,
+	include_wgsl, rwh::HandleError, vertex_attr_array, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry,
+	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferUsages,
+	Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompareFunction::LessEqual,
+	CompositeAlphaMode::Opaque, CreateSurfaceError, DepthStencilState, Device, DeviceDescriptor, Dx12Compiler,
+	Extent3d, Face::Back, Features, FragmentState, FrontFace::Ccw, Gles3MinorVersion::Version0, IndexFormat, Instance,
+	InstanceDescriptor, InstanceFlags, Limits, LoadOp::Clear, MemoryHints::Performance, MultisampleState, Operations,
+	PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode::Fill, PowerPreference::HighPerformance,
+	PresentMode::AutoNoVsync, PrimitiveState, PushConstantRange, Queue, RenderPass, RenderPassColorAttachment,
 	RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
 	RequestAdapterOptions, RequestDeviceError, SamplerBindingType::NonFiltering, SamplerDescriptor, ShaderStages,
-	StoreOp::Store, Surface, SurfaceConfiguration, SurfaceTargetUnsafe, Texture, TextureDescriptor, TextureDimension,
-	TextureDimension::D2, TextureFormat, TextureFormat::Depth32Float, TextureFormat::Rgba8UnormSrgb,
+	StoreOp::Store, Surface, SurfaceConfiguration, SurfaceTargetUnsafe, Texture, TextureDescriptor,
 	TextureSampleType::Float, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
 	VertexBufferLayout, VertexState, VertexStepMode,
 };
+use winit::dpi::{LogicalPosition, PhysicalSize};
 use winit::window::{CursorGrabMode, Window};
-use winit::{dpi::LogicalPosition, dpi::PhysicalSize, error::OsError, event::WindowEvent, event_loop::ActiveEventLoop};
+use winit::{error::OsError, event::WindowEvent, event_loop::ActiveEventLoop};
 
 pub struct Renderer {
 	// Window & Surface
@@ -74,6 +79,9 @@ pub struct Renderer {
 	structure_block_pipeline: RenderPipeline,
 	structure_block_data: HashMap<Block, Arc<BlockRenderData>>,
 	structure_block_bind_group: BindGroup,
+
+	// Debug Rendering
+	debug_line_pipeline: RenderPipeline,
 }
 
 struct BlockRenderData {
@@ -128,7 +136,7 @@ impl Renderer {
 					max_color_attachment_bytes_per_sample: 8,
 					max_color_attachments: 1,
 					max_inter_stage_shader_components: 11,
-					max_push_constant_size: 76,
+					max_push_constant_size: 112,
 					max_sampled_textures_per_shader_stage: 1,
 					max_samplers_per_shader_stage: 1,
 					max_texture_array_layers: 1,
@@ -537,6 +545,67 @@ impl Renderer {
 			cache: None,
 		});
 
+		let debug_line_shader = device.create_shader_module(include_wgsl!("debug_line.wgsl"));
+
+		let debug_line_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+			label: Some("Debug Renderer > Pipeline Layout"),
+			bind_group_layouts: &[],
+			push_constant_ranges: &[
+				PushConstantRange {
+					stages: ShaderStages::VERTEX,
+					range: 0..96,
+				},
+				PushConstantRange {
+					stages: ShaderStages::FRAGMENT,
+					range: 96..112,
+				},
+			],
+		});
+
+		let debug_line_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+			label: Some("Debug Renderer > Pipeline"),
+			layout: Some(&debug_line_pipeline_layout),
+			vertex: VertexState {
+				module: &debug_line_shader,
+				entry_point: "vertex",
+				compilation_options: PipelineCompilationOptions::default(),
+				buffers: &[],
+			},
+			primitive: PrimitiveState {
+				topology: LineList,
+				strip_index_format: None,
+				front_face: Ccw,
+				cull_mode: None,
+				unclipped_depth: false,
+				polygon_mode: Fill,
+				conservative: false,
+			},
+			depth_stencil: Some(DepthStencilState {
+				format: Depth32Float,
+				depth_write_enabled: true,
+				depth_compare: LessEqual,
+				stencil: Default::default(),
+				bias: Default::default(),
+			}),
+			multisample: MultisampleState {
+				count: 1,
+				mask: !0,
+				alpha_to_coverage_enabled: false,
+			},
+			fragment: Some(FragmentState {
+				module: &debug_line_shader,
+				entry_point: "fragment",
+				compilation_options: PipelineCompilationOptions::default(),
+				targets: &[Some(ColorTargetState {
+					format: config.format,
+					blend: Some(BlendState::REPLACE),
+					write_mask: ColorWrites::ALL,
+				})],
+			}),
+			multiview: None,
+			cache: None,
+		});
+
 		let depth_buffer_descriptor = TextureDescriptor {
 			label: Some("renderer.depth_buffer#buffer"),
 			size: Extent3d {
@@ -593,6 +662,8 @@ impl Renderer {
 			structure_block_pipeline,
 			structure_block_data,
 			structure_block_bind_group,
+
+			debug_line_pipeline,
 		})
 	}
 
@@ -799,6 +870,34 @@ impl Render for Sector {
 				render_pass.set_bind_group(0, &renderer.structure_block_bind_group, &[]);
 				render_pass.draw_indexed(0..block_data.index_count, 0, 0..1);
 			}
+		}
+
+		// The dumbest debug line drawer you will ever see.
+		// This is the definition of temporary code.
+		render_pass.set_pipeline(&renderer.debug_line_pipeline);
+		render_pass.set_push_constants(ShaderStages::VERTEX, 0, cast_slice(&[camera_matrix]));
+
+		let color = vector![1.0f32, 1.0, 1.0];
+		render_pass.set_push_constants(ShaderStages::FRAGMENT, 96, cast_slice(&[color]));
+
+		for structure in &self.structures {
+			let position_a = structure.location.position.coords + vector![1.0, 0.0, 0.0];
+			let position_b = structure.location.position.coords - vector![1.0, 0.0, 0.0];
+			render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[position_a]));
+			render_pass.set_push_constants(ShaderStages::VERTEX, 80, cast_slice(&[position_b]));
+			render_pass.draw(0..2, 0..1);
+
+			let position_a = structure.location.position.coords + vector![0.0, 1.0, 0.0];
+			let position_b = structure.location.position.coords - vector![0.0, 1.0, 0.0];
+			render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[position_a]));
+			render_pass.set_push_constants(ShaderStages::VERTEX, 80, cast_slice(&[position_b]));
+			render_pass.draw(0..2, 0..1);
+
+			let position_a = structure.location.position.coords + vector![0.0, 0.0, 1.0];
+			let position_b = structure.location.position.coords - vector![0.0, 0.0, 1.0];
+			render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[position_a]));
+			render_pass.set_push_constants(ShaderStages::VERTEX, 80, cast_slice(&[position_b]));
+			render_pass.draw(0..2, 0..1);
 		}
 	}
 }
