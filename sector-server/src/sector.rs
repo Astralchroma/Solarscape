@@ -116,12 +116,13 @@ impl Sector {
 				}
 				Event::CreateStructure(structure) => {
 					for player in &self.players {
-						player.send(structure.build_sync())
+						player.send(structure.build_sync(&self.physics))
 					}
 
 					debug!(
 						"Structure {:?} created at {:?}!",
-						structure.id, structure.location.position
+						structure.id,
+						structure.get_location(&self.physics).translation
 					);
 
 					self.structures.push(structure);

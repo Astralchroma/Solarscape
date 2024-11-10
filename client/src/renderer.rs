@@ -858,7 +858,7 @@ impl Render for Sector {
 
 		for structure in &self.structures {
 			for (position, block) in structure.iter_blocks() {
-				let position = structure.location.position + position.cast();
+				let position = structure.get_location(&self.physics).translation.vector + position.cast();
 
 				render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[position]));
 
@@ -881,20 +881,22 @@ impl Render for Sector {
 		render_pass.set_push_constants(ShaderStages::FRAGMENT, 96, cast_slice(&[color]));
 
 		for structure in &self.structures {
-			let position_a = structure.location.position.coords + vector![1.0, 0.0, 0.0];
-			let position_b = structure.location.position.coords - vector![1.0, 0.0, 0.0];
+			let location = structure.get_location(&self.physics);
+
+			let position_a = location.translation.vector + vector![1.0, 0.0, 0.0];
+			let position_b = location.translation.vector - vector![1.0, 0.0, 0.0];
 			render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[position_a]));
 			render_pass.set_push_constants(ShaderStages::VERTEX, 80, cast_slice(&[position_b]));
 			render_pass.draw(0..2, 0..1);
 
-			let position_a = structure.location.position.coords + vector![0.0, 1.0, 0.0];
-			let position_b = structure.location.position.coords - vector![0.0, 1.0, 0.0];
+			let position_a = location.translation.vector + vector![0.0, 1.0, 0.0];
+			let position_b = location.translation.vector - vector![0.0, 1.0, 0.0];
 			render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[position_a]));
 			render_pass.set_push_constants(ShaderStages::VERTEX, 80, cast_slice(&[position_b]));
 			render_pass.draw(0..2, 0..1);
 
-			let position_a = structure.location.position.coords + vector![0.0, 0.0, 1.0];
-			let position_b = structure.location.position.coords - vector![0.0, 0.0, 1.0];
+			let position_a = location.translation.vector + vector![0.0, 0.0, 1.0];
+			let position_b = location.translation.vector - vector![0.0, 0.0, 1.0];
 			render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[position_a]));
 			render_pass.set_push_constants(ShaderStages::VERTEX, 80, cast_slice(&[position_b]));
 			render_pass.draw(0..2, 0..1);

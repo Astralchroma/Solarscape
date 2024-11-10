@@ -100,6 +100,10 @@ impl Physics {
 		}
 	}
 
+	pub fn get_rigid_body(&self, rigid_body: RigidBodyHandle) -> Option<&RigidBody> {
+		self.rigid_bodies.get(rigid_body)
+	}
+
 	pub fn insert_rigid_body_collider(
 		&mut self,
 		rigid_body_handle: RigidBodyHandle,

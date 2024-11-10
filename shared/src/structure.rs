@@ -1,9 +1,8 @@
-use crate::data::{world::Block, world::Location, Id};
+use crate::data::world::{Block, Location};
 use crate::physics::{AutoCleanup, Physics};
-use crate::{message::clientbound::SyncStructure, ShiftHasherBuilder};
-use nalgebra::{vector, Vector3};
-use rapier3d::dynamics::RigidBodyBuilder;
-use rapier3d::prelude::RigidBodyHandle;
+use crate::{data::Id, message::clientbound::SyncStructure, ShiftHasherBuilder};
+use nalgebra::{vector, Isometry3, Point3, Vector3};
+use rapier3d::dynamics::{RigidBodyBuilder, RigidBodyHandle};
 use std::collections::HashMap;
 
 #[cfg(feature = "backend")]
@@ -11,8 +10,6 @@ use crate::message::serverbound::CreateStructure;
 
 pub struct Structure {
 	pub id: Id,
-	pub location: Location,
-
 	pub rigid_body: AutoCleanup<RigidBodyHandle>,
 
 	blocks: HashMap<Vector3<i16>, Block, ShiftHasherBuilder<3>>,
@@ -34,8 +31,6 @@ impl Structure {
 
 		Self {
 			id: Id::new(),
-			location,
-
 			rigid_body,
 
 			blocks,
@@ -51,22 +46,33 @@ impl Structure {
 				.rotation(vector![x, y, z]),
 		);
 
-		Self {
-			id,
+		Self { id, rigid_body, blocks }
+	}
+
+	pub fn build_sync(&self, physics: &Physics) -> SyncStructure {
+		let rigid_body = physics
+			.get_rigid_body(*self.rigid_body)
+			.expect("rigid body shouldn't be removed while structure still exists");
+
+		let location = Location {
+			position: Point3 {
+				coords: *rigid_body.translation(),
+			},
+			rotation: *rigid_body.rotation(),
+		};
+
+		SyncStructure {
+			id: self.id,
 			location,
-
-			rigid_body,
-
-			blocks,
+			blocks: self.blocks.clone(),
 		}
 	}
 
-	pub fn build_sync(&self) -> SyncStructure {
-		SyncStructure {
-			id: self.id,
-			location: self.location,
-			blocks: self.blocks.clone(),
-		}
+	pub fn get_location<'p>(&self, physics: &'p Physics) -> &'p Isometry3<f32> {
+		physics
+			.get_rigid_body(*self.rigid_body)
+			.expect("rigid body shouldn't be removed while structure still exists")
+			.position()
 	}
 
 	pub fn iter_blocks(&self) -> impl Iterator<Item = (&Vector3<i16>, &Block)> {

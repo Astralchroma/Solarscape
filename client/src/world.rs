@@ -39,7 +39,7 @@ pub struct Sector {
 
 	last_tick_start: Instant,
 
-	physics: Physics,
+	pub physics: Physics,
 }
 
 pub struct SharedSector {
