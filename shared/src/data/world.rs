@@ -225,17 +225,17 @@ impl Item {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub enum Block {
+pub enum BlockType {
 	Block,
 
 	TestBlock = 0xFF,
 }
 
-impl Block {
+impl BlockType {
 	pub const ALL: &'static [Self] = &[Self::Block, Self::TestBlock];
 }
 
-impl FromStr for Block {
+impl FromStr for BlockType {
 	type Err = NotFound;
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {

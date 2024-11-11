@@ -1,4 +1,4 @@
-use crate::{data::world::Block, data::world::Location};
+use crate::{data::world::BlockType, data::world::Location};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -19,7 +19,7 @@ impl From<Location> for Serverbound {
 #[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct CreateStructure {
 	pub location: Location,
-	pub block: Block,
+	pub block: BlockType,
 }
 
 impl From<CreateStructure> for Serverbound {

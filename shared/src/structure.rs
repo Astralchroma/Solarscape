@@ -1,4 +1,4 @@
-use crate::data::world::{Block, Location};
+use crate::data::world::{BlockType, Location};
 use crate::physics::{AutoCleanup, Physics};
 use crate::{data::Id, message::clientbound::SyncStructure, ShiftHasherBuilder};
 use nalgebra::{vector, Isometry3, Point3, Vector3};
@@ -12,7 +12,7 @@ pub struct Structure {
 	pub id: Id,
 	pub rigid_body: AutoCleanup<RigidBodyHandle>,
 
-	blocks: HashMap<Vector3<i16>, Block, ShiftHasherBuilder<3>>,
+	blocks: HashMap<Vector3<i16>, BlockType, ShiftHasherBuilder<3>>,
 }
 
 impl Structure {
@@ -75,7 +75,7 @@ impl Structure {
 			.position()
 	}
 
-	pub fn iter_blocks(&self) -> impl Iterator<Item = (&Vector3<i16>, &Block)> {
+	pub fn iter_blocks(&self) -> impl Iterator<Item = (&Vector3<i16>, &BlockType)> {
 		self.blocks.iter()
 	}
 

@@ -1,4 +1,4 @@
-use crate::data::{world::Block, world::ChunkCoordinates, world::Item, world::Location, world::Material, Id};
+use crate::data::{world::BlockType, world::ChunkCoordinates, world::Item, world::Location, world::Material, Id};
 use crate::ShiftHasherBuilder;
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
@@ -85,7 +85,7 @@ pub struct SyncStructure {
 	pub id: Id,
 	pub location: Location,
 
-	pub blocks: HashMap<Vector3<i16>, Block, ShiftHasherBuilder<3>>,
+	pub blocks: HashMap<Vector3<i16>, BlockType, ShiftHasherBuilder<3>>,
 }
 
 impl From<SyncStructure> for Clientbound {

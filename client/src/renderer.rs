@@ -7,7 +7,7 @@ use egui_winit::State as EguiState;
 use image::GenericImageView;
 use log::{error, info, warn};
 use nalgebra::{vector, Perspective3, Translation3};
-use solarscape_shared::data::world::Block;
+use solarscape_shared::data::world::BlockType;
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 use std::{fmt::Write, iter::once, str::FromStr, sync::Arc};
@@ -77,7 +77,7 @@ pub struct Renderer {
 	// Structure Rendering
 	// Might also be worth moving later
 	structure_block_pipeline: RenderPipeline,
-	structure_block_data: HashMap<Block, Arc<BlockRenderData>>,
+	structure_block_data: HashMap<BlockType, Arc<BlockRenderData>>,
 	structure_block_bind_group: BindGroup,
 
 	// Debug Rendering
@@ -353,7 +353,7 @@ impl Renderer {
 			.expect("resources/structure_blocks.obj provided at compile time should be a valid .obj file");
 
 			let mut missing_block = None;
-			let mut structure_blocks = HashMap::with_capacity(Block::ALL.len());
+			let mut structure_blocks = HashMap::with_capacity(BlockType::ALL.len());
 
 			for mut model in structure_block_models {
 				for coord in model.mesh.texcoords.iter_mut().skip(1).step_by(2) {
@@ -382,7 +382,7 @@ impl Renderer {
 					index_count: model.mesh.indices.len() as u32,
 				});
 
-				match Block::from_str(&model.name) {
+				match BlockType::from_str(&model.name) {
 					Ok(block) => {
 						if structure_blocks.insert(block, block_render_data).is_some() {
 							warn!("Found duplicate model for block {block:?}! This may be a modelling error and could result in broken block models.");
@@ -402,7 +402,7 @@ impl Renderer {
 				None => panic!("No model found for MissingBlock. This block is required as it serves as a placeholder for other missing blocks."),
 			};
 
-			for block in Block::ALL {
+			for block in BlockType::ALL {
 				if !structure_blocks.contains_key(block) {
 					warn!("No model found for block {block:?}, a placeholder will be used instead. This will result in broken block models");
 					structure_blocks.insert(*block, missing_block.clone());
