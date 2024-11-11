@@ -136,7 +136,7 @@ impl Renderer {
 					max_color_attachment_bytes_per_sample: 8,
 					max_color_attachments: 1,
 					max_inter_stage_shader_components: 11,
-					max_push_constant_size: 112,
+					max_push_constant_size: 128,
 					max_sampled_textures_per_shader_stage: 1,
 					max_samplers_per_shader_stage: 1,
 					max_texture_array_layers: 1,
@@ -486,7 +486,7 @@ impl Renderer {
 			bind_group_layouts: &[&structure_blocks_bind_group_layout],
 			push_constant_ranges: &[PushConstantRange {
 				stages: ShaderStages::VERTEX,
-				range: 0..76,
+				range: 0..128,
 			}],
 		});
 
@@ -858,9 +858,10 @@ impl Render for Sector {
 
 		for structure in &self.structures {
 			for (position, block) in structure.iter_blocks() {
-				let position = structure.get_location(&self.physics).translation.vector + position.cast();
+				let mut location = *structure.get_location(&self.physics);
+				location.append_translation_mut(&Translation3::from(position.cast()));
 
-				render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[position]));
+				render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[location.to_homogeneous()]));
 
 				let block_data = &renderer.structure_block_data[&block.typ];
 

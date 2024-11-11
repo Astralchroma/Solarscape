@@ -10,7 +10,7 @@ struct Vertex {
 
 struct PushConstants {
 	camera: mat4x4<f32>,
-	position: vec3<f32>,
+	model: mat4x4<f32>,
 }
 
 var<push_constant> push_constants: PushConstants;
@@ -21,7 +21,7 @@ var<push_constant> push_constants: PushConstants;
 @vertex fn vertex(input: VertexInput) -> Vertex {
 	var vertex: Vertex;
 
-	vertex.position = push_constants.camera * vec4<f32>(push_constants.position + input.position, 1.0);
+	vertex.position = push_constants.camera * push_constants.model * vec4(input.position, 1.0);
 	vertex.texture_coordinates = input.texture_coordinates;
 
 	return vertex;
