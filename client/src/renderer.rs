@@ -862,7 +862,7 @@ impl Render for Sector {
 
 				render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[position]));
 
-				let block_data = &renderer.structure_block_data[block];
+				let block_data = &renderer.structure_block_data[&block.typ];
 
 				render_pass.set_vertex_buffer(0, block_data.positions.slice(..));
 				render_pass.set_vertex_buffer(1, block_data.texture_coordinates.slice(..));
