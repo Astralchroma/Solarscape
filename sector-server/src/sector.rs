@@ -14,10 +14,13 @@ use solarscape_shared::physics::{AutoCleanup, Physics};
 use solarscape_shared::structure::Structure;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use sqlx::{query, PgPool};
+use std::collections::HashMap;
+use std::mem::drop as nom;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::sync::{Arc, Weak};
+use std::thread;
 use std::time::{Duration, Instant};
-use std::{collections::HashMap, mem::drop as nom, ops::Deref, thread};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -44,9 +47,9 @@ pub struct Sector {
 
 	players: Vec<Player>,
 	ticking_chunks: HashMap<ChunkCoordinates, TickingChunk>,
-	structures: Vec<Structure>,
+	pub structures: Vec<Structure>,
 
-	physics: Physics,
+	pub physics: Physics,
 }
 
 impl Sector {

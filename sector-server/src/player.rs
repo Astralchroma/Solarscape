@@ -1,10 +1,13 @@
 use crate::sector::{ClientLock, Sector, SharedSector, TickLock};
 use nalgebra::{convert_unchecked, vector, IsometryMatrix3, Vector3};
+use solarscape_shared::connection::{Connection, ServerEnd};
 use solarscape_shared::data::world::{ChunkCoordinates, Item, Level, Location, LEVELS};
+use solarscape_shared::data::Id;
 use solarscape_shared::message::clientbound::{InventorySlot, Sync, Voxject};
-use solarscape_shared::{connection::Connection, connection::ServerEnd, data::Id};
 use sqlx::{query_as, PgPool};
-use std::{collections::HashSet, ops::Deref, ops::DerefMut, sync::Arc};
+use std::collections::HashSet;
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 use tokio::runtime::Handle;
 
 pub struct Player {
@@ -21,6 +24,7 @@ impl Player {
 	pub fn accept(sector: &Sector, id: Id, connection: Connection<ServerEnd>) -> Self {
 		connection.send(Sync {
 			name: sector.name.clone(),
+
 			voxjects: sector
 				.voxjects
 				.iter()
@@ -29,6 +33,12 @@ impl Player {
 					name: voxject.name.clone(),
 				})
 				.collect(),
+			structures: sector
+				.structures
+				.iter()
+				.map(|structure| structure.build_sync(&sector.physics))
+				.collect(),
+
 			inventory: Self::get_inventory(id, &sector.database),
 		});
 

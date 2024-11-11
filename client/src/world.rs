@@ -18,8 +18,11 @@ use solarscape_shared::physics::{AutoCleanup, Physics};
 use solarscape_shared::structure::Structure;
 use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
+use std::mem::drop as nom;
+use std::ops::Deref;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::{fmt::Write, mem::drop as nom, ops::Deref, sync::Arc};
 use tokio::sync::mpsc::error::TryRecvError;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferUsages, Device};
@@ -50,7 +53,10 @@ pub struct SharedSector {
 impl Sector {
 	pub async fn new(mut connection: Connection<ClientEnd>) -> Self {
 		let Sync {
-			voxjects, inventory, ..
+			voxjects,
+			structures,
+			inventory,
+			..
 		} = loop {
 			let message = connection.recv().await.expect("server should respond");
 
@@ -61,6 +67,7 @@ impl Sector {
 		};
 
 		let player = Player::new(connection);
+		let mut physics = Physics::new();
 
 		Self {
 			shared: Arc::new(SharedSector {
@@ -86,11 +93,14 @@ impl Sector {
 					)
 				})
 				.collect(),
-			structures: vec![],
+			structures: structures
+				.into_iter()
+				.map(|sync_structure| Structure::new_from_sync(&mut physics, sync_structure))
+				.collect(),
 
 			last_tick_start: Instant::now(),
 
-			physics: Physics::new(),
+			physics,
 		}
 	}
 

@@ -1,5 +1,5 @@
-use crate::data::{world::BlockType, world::ChunkCoordinates, world::Item, world::Location, world::Material, Id};
-use crate::ShiftHasherBuilder;
+use crate::data::world::{BlockType, ChunkCoordinates, Item, Location, Material};
+use crate::{data::Id, ShiftHasherBuilder};
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -19,6 +19,7 @@ pub struct Sync {
 	pub name: Box<str>,
 
 	pub voxjects: Vec<Voxject>,
+	pub structures: Vec<SyncStructure>,
 
 	pub inventory: Vec<InventorySlot>,
 }
