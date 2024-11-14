@@ -6,7 +6,7 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use egui_winit::State as EguiState;
 use image::GenericImageView;
 use log::{error, info, warn};
-use nalgebra::{vector, Perspective3, Translation3};
+use nalgebra::{vector, Isometry3, Perspective3, Translation3, Vector3};
 use solarscape_shared::data::world::BlockType;
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
@@ -136,12 +136,12 @@ impl Renderer {
 					max_color_attachment_bytes_per_sample: 8,
 					max_color_attachments: 1,
 					max_inter_stage_shader_components: 11,
-					max_push_constant_size: 128,
+					max_push_constant_size: 112,
 					max_sampled_textures_per_shader_stage: 1,
 					max_samplers_per_shader_stage: 1,
 					max_texture_array_layers: 1,
 					max_vertex_attributes: 7,
-					max_vertex_buffer_array_stride: 20,
+					max_vertex_buffer_array_stride: 68,
 					max_vertex_buffers: 3,
 
 					// This also determines the limit of our window resolution, so we'll request what the GPU supports
@@ -486,7 +486,7 @@ impl Renderer {
 			bind_group_layouts: &[&structure_blocks_bind_group_layout],
 			push_constant_ranges: &[PushConstantRange {
 				stages: ShaderStages::VERTEX,
-				range: 0..128,
+				range: 0..64,
 			}],
 		});
 
@@ -507,6 +507,11 @@ impl Renderer {
 						array_stride: 8,
 						step_mode: VertexStepMode::Vertex,
 						attributes: &vertex_attr_array![1 => Float32x2],
+					},
+					VertexBufferLayout {
+						array_stride: 36,
+						step_mode: VertexStepMode::Instance,
+						attributes: &vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32],
 					},
 				],
 			},
@@ -537,7 +542,7 @@ impl Renderer {
 				compilation_options: PipelineCompilationOptions::default(),
 				targets: &[Some(ColorTargetState {
 					format: config.format,
-					blend: Some(BlendState::REPLACE),
+					blend: Some(BlendState::ALPHA_BLENDING),
 					write_mask: ColorWrites::ALL,
 				})],
 			}),
@@ -814,6 +819,10 @@ impl Render for AnyState {
 impl Render for Login {}
 
 impl Render for Sector {
+	// To anyone that may be reading this code and is experienced, I am well aware this is *terrible*. It's all prototype code though so I
+	// am not dealing with it for now.
+	//
+	// To anyone new to graphics programming, take what you see here as an example of what not to do.
 	fn render(&mut self, renderer: &mut Renderer, render_pass: &mut RenderPass) {
 		if !self.inventory_gui_open {
 			let _ = renderer
@@ -840,7 +849,9 @@ impl Render for Sector {
 		render_pass.set_push_constants(ShaderStages::VERTEX, 0, cast_slice(&[camera_matrix]));
 		render_pass.set_bind_group(0, &renderer.terrain_textures_bind_group, &[]);
 
+		// This should all be indirect multi-draw
 		for chunk in self.chunks.iter() {
+			// Currently broken, will fix later
 			if *chunk.coordinates.level != 0 {
 				continue;
 			}
@@ -854,24 +865,62 @@ impl Render for Sector {
 		}
 
 		render_pass.set_pipeline(&renderer.structure_block_pipeline);
+
+		// Not sure why this is getting cleared? But oh well.
 		render_pass.set_push_constants(ShaderStages::VERTEX, 0, cast_slice(&[camera_matrix]));
 
+		// This should also be indirect multi-draw
 		for structure in &self.structures {
 			for (position, block) in structure.iter_blocks() {
 				let mut location = *structure.get_location(&self.physics);
 				location.append_translation_mut(&Translation3::from(position.cast()));
 
-				render_pass.set_push_constants(ShaderStages::VERTEX, 64, cast_slice(&[location.to_homogeneous()]));
+				// Yes, we are going to allocate a temporary buffer for every. single. block.
+				// This is how you're supposed to do things... right? *It's not*
+				let mut instance_buffer_data = [0u8; 68];
+				instance_buffer_data[..64].copy_from_slice(cast_slice(&[location.to_homogeneous()]));
+				instance_buffer_data[64..].copy_from_slice(cast_slice(&[1.0f32]));
+
+				let instance_buffer = renderer.device.create_buffer_init(&BufferInitDescriptor {
+					label: Some("GPU Torture Buffer"),
+					contents: instance_buffer_data.as_slice(),
+					usage: BufferUsages::VERTEX,
+				});
 
 				let block_data = &renderer.structure_block_data[&block.typ];
 
 				render_pass.set_vertex_buffer(0, block_data.positions.slice(..));
 				render_pass.set_vertex_buffer(1, block_data.texture_coordinates.slice(..));
+				render_pass.set_vertex_buffer(2, instance_buffer.slice(..));
 				render_pass.set_index_buffer(block_data.indices.slice(..), IndexFormat::Uint32);
 				render_pass.set_bind_group(0, &renderer.structure_block_bind_group, &[]);
 				render_pass.draw_indexed(0..block_data.index_count, 0, 0..1);
 			}
 		}
+
+		// Draw a block to act as a placement indicator
+		let location = Isometry3::<f32>::from(
+			self.player.location.position
+				+ (self.player.location.rotation.inverse_transform_vector(&-Vector3::z()) * 3.0),
+		);
+		let mut instance_buffer_data = [0u8; 68];
+		instance_buffer_data[..64].copy_from_slice(cast_slice(&[location.to_homogeneous()]));
+		instance_buffer_data[64..].copy_from_slice(cast_slice(&[0.25f32]));
+
+		let instance_buffer = renderer.device.create_buffer_init(&BufferInitDescriptor {
+			label: Some("GPU Torture Buffer"),
+			contents: instance_buffer_data.as_slice(),
+			usage: BufferUsages::VERTEX,
+		});
+
+		let block_data = &renderer.structure_block_data[&BlockType::Block];
+
+		render_pass.set_vertex_buffer(0, block_data.positions.slice(..));
+		render_pass.set_vertex_buffer(1, block_data.texture_coordinates.slice(..));
+		render_pass.set_vertex_buffer(2, instance_buffer.slice(..));
+		render_pass.set_index_buffer(block_data.indices.slice(..), IndexFormat::Uint32);
+		render_pass.set_bind_group(0, &renderer.structure_block_bind_group, &[]);
+		render_pass.draw_indexed(0..block_data.index_count, 0, 0..1);
 
 		// The dumbest debug line drawer you will ever see.
 		// This is the definition of temporary code.
@@ -881,6 +930,8 @@ impl Render for Sector {
 		let color = vector![1.0f32, 1.0, 1.0];
 		render_pass.set_push_constants(ShaderStages::FRAGMENT, 96, cast_slice(&[color]));
 
+		// Oh you thought structure block rendering was bad? You haven't seen nothing yet.
+		// *GPU bandwidth screams in pain*
 		for structure in &self.structures {
 			let location = structure.get_location(&self.physics);
 

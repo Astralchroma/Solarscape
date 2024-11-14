@@ -174,7 +174,7 @@ impl Player<Local> {
 		self.connection.send(CreateStructure {
 			location: Location {
 				position: self.location.position
-					+ (self.location.rotation.inverse_transform_vector(&-Vector3::z()) * 2.0),
+					+ (self.location.rotation.inverse_transform_vector(&-Vector3::z()) * 3.0),
 				rotation: self.location.rotation,
 			},
 			block: BlockType::Block,
