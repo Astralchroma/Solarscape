@@ -3,7 +3,7 @@ use nalgebra::{convert_unchecked, vector, IsometryMatrix3, Vector3};
 use solarscape_shared::{
 	connection::{Connection, ServerEnd},
 	data::{
-		world::{ChunkCoordinates, Level, Location, LEVELS},
+		world::{ChunkCoordinates, Item, Level, Location, LEVELS},
 		Id,
 	},
 	message::clientbound::{InventorySlot, Sync, Voxject},
