@@ -1,5 +1,10 @@
-use crate::data::world::{BlockType, ChunkCoordinates, Item, Location, Material};
-use crate::{data::Id, ShiftHasherBuilder};
+use crate::{
+	data::{
+		world::{BlockType, ChunkCoordinates, Item, Location, Material},
+		Id,
+	},
+	ShiftHasherBuilder,
+};
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;

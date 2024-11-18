@@ -6,9 +6,17 @@ use futures::StreamExt;
 use log::{error, info, warn};
 use rayon::spawn_broadcast;
 use sector::{Event, Sector};
-use solarscape_shared::{connection::Connection, connection::ServerEnd, message::backend::AllowConnection};
-use sqlx::{postgres::PgConnectOptions, postgres::PgListener, PgPool};
-use std::{collections::HashMap, env, fs::read_to_string, io, net::SocketAddr, path::PathBuf, time::Instant};
+use solarscape_shared::{
+	connection::{Connection, ServerEnd},
+	message::backend::AllowConnection,
+};
+use sqlx::{
+	postgres::{PgConnectOptions, PgListener},
+	PgPool,
+};
+use std::{
+	collections::HashMap, fs::read_to_string, io, net::SocketAddr, path::PathBuf, time::Instant,
+};
 use thiserror::Error;
 use thread_priority::ThreadPriority;
 use tokio::{io::AsyncReadExt, net::TcpListener, runtime::Runtime, select};
@@ -38,7 +46,11 @@ fn main() -> Result<(), SectorServerError> {
 
 	let mut cl_args = ClArgs::parse();
 
-	env_logger::init_from_env(Env::default().default_filter_or(if cfg!(debug_assertions) { "debug" } else { "info" }));
+	env_logger::init_from_env(Env::default().default_filter_or(if cfg!(debug_assertions) {
+		"debug"
+	} else {
+		"info"
+	}));
 
 	info!("Solarscape (Server) v{}", env!("CARGO_PKG_VERSION"));
 

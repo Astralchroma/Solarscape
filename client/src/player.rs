@@ -1,9 +1,14 @@
 use nalgebra::{vector, UnitQuaternion, Vector3};
-use solarscape_shared::message::serverbound::CreateStructure;
-use solarscape_shared::{connection::ClientEnd, connection::Connection, data::world::BlockType, data::world::Location};
-use std::{ops::Deref, ops::DerefMut};
-use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
-use winit::keyboard::{KeyCode, PhysicalKey::Code};
+use solarscape_shared::{
+	connection::{ClientEnd, Connection},
+	data::world::{BlockType, Location},
+	message::serverbound::CreateStructure,
+};
+use std::ops::{Deref, DerefMut};
+use winit::{
+	event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent},
+	keyboard::{KeyCode, PhysicalKey::Code},
+};
 
 /// Locality is used to distinguish between Local and Remote players, though Remote
 /// doesn't currently exist as there is not yet any syncing of players on the server.
@@ -117,7 +122,9 @@ impl Player<Local> {
 				($old_state:expr, $other_state:expr) => {
 					match state {
 						ElementState::Pressed => match $other_state {
-							OppositeKeyState::PressedFirst => $old_state = OppositeKeyState::PressedSecond,
+							OppositeKeyState::PressedFirst => {
+								$old_state = OppositeKeyState::PressedSecond
+							}
 
 							// Technically an invalid state, oh well
 							OppositeKeyState::PressedSecond => {
@@ -125,10 +132,14 @@ impl Player<Local> {
 								$old_state = OppositeKeyState::PressedSecond;
 							}
 
-							OppositeKeyState::Released => $old_state = OppositeKeyState::PressedFirst,
+							OppositeKeyState::Released => {
+								$old_state = OppositeKeyState::PressedFirst
+							}
 						},
 						ElementState::Released => match $other_state {
-							OppositeKeyState::PressedFirst => $old_state = OppositeKeyState::Released,
+							OppositeKeyState::PressedFirst => {
+								$old_state = OppositeKeyState::Released
+							}
 
 							OppositeKeyState::PressedSecond => {
 								$other_state = OppositeKeyState::PressedFirst;
@@ -174,7 +185,11 @@ impl Player<Local> {
 		self.connection.send(CreateStructure {
 			location: Location {
 				position: self.location.position
-					+ (self.location.rotation.inverse_transform_vector(&-Vector3::z()) * 3.0),
+					+ (self
+						.location
+						.rotation
+						.inverse_transform_vector(&-Vector3::z())
+						* 3.0),
 				rotation: self.location.rotation,
 			},
 			block: BlockType::Block,
@@ -192,7 +207,10 @@ impl Player<Local> {
 	}
 
 	pub fn tick(&mut self, delta: f32) {
-		fn key_state_to_float(negative_state: &OppositeKeyState, positive_state: &OppositeKeyState) -> f32 {
+		fn key_state_to_float(
+			negative_state: &OppositeKeyState,
+			positive_state: &OppositeKeyState,
+		) -> f32 {
 			match negative_state {
 				OppositeKeyState::PressedFirst => match positive_state {
 					OppositeKeyState::PressedSecond => 1.0,

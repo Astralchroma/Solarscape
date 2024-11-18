@@ -1,4 +1,4 @@
-use crate::{data::world::BlockType, data::world::Location};
+use crate::data::world::{BlockType, Location};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Deserialize, Serialize)]

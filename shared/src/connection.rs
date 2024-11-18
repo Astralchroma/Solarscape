@@ -4,9 +4,16 @@ use log::warn;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{io, marker::PhantomData, ops::Deref, sync::Arc, time::Duration};
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufStream};
-use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
-use tokio::{net::TcpStream, pin, select, sync::mpsc::error::TryRecvError, time::sleep};
+use tokio::{
+	io::{AsyncReadExt, AsyncWriteExt, BufStream},
+	net::TcpStream,
+	pin, select,
+	sync::mpsc::{
+		error::TryRecvError, unbounded_channel as channel, UnboundedReceiver as Receiver,
+		UnboundedSender as Sender,
+	},
+	time::sleep,
+};
 
 pub trait ConnectionSide: Default + Send + 'static {
 	type I: DeserializeOwned + Send;
@@ -114,7 +121,12 @@ impl<E: ConnectionSide> Connection<E> {
 		let (send_incoming, recv_incoming) = channel();
 		let (send_outgoing, recv_outgoing) = channel();
 
-		tokio::spawn(Self::handle_connection(stream, cipher, send_incoming, recv_outgoing));
+		tokio::spawn(Self::handle_connection(
+			stream,
+			cipher,
+			send_incoming,
+			recv_outgoing,
+		));
 
 		Self {
 			sender: Arc::new(ConnectionSend {

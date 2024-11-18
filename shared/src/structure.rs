@@ -1,9 +1,17 @@
-use crate::data::world::{BlockType, Location};
-use crate::physics::{AutoCleanup, Physics};
-use crate::{data::Id, message::clientbound::SyncStructure, ShiftHasherBuilder};
+use crate::{
+	data::{
+		world::{BlockType, Location},
+		Id,
+	},
+	message::clientbound::SyncStructure,
+	physics::{AutoCleanup, Physics},
+	ShiftHasherBuilder,
+};
 use nalgebra::{vector, Isometry3, Point3, Vector3};
-use rapier3d::dynamics::{RigidBodyBuilder, RigidBodyHandle};
-use rapier3d::geometry::{ColliderBuilder, ColliderHandle};
+use rapier3d::{
+	dynamics::{RigidBodyBuilder, RigidBodyHandle},
+	geometry::{ColliderBuilder, ColliderHandle},
+};
 use std::collections::HashMap;
 
 #[cfg(feature = "backend")]
@@ -18,7 +26,10 @@ pub struct Structure {
 
 impl Structure {
 	#[cfg(feature = "backend")]
-	pub fn new(physics: &mut Physics, CreateStructure { location, block }: CreateStructure) -> Self {
+	pub fn new(
+		physics: &mut Physics,
+		CreateStructure { location, block }: CreateStructure,
+	) -> Self {
 		let (x, y, z) = location.rotation.euler_angles();
 
 		let rigid_body = physics.insert_rigid_body(
@@ -32,7 +43,10 @@ impl Structure {
 			nalgebra::vector![0, 0, 0],
 			Block {
 				typ: block,
-				_collider: physics.insert_rigid_body_collider(*rigid_body, ColliderBuilder::cuboid(0.5, 0.5, 0.5)),
+				_collider: physics.insert_rigid_body_collider(
+					*rigid_body,
+					ColliderBuilder::cuboid(0.5, 0.5, 0.5),
+				),
 			},
 		);
 
@@ -44,7 +58,14 @@ impl Structure {
 		}
 	}
 
-	pub fn new_from_sync(physics: &mut Physics, SyncStructure { id, location, blocks }: SyncStructure) -> Self {
+	pub fn new_from_sync(
+		physics: &mut Physics,
+		SyncStructure {
+			id,
+			location,
+			blocks,
+		}: SyncStructure,
+	) -> Self {
 		let (x, y, z) = location.rotation.euler_angles();
 
 		let rigid_body = physics.insert_rigid_body(
@@ -60,14 +81,20 @@ impl Structure {
 					position,
 					Block {
 						typ,
-						_collider: physics
-							.insert_rigid_body_collider(*rigid_body, ColliderBuilder::cuboid(0.5, 0.5, 0.5)),
+						_collider: physics.insert_rigid_body_collider(
+							*rigid_body,
+							ColliderBuilder::cuboid(0.5, 0.5, 0.5),
+						),
 					},
 				)
 			})
 			.collect();
 
-		Self { id, rigid_body, blocks }
+		Self {
+			id,
+			rigid_body,
+			blocks,
+		}
 	}
 
 	pub fn build_sync(&self, physics: &Physics) -> SyncStructure {

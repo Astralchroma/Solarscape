@@ -1,6 +1,9 @@
 #![allow(unused)]
 
-use crate::{client::AnyState, client::State, ClArgs};
+use crate::{
+	client::{AnyState, State},
+	ClArgs,
+};
 use egui::{Align2, Context, Window};
 
 #[derive(Default)]

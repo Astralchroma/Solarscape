@@ -13,7 +13,9 @@ pub struct Id(u64);
 #[cfg(feature = "backend")]
 impl Id {
 	pub fn new() -> Self {
-		use std::{cell::Cell, cell::RefCell, sync::atomic::AtomicU8, sync::atomic::Ordering::Relaxed};
+		use std::{
+			cell::Cell, cell::RefCell, sync::atomic::AtomicU8, sync::atomic::Ordering::Relaxed,
+		};
 		use time::{macros::datetime, OffsetDateTime};
 
 		static THREAD_ID_COUNTER: AtomicU8 = AtomicU8::new(0);
@@ -29,7 +31,8 @@ impl Id {
 
 		const SOLARSCAPE_EPOCH: OffsetDateTime = datetime!(2024-01-01 00:00 UTC);
 
-		let timestamp = ((OffsetDateTime::now_utc() - SOLARSCAPE_EPOCH).whole_seconds() as u64) << 22;
+		let timestamp =
+			((OffsetDateTime::now_utc() - SOLARSCAPE_EPOCH).whole_seconds() as u64) << 22;
 		let thread_id = (THREAD_ID.get() as u64) << 12;
 		let counter = COUNTER.with_borrow_mut(|counter| {
 			let result = *counter;
@@ -79,7 +82,10 @@ impl<'r, D: Database> Encode<'r, D> for Id
 where
 	i64: Encode<'r, D>,
 {
-	fn encode_by_ref(&self, buffer: &mut <D>::ArgumentBuffer<'r>) -> std::result::Result<IsNull, BoxDynError> {
+	fn encode_by_ref(
+		&self,
+		buffer: &mut <D>::ArgumentBuffer<'r>,
+	) -> std::result::Result<IsNull, BoxDynError> {
 		<i64 as Encode<D>>::encode_by_ref(&(self.0 as i64), buffer)
 	}
 }

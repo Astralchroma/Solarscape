@@ -1,7 +1,11 @@
 use crate::data::Id;
 use nalgebra::{vector, Point3, UnitQuaternion, Vector3};
 use serde::{de::Error, Deserialize, Deserializer, Serialize};
-use std::{fmt, fmt::Display, fmt::Formatter, ops::Add, ops::Deref, str::FromStr};
+use std::{
+	fmt::{self, Display, Formatter},
+	ops::{Add, Deref},
+	str::FromStr,
+};
 use thiserror::Error;
 
 pub const LEVELS: u8 = 28;
@@ -82,7 +86,9 @@ impl ChunkCoordinates {
 
 	/// Returns the Chunk's translation relative to the Voxject.
 	pub fn voxject_relative_translation(&self) -> Vector3<f32> {
-		self.coordinates.map(|coordinate| coordinate << *self.level).cast() * 16.0
+		self.coordinates
+			.map(|coordinate| coordinate << *self.level)
+			.cast() * 16.0
 	}
 
 	/// Returns a list of the Chunk's surrounding chunks. These are both the Chunk's dependents and dependencies.

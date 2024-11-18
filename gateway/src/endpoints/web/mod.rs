@@ -1,8 +1,19 @@
-use crate::{types::Email, types::InternalError, types::Username, Gateway, ARGON_2};
-use argon2::{password_hash::rand_core::OsRng, password_hash::SaltString, PasswordHasher};
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
-use axum::{debug_handler, extract::Query, extract::State, routing::get, Router};
+use crate::{
+	types::{Email, InternalError, Username},
+	Gateway, ARGON_2,
+};
+use argon2::{
+	password_hash::{rand_core::OsRng, SaltString},
+	PasswordHasher,
+};
+use axum::{
+	debug_handler,
+	extract::{Query, State},
+	http::{HeaderMap, HeaderValue, StatusCode},
+	response::{IntoResponse, Response},
+	routing::get,
+	Router,
+};
 use serde::Deserialize;
 use solarscape_shared::data::Id;
 use sqlx::{error::ErrorKind::UniqueViolation, query, Error::Database};
@@ -25,7 +36,9 @@ async fn create_account(
 	}): Query<CreateAccount>,
 ) -> Result<&'static str, CreateAccountError> {
 	let salt = SaltString::generate(&mut OsRng);
-	let password = ARGON_2.hash_password(password.as_bytes(), &salt)?.to_string();
+	let password = ARGON_2
+		.hash_password(password.as_bytes(), &salt)?
+		.to_string();
 	let id = Id::new();
 
 	let mut transaction = database.begin().await?;
@@ -50,7 +63,9 @@ async fn create_account(
 			Ok(r#"<p style="color:green">Account Created!</p>"#)
 		}
 		Err(error) => Err(match error {
-			Database(error) if matches!(error.kind(), UniqueViolation) => CreateAccountError::AccountExists,
+			Database(error) if matches!(error.kind(), UniqueViolation) => {
+				CreateAccountError::AccountExists
+			}
 			_ => error.into(),
 		}),
 	};
@@ -76,7 +91,10 @@ impl IntoResponse for CreateAccountError {
 		use log::error;
 
 		match self {
-			CreateAccountError::AccountExists => (StatusCode::CONFLICT, r#"<p style="color:red">Account Exists!</p>"#),
+			CreateAccountError::AccountExists => (
+				StatusCode::CONFLICT,
+				r#"<p style="color:red">Account Exists!</p>"#,
+			),
 			CreateAccountError::Internal(error) => {
 				error!("{error}");
 				(
@@ -93,7 +111,10 @@ impl IntoResponse for CreateAccountError {
 #[debug_handler]
 async fn root() -> impl IntoResponse {
 	let mut html_header_map = HeaderMap::new();
-	html_header_map.append("Content-Type", HeaderValue::from_static("text/html;charset=utf-8"));
+	html_header_map.append(
+		"Content-Type",
+		HeaderValue::from_static("text/html;charset=utf-8"),
+	);
 
 	(html_header_map, include_str!("index.html"))
 }

@@ -1,4 +1,8 @@
-use crate::{client::AnyState, client::State, world::Sector, ClArgs};
+use crate::{
+	client::{AnyState, State},
+	world::Sector,
+	ClArgs,
+};
 use chacha20poly1305::{aead::AeadMutInPlace, ChaCha20Poly1305, KeyInit};
 use egui::{Align, Align2, Color32, Context, Layout, RichText, Separator, TextEdit, Vec2, Window};
 use serde::Deserialize;
@@ -35,7 +39,11 @@ impl Login {
 		}
 	}
 
-	async fn login(cl_args: ClArgs, email: String, password: String) -> Result<Sector, anyhow::Error> {
+	async fn login(
+		cl_args: ClArgs,
+		email: String,
+		password: String,
+	) -> Result<Sector, anyhow::Error> {
 		let reqwest = reqwest::Client::new();
 
 		let token = reqwest
@@ -65,7 +73,8 @@ impl Login {
 		let mut key = ChaCha20Poly1305::new_from_slice(&details.key).unwrap(); // For some reason, anyhow can't convert this
 		let mut stream = TcpStream::connect(details.address).await?;
 		let mut version_data = vec![0; 4];
-		key.encrypt_in_place(&[0; 12].into(), b"", &mut version_data).unwrap(); // Anyhow also can't convert this
+		key.encrypt_in_place(&[0; 12].into(), b"", &mut version_data)
+			.unwrap(); // Anyhow also can't convert this
 		stream.write_u16_le(version_data.len() as u16).await?;
 		stream.write_all(&version_data).await?;
 		stream.flush().await?;
@@ -101,7 +110,9 @@ impl State for Login {
 			.enabled(self.login.is_none())
 			.show(context, |window| {
 				if !self.error.is_empty() {
-					window.label(RichText::new(format!("Error: {}\n", &self.error)).color(Color32::RED));
+					window.label(
+						RichText::new(format!("Error: {}\n", &self.error)).color(Color32::RED),
+					);
 				}
 
 				window.label("Email");
@@ -144,7 +155,10 @@ impl State for Login {
 								)));
 							}
 
-							layout.hyperlink_to("Create Account", "https://solarscape.astralchroma.dev/create_account");
+							layout.hyperlink_to(
+								"Create Account",
+								"https://solarscape.astralchroma.dev/create_account",
+							);
 						});
 					},
 				);

@@ -1,33 +1,47 @@
-use crate::client::{AnyState, State};
-use crate::player::{Local, Player};
+use crate::{
+	client::{AnyState, State},
+	player::{Local, Player},
+};
 use bytemuck::{cast_slice, Pod, Zeroable};
 use dashmap::DashMap;
 use egui::{Align::Min, Align2, Layout, Window};
 use log::debug;
 use nalgebra::{point, vector, Isometry3, Vector2, Vector3};
-use rapier3d::dynamics::{RigidBodyBuilder, RigidBodyHandle};
-use rapier3d::geometry::{ColliderBuilder, ColliderHandle};
-use solarscape_shared::connection::{ClientEnd, Connection};
-use solarscape_shared::data::world::{ChunkCoordinates, Material};
-use solarscape_shared::data::Id;
-use solarscape_shared::message::clientbound::{
-	Clientbound, InventorySlot, RemoveChunk, Sync, SyncChunk, SyncInventory,
+use rapier3d::{
+	dynamics::{RigidBodyBuilder, RigidBodyHandle},
+	geometry::{ColliderBuilder, ColliderHandle},
 };
-use solarscape_shared::message::serverbound::Serverbound;
-use solarscape_shared::physics::{AutoCleanup, Physics};
-use solarscape_shared::structure::Structure;
-use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
-use std::collections::{HashMap, HashSet};
-use std::fmt::Write;
-use std::mem::drop as nom;
-use std::ops::Deref;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use solarscape_shared::{
+	connection::{ClientEnd, Connection},
+	data::{
+		world::{ChunkCoordinates, Material},
+		Id,
+	},
+	message::{
+		clientbound::{Clientbound, InventorySlot, RemoveChunk, Sync, SyncChunk, SyncInventory},
+		serverbound::Serverbound,
+	},
+	physics::{AutoCleanup, Physics},
+	structure::Structure,
+	triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP},
+};
+use std::{
+	collections::{HashMap, HashSet},
+	fmt::Write,
+	mem::drop as nom,
+	ops::Deref,
+	sync::Arc,
+	time::{Duration, Instant},
+};
 use tokio::sync::mpsc::error::TryRecvError;
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{Buffer, BufferUsages, Device};
-use winit::event::{DeviceEvent, ElementState, KeyEvent, WindowEvent};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use wgpu::{
+	util::{BufferInitDescriptor, DeviceExt},
+	Buffer, BufferUsages, Device,
+};
+use winit::{
+	event::{DeviceEvent, ElementState, KeyEvent, WindowEvent},
+	keyboard::{KeyCode, PhysicalKey},
+};
 
 pub struct Sector {
 	shared: Arc<SharedSector>,
@@ -134,7 +148,9 @@ impl Sector {
 						mesh: None,
 					},
 				),
-				Clientbound::RemoveChunk(RemoveChunk(coordinates)) => self.remove_chunk(device, coordinates),
+				Clientbound::RemoveChunk(RemoveChunk(coordinates)) => {
+					self.remove_chunk(device, coordinates)
+				}
 				Clientbound::SyncStructure(sync_structure) => {
 					debug!("Synced structure {}", sync_structure.id);
 					self.structures
@@ -189,7 +205,8 @@ impl Sector {
 			grid_coordinates + Vector3::new(1, 1, 1),
 		];
 
-		let dependency_chunks = dependency_grid_coordinates.map(|coordinates| self.chunks.get(&coordinates));
+		let dependency_chunks =
+			dependency_grid_coordinates.map(|coordinates| self.chunks.get(&coordinates));
 
 		let mut upleveled_dependency_grid_coordinates = None;
 		let mut upleveled_dependency_chunks = Default::default();
@@ -235,10 +252,12 @@ impl Sector {
 						let u_z = ((grid_coordinates.coordinates.z as usize & 1) * 8) + (z >> 1);
 
 						// Now we do the same thing we would do normally, except operating on upleveled chunks
-						let upleveled_chunk_index = ((u_x & 0x10) >> 2) | ((u_y & 0x10) >> 3) | ((u_z & 0x10) >> 4);
+						let upleveled_chunk_index =
+							((u_x & 0x10) >> 2) | ((u_y & 0x10) >> 3) | ((u_z & 0x10) >> 4);
 
 						if let Some(chunk) = &upleveled_dependency_chunks[upleveled_chunk_index] {
-							let u_chunk_cell_index = (u_x & 0x0F) << 8 | (u_y & 0x0F) << 4 | u_z & 0x0F;
+							let u_chunk_cell_index =
+								(u_x & 0x0F) << 8 | (u_y & 0x0F) << 4 | u_z & 0x0F;
 							densities[cell_index] = chunk.densities[u_chunk_cell_index];
 							materials[cell_index] = chunk.materials[u_chunk_cell_index];
 							continue;
@@ -274,8 +293,10 @@ impl Sector {
 			for level_coordinates in upleveled_dependency_grid_coordinates.unwrap() {
 				let should_remove = match self.dependent_chunks.get_mut(&level_coordinates) {
 					None if need_upleveled_chunks => {
-						self.dependent_chunks
-							.insert(level_coordinates, HashSet::from([upleveled_grid_coordinates]));
+						self.dependent_chunks.insert(
+							level_coordinates,
+							HashSet::from([upleveled_grid_coordinates]),
+						);
 						false
 					}
 					Some(mut dependent_chunks) => {
@@ -338,11 +359,15 @@ impl State for Sector {
 		)
 		.expect("should be able to write to string");
 
-		writeln!(debug_text, "Structures: {}", self.structures.len()).expect("should be able to write to string");
+		writeln!(debug_text, "Structures: {}", self.structures.len())
+			.expect("should be able to write to string");
 		writeln!(
 			debug_text,
 			"Blocks: {}",
-			self.structures.iter().map(|structure| structure.num_blocks()).count()
+			self.structures
+				.iter()
+				.map(|structure| structure.num_blocks())
+				.count()
 		)
 		.expect("should be able to write to string");
 	}
@@ -357,7 +382,10 @@ impl State for Sector {
 			.open(&mut self.inventory_gui_open)
 			.resizable(false)
 			.show(context, |window| {
-				if window.button(r#"Temporary magic "give me an item" button"#).clicked() {
+				if window
+					.button(r#"Temporary magic "give me an item" button"#)
+					.clicked()
+				{
 					self.player.connection.send(Serverbound::GiveTestItem);
 				}
 
@@ -515,7 +543,10 @@ impl Chunk {
 					               | (!matches!(materials[6], Material::Nothing) as usize) << 6
 					               | (!matches!(materials[7], Material::Nothing) as usize) << 7;
 
-					let EdgeData { count, edge_indices } = CELL_EDGE_MAP[case_index];
+					let EdgeData {
+						count,
+						edge_indices,
+					} = CELL_EDGE_MAP[case_index];
 
 					for edge_indices in edge_indices.chunks(3).take(count as usize) {
 						let mut cell_vertex_positions = vec![];
@@ -549,12 +580,19 @@ impl Chunk {
 								materials[b_index]
 							};
 
-							cell_vertex_positions.push(point![x as f32, y as f32, z as f32] + vertex);
+							cell_vertex_positions
+								.push(point![x as f32, y as f32, z as f32] + vertex);
 
 							cell_vertex_data.push(VertexData {
 								normal: Vector3::default(),
-								material_a: vector![(a_material as u8 & 0xC) >> 2, a_material as u8 & 0x3],
-								material_b: vector![(b_material as u8 & 0xC) >> 2, b_material as u8 & 0x3],
+								material_a: vector![
+									(a_material as u8 & 0xC) >> 2,
+									a_material as u8 & 0x3
+								],
+								material_b: vector![
+									(b_material as u8 & 0xC) >> 2,
+									b_material as u8 & 0x3
+								],
 								weight,
 							});
 						}
@@ -589,9 +627,9 @@ impl Chunk {
 		unsafe impl Zeroable for InstanceData {}
 		unsafe impl Pod for InstanceData {}
 
-		let rigid_body = sector
-			.physics
-			.insert_rigid_body(RigidBodyBuilder::fixed().translation(self.coordinates.voxject_relative_translation()));
+		let rigid_body = sector.physics.insert_rigid_body(
+			RigidBodyBuilder::fixed().translation(self.coordinates.voxject_relative_translation()),
+		);
 
 		let vertex_indices = (0..vertex_positions.len() as u32)
 			.collect::<Vec<_>>()
@@ -615,15 +653,17 @@ impl Chunk {
 			instance_buffer: device.create_buffer_init(&BufferInitDescriptor {
 				label: Some("chunk.mesh.instance_buffer"),
 				contents: cast_slice(&[InstanceData {
-					position: self.coordinates.coordinates.cast() * (16u64 << *self.coordinates.level) as f32,
+					position: self.coordinates.coordinates.cast()
+						* (16u64 << *self.coordinates.level) as f32,
 					scale: (*self.coordinates.level + 1) as f32,
 				}]),
 				usage: BufferUsages::VERTEX,
 			}),
 
-			collider: sector
-				.physics
-				.insert_rigid_body_collider(*rigid_body, ColliderBuilder::trimesh(vertex_positions, vertex_indices)),
+			collider: sector.physics.insert_rigid_body_collider(
+				*rigid_body,
+				ColliderBuilder::trimesh(vertex_positions, vertex_indices),
+			),
 			rigid_body,
 		});
 	}

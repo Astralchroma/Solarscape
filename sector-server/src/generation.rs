@@ -4,7 +4,11 @@ use solarscape_shared::data::world::{ChunkCoordinates, Material};
 
 pub type Generator = fn(&ChunkCoordinates) -> Data;
 
-pub fn sphere_chunk_data(coordinates: &ChunkCoordinates, radius: f32, material_map: impl Fn(f32) -> Material) -> Data {
+pub fn sphere_chunk_data(
+	coordinates: &ChunkCoordinates,
+	radius: f32,
+	material_map: impl Fn(f32) -> Material,
+) -> Data {
 	// temporary missing chunk so you can see the materials inside
 	if **coordinates == zero::<Vector3<_>>() {
 		return Data::default();
@@ -18,7 +22,8 @@ pub fn sphere_chunk_data(coordinates: &ChunkCoordinates, radius: f32, material_m
 		for y in 0..16 {
 			for z in 0..16 {
 				let index = x << 8 | y << 4 | z;
-				let level_coordinates = chunk_origin_level_coordinates + vector![x as f32, y as f32, z as f32];
+				let level_coordinates =
+					chunk_origin_level_coordinates + vector![x as f32, y as f32, z as f32];
 				let distance = level_coordinates.metric_distance(&zero::<Vector3<_>>());
 				data.densities[index] = level_radius - distance;
 				data.materials[index] = material_map(distance);

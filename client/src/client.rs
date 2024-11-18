@@ -1,8 +1,12 @@
 use crate::{login::Login, renderer::Renderer, world::Sector, ClArgs};
 use egui::Context;
 use std::fmt::Write;
-use winit::event::{DeviceEvent, DeviceId, WindowEvent};
-use winit::{application::ApplicationHandler, event_loop::ActiveEventLoop, window::WindowId};
+use winit::{
+	application::ApplicationHandler,
+	event::{DeviceEvent, DeviceId, WindowEvent},
+	event_loop::ActiveEventLoop,
+	window::WindowId,
+};
 
 #[cfg(debug)]
 use crate::gui_test::GuiTest;
@@ -22,7 +26,12 @@ impl ApplicationHandler for Client {
 		};
 	}
 
-	fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
+	fn window_event(
+		&mut self,
+		event_loop: &ActiveEventLoop,
+		window_id: WindowId,
+		event: WindowEvent,
+	) {
 		let renderer = match &mut self.renderer {
 			Some(renderer) if renderer.window.id() != window_id => return,
 			Some(renderer) => renderer,
@@ -42,8 +51,12 @@ impl ApplicationHandler for Client {
 				}
 
 				let mut debug_text = String::new();
-				writeln!(debug_text, "Solarscape (Client) v{}", env!("CARGO_PKG_VERSION"))
-					.expect("should be able to write to a string");
+				writeln!(
+					debug_text,
+					"Solarscape (Client) v{}",
+					env!("CARGO_PKG_VERSION")
+				)
+				.expect("should be able to write to a string");
 
 				renderer.build_debug_text(&mut debug_text);
 				self.state.build_debug_text(&mut debug_text);

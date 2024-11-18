@@ -1,29 +1,49 @@
-use crate::generation::{sphere_generator, Generator};
-use crate::player::Player;
+use crate::{
+	generation::{sphere_generator, Generator},
+	player::Player,
+};
 use dashmap::DashMap;
 use log::{debug, warn};
 use nalgebra::{point, vector, Point3};
-use rapier3d::dynamics::{RigidBodyBuilder, RigidBodyHandle};
-use rapier3d::geometry::{ColliderBuilder, ColliderHandle};
-use solarscape_shared::connection::{Connection, ConnectionSend, ServerEnd};
-use solarscape_shared::data::world::{ChunkCoordinates, Material};
-use solarscape_shared::data::Id;
-use solarscape_shared::message::clientbound::{Clientbound, SyncChunk, SyncInventory};
-use solarscape_shared::message::serverbound::Serverbound;
-use solarscape_shared::physics::{AutoCleanup, Physics};
-use solarscape_shared::structure::Structure;
-use solarscape_shared::triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP};
+use rapier3d::{
+	dynamics::{RigidBodyBuilder, RigidBodyHandle},
+	geometry::{ColliderBuilder, ColliderHandle},
+};
+use solarscape_shared::{
+	connection::{Connection, ConnectionSend, ServerEnd},
+	data::{
+		world::{ChunkCoordinates, Material},
+		Id,
+	},
+	message::{
+		clientbound::{Clientbound, SyncChunk, SyncInventory},
+		serverbound::Serverbound,
+	},
+	physics::{AutoCleanup, Physics},
+	structure::Structure,
+	triangulation_table::{EdgeData, CELL_EDGE_MAP, CORNERS, EDGE_CORNER_MAP},
+};
 use sqlx::{query, PgPool};
-use std::collections::HashMap;
-use std::mem::drop as nom;
-use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-use std::sync::{Arc, Weak};
-use std::thread;
-use std::time::{Duration, Instant};
-use tokio::runtime::Handle;
-use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
-use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::{
+	collections::HashMap,
+	mem::drop as nom,
+	ops::Deref,
+	sync::{
+		atomic::{AtomicUsize, Ordering::Relaxed},
+		Arc, Weak,
+	},
+	thread,
+	time::{Duration, Instant},
+};
+use tokio::{
+	runtime::Handle,
+	sync::{
+		mpsc::{
+			unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
+		},
+		Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
+	},
+};
 
 pub mod config {
 	use serde::Deserialize;
@@ -92,7 +112,9 @@ impl Sector {
 
 			match target_tick_time.checked_sub(tick_duration) {
 				Some(time_until_next_tick) => thread::sleep(time_until_next_tick),
-				None => warn!("Tick took {tick_duration:.0?}, exceeding {target_tick_time:.0?} target"),
+				None => {
+					warn!("Tick took {tick_duration:.0?}, exceeding {target_tick_time:.0?} target")
+				}
 			}
 		}
 	}
@@ -135,7 +157,8 @@ impl Sector {
 	}
 
 	pub fn process_players(&mut self) {
-		self.players.retain(|player| player.connection.is_connected());
+		self.players
+			.retain(|player| player.connection.is_connected());
 
 		for player in self.players.iter_mut() {
 			while let Ok(message) = player.try_recv() {
@@ -144,7 +167,8 @@ impl Sector {
 						// TODO: Check that this makes sense, we don't want players to just teleport :foxple:
 						player.location = location;
 
-						let (mut new_client_locks, mut new_tick_locks) = player.compute_locks(&self.shared);
+						let (mut new_client_locks, mut new_tick_locks) =
+							player.compute_locks(&self.shared);
 
 						player
 							.client_locks
@@ -166,7 +190,9 @@ impl Sector {
 							.retain(|lock| new_tick_locks.remove(&lock.0.coordinates));
 
 						for coordinates in new_tick_locks {
-							player.tick_locks.push(TickLock::new(&self.shared, coordinates));
+							player
+								.tick_locks
+								.push(TickLock::new(&self.shared, coordinates));
 						}
 					}
 					Serverbound::GiveTestItem => {
@@ -175,14 +201,20 @@ impl Sector {
 
 						// How not to handle database queries: execute them blocking on the main thread
 						Handle::current().block_on(async {
-							let mut transaction = database_pool.begin().await.expect("database is fucked, probably");
+							let mut transaction = database_pool
+								.begin()
+								.await
+								.expect("database is fucked, probably");
 
 							let item_id = Id::new();
 
-							query!("INSERT INTO items(id, item) VALUES ($1, 'TestOre')", item_id as _)
-								.execute(&mut *transaction)
-								.await
-								.expect("what");
+							query!(
+								"INSERT INTO items(id, item) VALUES ($1, 'TestOre')",
+								item_id as _
+							)
+							.execute(&mut *transaction)
+							.await
+							.expect("what");
 
 							query!(
 								"INSERT INTO inventory_items(inventory_id, item_id) VALUES ($1, $2)",
@@ -324,7 +356,10 @@ impl Chunk {
 		return_chunk
 	}
 
-	fn generate_data<'a>(&'a self, mut data: RwLockWriteGuard<'a, Option<Data>>) -> RwLockReadGuard<'a, Option<Data>> {
+	fn generate_data<'a>(
+		&'a self,
+		mut data: RwLockWriteGuard<'a, Option<Data>>,
+	) -> RwLockReadGuard<'a, Option<Data>> {
 		// Another thread may synchronously generate chunks instead of waiting if the chunk is needed immediately. So
 		// if that has happened, don't re-generate the chunk.
 		if data.is_some() {
@@ -392,8 +427,10 @@ impl Chunk {
 					let cell_index = (x * 17 * 17) + (y * 17) + z;
 					let chunk_cell_index = (x & 0x0F) << 8 | (y & 0x0F) << 4 | z & 0x0F;
 
-					densities[cell_index] = chunk_data_guards[chunk_index].densities[chunk_cell_index];
-					materials[cell_index] = chunk_data_guards[chunk_index].materials[chunk_cell_index];
+					densities[cell_index] =
+						chunk_data_guards[chunk_index].densities[chunk_cell_index];
+					materials[cell_index] =
+						chunk_data_guards[chunk_index].materials[chunk_cell_index];
 				}
 			}
 		}
@@ -429,7 +466,10 @@ impl Chunk {
 								| (!matches!(materials[6], Material::Nothing) as usize) << 6
 								| (!matches!(materials[7], Material::Nothing) as usize) << 7;
 
-					let EdgeData { count, edge_indices } = CELL_EDGE_MAP[case_index];
+					let EdgeData {
+						count,
+						edge_indices,
+					} = CELL_EDGE_MAP[case_index];
 
 					for edge_indices in edge_indices.chunks(3).take(count as usize) {
 						let vertices = edge_indices
@@ -532,9 +572,9 @@ struct TickingChunk {
 
 impl TickingChunk {
 	fn register(sector: &mut Sector, chunk: Arc<Chunk>) {
-		let rigid_body = sector
-			.physics
-			.insert_rigid_body(RigidBodyBuilder::fixed().translation(chunk.coordinates.voxject_relative_translation()));
+		let rigid_body = sector.physics.insert_rigid_body(
+			RigidBodyBuilder::fixed().translation(chunk.coordinates.voxject_relative_translation()),
+		);
 
 		let collider = {
 			let collision = chunk.read_collision_immediately();
@@ -555,7 +595,9 @@ impl TickingChunk {
 			_collider: collider,
 		};
 
-		sector.ticking_chunks.insert(ticking_chunk.coordinates, ticking_chunk);
+		sector
+			.ticking_chunks
+			.insert(ticking_chunk.coordinates, ticking_chunk);
 	}
 }
 

@@ -1,7 +1,17 @@
-use crate::{extractors::Authenticated, types::Email, types::InternalError, types::Token, Gateway, ARGON_2};
+use crate::{
+	extractors::Authenticated,
+	types::{Email, InternalError, Token},
+	Gateway, ARGON_2,
+};
 use argon2::{password_hash::Error as ArgonError, PasswordHash, PasswordVerifier};
-use axum::response::{IntoResponse, Response};
-use axum::{debug_handler, extract::Query, extract::State, http::StatusCode, routing::get, Json, Router};
+use axum::{
+	debug_handler,
+	extract::{Query, State},
+	http::StatusCode,
+	response::{IntoResponse, Response},
+	routing::get,
+	Json, Router,
+};
 use chacha20poly1305::{aead::OsRng, ChaCha20Poly1305, KeyInit};
 use serde::{Deserialize, Serialize};
 use solarscape_shared::message::backend::AllowConnection;
@@ -21,12 +31,16 @@ async fn token(
 ) -> Result<Token, GetTokenError> {
 	let mut transaction = database.begin().await?;
 
-	let player = query!("SELECT id, password FROM players WHERE email = $1", email as _)
-		.fetch_optional(&mut *transaction)
-		.await?
-		.ok_or(GetTokenError::AccountDoesNotExist)?;
+	let player = query!(
+		"SELECT id, password FROM players WHERE email = $1",
+		email as _
+	)
+	.fetch_optional(&mut *transaction)
+	.await?
+	.ok_or(GetTokenError::AccountDoesNotExist)?;
 
-	let result = ARGON_2.verify_password(password.as_bytes(), &PasswordHash::new(&player.password)?);
+	let result =
+		ARGON_2.verify_password(password.as_bytes(), &PasswordHash::new(&player.password)?);
 
 	match result {
 		Ok(_) => {}
@@ -96,7 +110,10 @@ impl IntoResponse for GetTokenError {
 			GetTokenError::IncorrectPassword => (StatusCode::UNAUTHORIZED, "Incorrect Password"),
 			GetTokenError::Internal(error) => {
 				error!("{error}");
-				(StatusCode::INTERNAL_SERVER_ERROR, "Internal / Unknown Error")
+				(
+					StatusCode::INTERNAL_SERVER_ERROR,
+					"Internal / Unknown Error",
+				)
 			}
 		}
 		.into_response()
@@ -114,7 +131,10 @@ async fn connect(
 	// Send Key to Sector Server through Channel
 	// Currently, sector servers just create a channel with the same name as the sector
 	// This is fine for now, but will need to be improved when we implement proper support for multiple sectors
-	let allow_connection = AllowConnection { id, key: key.into() };
+	let allow_connection = AllowConnection {
+		id,
+		key: key.into(),
+	};
 	let message = serde_json::to_string(&allow_connection).unwrap();
 	query!(
 		"SELECT pg_notify(channel, message) FROM (VALUES ($1, $2)) notifies(channel, message)",
@@ -156,7 +176,10 @@ impl IntoResponse for ConnectError {
 		match self {
 			ConnectError::Internal(error) => {
 				error!("{error}");
-				(StatusCode::INTERNAL_SERVER_ERROR, "Internal / Unknown Error")
+				(
+					StatusCode::INTERNAL_SERVER_ERROR,
+					"Internal / Unknown Error",
+				)
 			}
 		}
 		.into_response()

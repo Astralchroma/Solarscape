@@ -1,6 +1,13 @@
-use crate::{types::InternalError, types::Token, Gateway};
-use axum::response::{IntoResponse, Response};
-use axum::{async_trait, extract::FromRequestParts, http::request::Parts, http::StatusCode};
+use crate::{
+	types::{InternalError, Token},
+	Gateway,
+};
+use axum::{
+	async_trait,
+	extract::FromRequestParts,
+	http::{request::Parts, StatusCode},
+	response::{IntoResponse, Response},
+};
 use solarscape_shared::data::Id;
 use sqlx::{query, query_scalar};
 use thiserror::Error;
@@ -32,9 +39,12 @@ impl FromRequestParts<Gateway> for Authenticated {
 		.await?
 		.ok_or(AuthenticationError::Unauthorized)?;
 
-		query!("UPDATE tokens SET used = DEFAULT WHERE token = $1", token as _)
-			.execute(database)
-			.await?;
+		query!(
+			"UPDATE tokens SET used = DEFAULT WHERE token = $1",
+			token as _
+		)
+		.execute(database)
+		.await?;
 
 		Ok(Self(id))
 	}

@@ -53,7 +53,7 @@ impl<'d> Deserialize<'d> for Email {
 		const EMAIL_OPTIONS: Options = Options {
 			minimum_sub_domains: 2,     // Disallows `example`, but allows `example.com`
 			allow_domain_literal: true, // If for some reasons you want to use an IP address... go ahead I guess lmao
-			allow_display_text: false,  // We're not Git, we don't want `Astralchroma <astralchroma@proton.me>`
+			allow_display_text: false, // We're not Git, we don't want `Astralchroma <astralchroma@proton.me>`
 		};
 
 		return match EmailAddress::parse_with_options(&address, EMAIL_OPTIONS) {
@@ -81,7 +81,8 @@ where
 	Box<str>: Decode<'r, D>,
 {
 	fn decode(value: <D>::ValueRef<'r>) -> std::result::Result<Self, BoxDynError> {
-		<Box<str> as Decode<D>>::decode(value).map(|address| Self(EmailAddress::new_unchecked(address)))
+		<Box<str> as Decode<D>>::decode(value)
+			.map(|address| Self(EmailAddress::new_unchecked(address)))
 	}
 }
 
@@ -89,7 +90,10 @@ impl<'r, D: Database> Encode<'r, D> for Email
 where
 	Box<str>: Encode<'r, D>,
 {
-	fn encode_by_ref(&self, buffer: &mut <D>::ArgumentBuffer<'r>) -> std::result::Result<IsNull, BoxDynError> {
+	fn encode_by_ref(
+		&self,
+		buffer: &mut <D>::ArgumentBuffer<'r>,
+	) -> std::result::Result<IsNull, BoxDynError> {
 		<Box<str> as Encode<D>>::encode_by_ref(&self.0.email().into_boxed_str(), buffer)
 	}
 }

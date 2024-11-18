@@ -1,5 +1,9 @@
-use crate::client::{AnyState, State};
-use crate::{login::Login, world::Sector, ClArgs};
+use crate::{
+	client::{AnyState, State},
+	login::Login,
+	world::Sector,
+	ClArgs,
+};
 use bytemuck::cast_slice;
 use egui::{Align2, Color32, Context, Pos2, ViewportId};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
@@ -8,34 +12,60 @@ use image::GenericImageView;
 use log::{error, info, warn};
 use nalgebra::{vector, Isometry3, Perspective3, Translation3, Vector3};
 use solarscape_shared::data::world::BlockType;
-use std::collections::{HashMap, VecDeque};
-use std::time::{Duration, Instant};
-use std::{fmt::Write, iter::once, str::FromStr, sync::Arc};
+use std::{
+	collections::{HashMap, VecDeque},
+	fmt::Write,
+	iter::once,
+	str::FromStr,
+	sync::Arc,
+	time::{Duration, Instant},
+};
 use thiserror::Error;
 use tobj::GPU_LOAD_OPTIONS;
 use tokio::runtime::Handle;
-use wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder::LayerMajor};
-use wgpu::PrimitiveTopology::{LineList, TriangleList};
-use wgpu::TextureDimension::{self, D2};
-use wgpu::TextureFormat::{self, Depth32Float, Rgba8UnormSrgb};
 use wgpu::{
-	include_wgsl, rwh::HandleError, vertex_attr_array, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry,
-	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferUsages,
-	Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor, CompareFunction::LessEqual,
-	CompositeAlphaMode::Opaque, CreateSurfaceError, DepthStencilState, Device, DeviceDescriptor, Dx12Compiler,
-	Extent3d, Face::Back, Features, FragmentState, FrontFace::Ccw, Gles3MinorVersion::Version0, IndexFormat, Instance,
-	InstanceDescriptor, InstanceFlags, Limits, LoadOp::Clear, MemoryHints::Performance, MultisampleState, Operations,
-	PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode::Fill, PowerPreference::HighPerformance,
-	PresentMode::AutoNoVsync, PrimitiveState, PushConstantRange, Queue, RenderPass, RenderPassColorAttachment,
-	RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
-	RequestAdapterOptions, RequestDeviceError, SamplerBindingType::NonFiltering, SamplerDescriptor, ShaderStages,
-	StoreOp::Store, Surface, SurfaceConfiguration, SurfaceTargetUnsafe, Texture, TextureDescriptor,
-	TextureSampleType::Float, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
-	VertexBufferLayout, VertexState, VertexStepMode,
+	include_wgsl,
+	rwh::HandleError,
+	util::{BufferInitDescriptor, DeviceExt, TextureDataOrder::LayerMajor},
+	vertex_attr_array, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry,
+	BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendState,
+	Buffer, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
+	CompareFunction::LessEqual,
+	CompositeAlphaMode::Opaque,
+	CreateSurfaceError, DepthStencilState, Device, DeviceDescriptor, Dx12Compiler, Extent3d,
+	Face::Back,
+	Features, FragmentState,
+	FrontFace::Ccw,
+	Gles3MinorVersion::Version0,
+	IndexFormat, Instance, InstanceDescriptor, InstanceFlags, Limits,
+	LoadOp::Clear,
+	MemoryHints::Performance,
+	MultisampleState, Operations, PipelineCompilationOptions, PipelineLayoutDescriptor,
+	PolygonMode::Fill,
+	PowerPreference::HighPerformance,
+	PresentMode::AutoNoVsync,
+	PrimitiveState,
+	PrimitiveTopology::{LineList, TriangleList},
+	PushConstantRange, Queue, RenderPass, RenderPassColorAttachment,
+	RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline,
+	RenderPipelineDescriptor, RequestAdapterOptions, RequestDeviceError,
+	SamplerBindingType::NonFiltering,
+	SamplerDescriptor, ShaderStages,
+	StoreOp::Store,
+	Surface, SurfaceConfiguration, SurfaceTargetUnsafe, Texture, TextureDescriptor,
+	TextureDimension::{self, D2},
+	TextureFormat::{self, Depth32Float, Rgba8UnormSrgb},
+	TextureSampleType::Float,
+	TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexBufferLayout,
+	VertexState, VertexStepMode,
 };
-use winit::dpi::{LogicalPosition, PhysicalSize};
-use winit::window::{CursorGrabMode, Window};
-use winit::{error::OsError, event::WindowEvent, event_loop::ActiveEventLoop};
+use winit::{
+	dpi::{LogicalPosition, PhysicalSize},
+	error::OsError,
+	event::WindowEvent,
+	event_loop::ActiveEventLoop,
+	window::{CursorGrabMode, Window},
+};
 
 pub struct Renderer {
 	// Window & Surface
@@ -113,7 +143,8 @@ impl Renderer {
 				.with_title("Solarscape"),
 		)?;
 
-		let surface = unsafe { instance.create_surface_unsafe(SurfaceTargetUnsafe::from_window(&window)?) }?;
+		let surface =
+			unsafe { instance.create_surface_unsafe(SurfaceTargetUnsafe::from_window(&window)?) }?;
 
 		let adapter = Handle::current()
 			.block_on(instance.request_adapter(&RequestAdapterOptions {
@@ -148,9 +179,11 @@ impl Renderer {
 					max_texture_dimension_2d: adapter.limits().max_texture_dimension_2d,
 
 					// These are minimums, not maximums, so we'll just request what the GPU supports
-					min_storage_buffer_offset_alignment: adapter.limits().min_storage_buffer_offset_alignment,
+					min_storage_buffer_offset_alignment:
+						adapter.limits().min_storage_buffer_offset_alignment,
 					min_subgroup_size: adapter.limits().min_subgroup_size,
-					min_uniform_buffer_offset_alignment: adapter.limits().min_uniform_buffer_offset_alignment,
+					min_uniform_buffer_offset_alignment:
+						adapter.limits().min_uniform_buffer_offset_alignment,
 
 					// Limits that seem to be imposed by Egui
 					max_bind_groups: 2,
@@ -203,8 +236,9 @@ impl Renderer {
 
 		surface.configure(&device, &config);
 
-		let terrain_textures_image = image::load_from_memory(include_bytes!("resources/terrain_textures.png"))
-			.expect("terrain_textures.png must be valid");
+		let terrain_textures_image =
+			image::load_from_memory(include_bytes!("resources/terrain_textures.png"))
+				.expect("terrain_textures.png must be valid");
 		let terrain_textures_rgba8 = terrain_textures_image.to_rgba8();
 		let (terrain_textures_width, terrain_textures_height) = terrain_textures_image.dimensions();
 		let terrain_textures_size = Extent3d {
@@ -232,27 +266,28 @@ impl Renderer {
 		let terrain_textures_view = terrain_textures.create_view(&TextureViewDescriptor::default());
 		let terrain_textures_sampler = device.create_sampler(&SamplerDescriptor::default());
 
-		let terrain_textures_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-			label: Some("renderer.voxject#texture_bind_group_layout"),
-			entries: &[
-				BindGroupLayoutEntry {
-					binding: 0,
-					visibility: ShaderStages::FRAGMENT,
-					ty: BindingType::Texture {
-						sample_type: Float { filterable: false },
-						view_dimension: TextureViewDimension::D2,
-						multisampled: false,
+		let terrain_textures_bind_group_layout =
+			device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+				label: Some("renderer.voxject#texture_bind_group_layout"),
+				entries: &[
+					BindGroupLayoutEntry {
+						binding: 0,
+						visibility: ShaderStages::FRAGMENT,
+						ty: BindingType::Texture {
+							sample_type: Float { filterable: false },
+							view_dimension: TextureViewDimension::D2,
+							multisampled: false,
+						},
+						count: None,
 					},
-					count: None,
-				},
-				BindGroupLayoutEntry {
-					binding: 1,
-					visibility: ShaderStages::FRAGMENT,
-					ty: BindingType::Sampler(NonFiltering),
-					count: None,
-				},
-			],
-		});
+					BindGroupLayoutEntry {
+						binding: 1,
+						visibility: ShaderStages::FRAGMENT,
+						ty: BindingType::Sampler(NonFiltering),
+						count: None,
+					},
+				],
+			});
 
 		let terrain_textures_bind_group = device.create_bind_group(&BindGroupDescriptor {
 			label: Some("renderer.voxject#texture_bind_group"),
@@ -362,7 +397,10 @@ impl Renderer {
 
 				let block_render_data = Arc::new(BlockRenderData {
 					positions: device.create_buffer_init(&BufferInitDescriptor {
-						label: Some(&format!("Block Renderer > Block '{}' > Positions", model.name)),
+						label: Some(&format!(
+							"Block Renderer > Block '{}' > Positions",
+							model.name
+						)),
 						contents: cast_slice(&model.mesh.positions),
 						usage: BufferUsages::VERTEX,
 					}),
@@ -375,7 +413,10 @@ impl Renderer {
 						usage: BufferUsages::VERTEX,
 					}),
 					indices: device.create_buffer_init(&BufferInitDescriptor {
-						label: Some(&format!("Block Renderer > Block '{}' > Indices", model.name)),
+						label: Some(&format!(
+							"Block Renderer > Block '{}' > Indices",
+							model.name
+						)),
 						contents: cast_slice(&model.mesh.indices),
 						usage: BufferUsages::INDEX,
 					}),
@@ -439,30 +480,32 @@ impl Renderer {
 			&structure_block_textures_raw,
 		);
 
-		let structure_block_texture_view = structure_block_texture.create_view(&TextureViewDescriptor::default());
+		let structure_block_texture_view =
+			structure_block_texture.create_view(&TextureViewDescriptor::default());
 		let structure_block_texture_sampler = device.create_sampler(&SamplerDescriptor::default());
 
-		let structure_blocks_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-			label: Some("Block Renderer > Bind Group Layout"),
-			entries: &[
-				BindGroupLayoutEntry {
-					binding: 0,
-					visibility: ShaderStages::FRAGMENT,
-					ty: BindingType::Texture {
-						sample_type: Float { filterable: false },
-						view_dimension: TextureViewDimension::D2,
-						multisampled: false,
+		let structure_blocks_bind_group_layout =
+			device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+				label: Some("Block Renderer > Bind Group Layout"),
+				entries: &[
+					BindGroupLayoutEntry {
+						binding: 0,
+						visibility: ShaderStages::FRAGMENT,
+						ty: BindingType::Texture {
+							sample_type: Float { filterable: false },
+							view_dimension: TextureViewDimension::D2,
+							multisampled: false,
+						},
+						count: None,
 					},
-					count: None,
-				},
-				BindGroupLayoutEntry {
-					binding: 1,
-					visibility: ShaderStages::FRAGMENT,
-					ty: BindingType::Sampler(NonFiltering),
-					count: None,
-				},
-			],
-		});
+					BindGroupLayoutEntry {
+						binding: 1,
+						visibility: ShaderStages::FRAGMENT,
+						ty: BindingType::Sampler(NonFiltering),
+						count: None,
+					},
+				],
+			});
 
 		let structure_block_bind_group = device.create_bind_group(&BindGroupDescriptor {
 			label: Some("Block Renderer > Bind Group"),
@@ -481,14 +524,15 @@ impl Renderer {
 
 		let structure_block_shader = device.create_shader_module(include_wgsl!("structure.wgsl"));
 
-		let structure_block_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-			label: Some("Block Renderer > Pipeline Layout"),
-			bind_group_layouts: &[&structure_blocks_bind_group_layout],
-			push_constant_ranges: &[PushConstantRange {
-				stages: ShaderStages::VERTEX,
-				range: 0..64,
-			}],
-		});
+		let structure_block_pipeline_layout =
+			device.create_pipeline_layout(&PipelineLayoutDescriptor {
+				label: Some("Block Renderer > Pipeline Layout"),
+				bind_group_layouts: &[&structure_blocks_bind_group_layout],
+				push_constant_ranges: &[PushConstantRange {
+					stages: ShaderStages::VERTEX,
+					range: 0..64,
+				}],
+			});
 
 		let structure_block_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
 			label: Some("Block Renderer > Pipeline"),
@@ -634,10 +678,20 @@ impl Renderer {
 		let depth_buffer = device.create_texture(&depth_buffer_descriptor);
 		let depth_buffer_view = depth_buffer.create_view(&depth_buffer_view_descriptor);
 
-		let debug_state = EguiState::new(Context::default(), ViewportId::default(), &window, None, None, None);
+		let debug_state = EguiState::new(
+			Context::default(),
+			ViewportId::default(),
+			&window,
+			None,
+			None,
+			None,
+		);
 		let egui_renderer = EguiRenderer::new(&device, config.format, Some(Depth32Float), 1, false);
 
-		info!("Renderer initialized in {:.0?}", Instant::now() - start_time);
+		info!(
+			"Renderer initialized in {:.0?}",
+			Instant::now() - start_time
+		);
 
 		Ok(Self {
 			window,
@@ -659,7 +713,12 @@ impl Renderer {
 			depth_buffer,
 			depth_buffer_view,
 
-			perspective: Perspective3::new(width as f32 / height as f32, f32::to_radians(90.0), 0.05, f32::MAX),
+			perspective: Perspective3::new(
+				width as f32 / height as f32,
+				f32::to_radians(90.0),
+				0.05,
+				f32::MAX,
+			),
 
 			chunk_pipeline,
 			terrain_textures_bind_group,
@@ -683,7 +742,9 @@ impl Renderer {
 			depth_or_array_layers: 1,
 		};
 		self.depth_buffer = self.device.create_texture(&self.depth_buffer_descriptor);
-		self.depth_buffer_view = self.depth_buffer.create_view(&TextureViewDescriptor::default());
+		self.depth_buffer_view = self
+			.depth_buffer
+			.create_view(&TextureViewDescriptor::default());
 
 		self.perspective.set_aspect(width as f32 / height as f32);
 	}
@@ -723,7 +784,10 @@ impl Renderer {
 		self.egui_state
 			.handle_platform_output(&self.window, gui_output.platform_output);
 
-		let paint_jobs = self.egui_state.egui_ctx().tessellate(gui_output.shapes, 1.0);
+		let paint_jobs = self
+			.egui_state
+			.egui_ctx()
+			.tessellate(gui_output.shapes, 1.0);
 		let screen_descriptor = &ScreenDescriptor {
 			size_in_pixels: [self.config.width, self.config.height],
 			pixels_per_point: 1.0, // Don't know how to calculate this, come back to it later.
@@ -734,11 +798,20 @@ impl Renderer {
 				.update_texture(&self.device, &self.queue, id, &image_delta);
 		}
 
-		let view = output.texture.create_view(&TextureViewDescriptor::default());
-		let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
+		let view = output
+			.texture
+			.create_view(&TextureViewDescriptor::default());
+		let mut encoder = self
+			.device
+			.create_command_encoder(&CommandEncoderDescriptor::default());
 
-		self.egui_renderer
-			.update_buffers(&self.device, &self.queue, &mut encoder, &paint_jobs, &screen_descriptor);
+		self.egui_renderer.update_buffers(
+			&self.device,
+			&self.queue,
+			&mut encoder,
+			&paint_jobs,
+			&screen_descriptor,
+		);
 
 		{
 			let mut render_pass = encoder
@@ -788,7 +861,8 @@ impl Renderer {
 			false => self.frame_time_total / self.frame_times.len() as u32,
 		};
 
-		self.frames_per_second = (self.frame_times.len() as f64 / self.frame_time_total.as_secs_f64()).round() as usize;
+		self.frames_per_second =
+			(self.frame_times.len() as f64 / self.frame_time_total.as_secs_f64()).round() as usize;
 
 		self.window.request_redraw();
 	}
@@ -841,7 +915,12 @@ impl Render for Sector {
 
 		self.process_messages(&renderer.device);
 
-		let view = self.player.location.rotation.to_rotation_matrix().to_homogeneous()
+		let view = self
+			.player
+			.location
+			.rotation
+			.to_rotation_matrix()
+			.to_homogeneous()
 			* Translation3::from(-self.player.location.position.coords).to_homogeneous();
 		let camera_matrix = renderer.perspective.to_homogeneous() * view;
 
@@ -878,7 +957,8 @@ impl Render for Sector {
 				// Yes, we are going to allocate a temporary buffer for every. single. block.
 				// This is how you're supposed to do things... right? *It's not*
 				let mut instance_buffer_data = [0u8; 68];
-				instance_buffer_data[..64].copy_from_slice(cast_slice(&[location.to_homogeneous()]));
+				instance_buffer_data[..64]
+					.copy_from_slice(cast_slice(&[location.to_homogeneous()]));
 				instance_buffer_data[64..].copy_from_slice(cast_slice(&[1.0f32]));
 
 				let instance_buffer = renderer.device.create_buffer_init(&BufferInitDescriptor {
@@ -901,7 +981,12 @@ impl Render for Sector {
 		// Draw a block to act as a placement indicator
 		let location = Isometry3::<f32>::from(
 			self.player.location.position
-				+ (self.player.location.rotation.inverse_transform_vector(&-Vector3::z()) * 3.0),
+				+ (self
+					.player
+					.location
+					.rotation
+					.inverse_transform_vector(&-Vector3::z())
+					* 3.0),
 		);
 		let mut instance_buffer_data = [0u8; 68];
 		instance_buffer_data[..64].copy_from_slice(cast_slice(&[location.to_homogeneous()]));

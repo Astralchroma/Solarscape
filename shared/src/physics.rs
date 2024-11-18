@@ -1,12 +1,16 @@
 use nalgebra::Vector3;
-use rapier3d::dynamics::{
-	CCDSolver, ImpulseJointHandle, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointHandle,
-	MultibodyJointSet, RigidBody, RigidBodyHandle, RigidBodySet,
+use rapier3d::{
+	dynamics::{
+		CCDSolver, ImpulseJointHandle, ImpulseJointSet, IntegrationParameters, IslandManager,
+		MultibodyJointHandle, MultibodyJointSet, RigidBody, RigidBodyHandle, RigidBodySet,
+	},
+	geometry::{Collider, ColliderHandle, ColliderSet, DefaultBroadPhase, NarrowPhase},
+	pipeline::PhysicsPipeline,
 };
-use rapier3d::geometry::{Collider, ColliderHandle, ColliderSet, DefaultBroadPhase, NarrowPhase};
-use rapier3d::pipeline::PhysicsPipeline;
 use std::ops::{Deref, DerefMut};
-use tokio::sync::mpsc::{unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender};
+use tokio::sync::mpsc::{
+	unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
+};
 
 pub struct Physics {
 	handle_drop_receiver: Receiver<HandleDrop>,
@@ -93,7 +97,10 @@ impl Physics {
 		);
 	}
 
-	pub fn insert_rigid_body(&mut self, rigid_body: impl Into<RigidBody>) -> AutoCleanup<RigidBodyHandle> {
+	pub fn insert_rigid_body(
+		&mut self,
+		rigid_body: impl Into<RigidBody>,
+	) -> AutoCleanup<RigidBodyHandle> {
 		AutoCleanup {
 			handle: self.rigid_bodies.insert(rigid_body),
 			handle_drop_sender: self.handle_drop_sender.clone(),
@@ -110,9 +117,11 @@ impl Physics {
 		collider: impl Into<Collider>,
 	) -> AutoCleanup<ColliderHandle> {
 		AutoCleanup {
-			handle: self
-				.colliders
-				.insert_with_parent(collider, rigid_body_handle, &mut self.rigid_bodies),
+			handle: self.colliders.insert_with_parent(
+				collider,
+				rigid_body_handle,
+				&mut self.rigid_bodies,
+			),
 			handle_drop_sender: self.handle_drop_sender.clone(),
 		}
 	}

@@ -1,13 +1,19 @@
 use crate::sector::{ClientLock, Sector, SharedSector, TickLock};
 use nalgebra::{convert_unchecked, vector, IsometryMatrix3, Vector3};
-use solarscape_shared::connection::{Connection, ServerEnd};
-use solarscape_shared::data::world::{ChunkCoordinates, Item, Level, Location, LEVELS};
-use solarscape_shared::data::Id;
-use solarscape_shared::message::clientbound::{InventorySlot, Sync, Voxject};
+use solarscape_shared::{
+	connection::{Connection, ServerEnd},
+	data::{
+		world::{ChunkCoordinates, Level, Location, LEVELS},
+		Id,
+	},
+	message::clientbound::{InventorySlot, Sync, Voxject},
+};
 use sqlx::{query_as, PgPool};
-use std::collections::HashSet;
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
+use std::{
+	collections::HashSet,
+	ops::{Deref, DerefMut},
+	sync::Arc,
+};
 use tokio::runtime::Handle;
 
 pub struct Player {
@@ -67,7 +73,10 @@ impl Player {
 			.expect("inventory")
 	}
 
-	pub fn compute_locks(&self, sector: &Arc<SharedSector>) -> (HashSet<ChunkCoordinates>, HashSet<ChunkCoordinates>) {
+	pub fn compute_locks(
+		&self,
+		sector: &Arc<SharedSector>,
+	) -> (HashSet<ChunkCoordinates>, HashSet<ChunkCoordinates>) {
 		const MULTIPLIER: i32 = 1;
 
 		let mut client_locks = HashSet::new();
@@ -78,9 +87,14 @@ impl Player {
 			// (0.5 0.5 0.5, Chunk 0 0 0, Level 0) is the same as (0.25 0.25 0.25, Chunk 0, 0, 0, Level 1).
 
 			// Voxjects temporarily do not have a position until we intograte Rapier
-			let mut player_position =
-				IsometryMatrix3::default().inverse_transform_vector(&self.location.position.coords) / 16.0;
-			let mut player_chunk = ChunkCoordinates::new(voxject.id, convert_unchecked(player_position), Level::new(0));
+			let mut player_position = IsometryMatrix3::default()
+				.inverse_transform_vector(&self.location.position.coords)
+				/ 16.0;
+			let mut player_chunk = ChunkCoordinates::new(
+				voxject.id,
+				convert_unchecked(player_position),
+				Level::new(0),
+			);
 			let mut level_chunks = HashSet::new();
 
 			tick_locks.insert(player_chunk);
@@ -90,15 +104,24 @@ impl Player {
 				let radius = ((*level as i32 / LEVELS as i32) * MULTIPLIER + MULTIPLIER) >> *level;
 
 				if radius > 0 {
-					for x in player_chunk.coordinates.x - radius..=player_chunk.coordinates.x + radius {
-						for y in player_chunk.coordinates.y - radius..=player_chunk.coordinates.y + radius {
-							for z in player_chunk.coordinates.z - radius..=player_chunk.coordinates.z + radius {
-								let chunk = ChunkCoordinates::new(voxject.id, vector![x, y, z], level);
+					for x in
+						player_chunk.coordinates.x - radius..=player_chunk.coordinates.x + radius
+					{
+						for y in player_chunk.coordinates.y - radius
+							..=player_chunk.coordinates.y + radius
+						{
+							for z in player_chunk.coordinates.z - radius
+								..=player_chunk.coordinates.z + radius
+							{
+								let chunk =
+									ChunkCoordinates::new(voxject.id, vector![x, y, z], level);
 
 								// circles look nicer
-								let chunk_center = vector![x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5];
+								let chunk_center =
+									vector![x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5];
 								if player_chunk != chunk
-									&& player_position.metric_distance(&chunk_center) as i32 > radius
+									&& player_position.metric_distance(&chunk_center) as i32
+										> radius
 								{
 									continue;
 								}
@@ -125,7 +148,10 @@ impl Player {
 				player_chunk = player_chunk.upleveled();
 
 				if *level < LEVELS - 2 {
-					level_chunks = level_chunks.into_iter().map(|chunk| chunk.upleveled()).collect();
+					level_chunks = level_chunks
+						.into_iter()
+						.map(|chunk| chunk.upleveled())
+						.collect();
 				}
 			}
 		}

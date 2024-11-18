@@ -35,5 +35,8 @@ var<push_constant> camera: mat4x4<f32>;
 }
 
 @fragment fn fragment(vertex: Vertex) -> @location(0) vec4<f32> {
-	return vec4(textureSample(texture, texture_sampler, vertex.texture_coordinates).xyz, vertex.opacity);
+	return vec4(
+		textureSample(texture, texture_sampler, vertex.texture_coordinates).xyz,
+		vertex.opacity
+	);
 }

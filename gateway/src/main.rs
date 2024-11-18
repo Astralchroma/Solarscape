@@ -6,7 +6,14 @@ use env_logger::Env;
 use itertools::Itertools;
 use log::info;
 use sqlx::{postgres::PgConnectOptions, PgPool};
-use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, str::FromStr, sync::Arc, sync::LazyLock, time::Instant};
+use std::{
+	fs::read_to_string,
+	net::SocketAddr,
+	path::PathBuf,
+	str::FromStr,
+	sync::{Arc, LazyLock},
+	time::Instant,
+};
 use tokio::{net::TcpListener, runtime::Runtime};
 
 mod extractors;
@@ -61,7 +68,11 @@ fn main() {
 
 	let cl_args = ClArgs::parse();
 
-	env_logger::init_from_env(Env::default().default_filter_or(if cfg!(debug_assertions) { "debug" } else { "info" }));
+	env_logger::init_from_env(Env::default().default_filter_or(if cfg!(debug_assertions) {
+		"debug"
+	} else {
+		"info"
+	}));
 	info!("Solarscape (Gateway) v{}", env!("CARGO_PKG_VERSION"));
 
 	let postgres = cl_args.postgres.postgres.clone().unwrap_or_else(|| {
@@ -99,7 +110,9 @@ fn main() {
 
 	info!("Ready! {:.0?}", Instant::now() - start_time);
 
-	runtime.block_on(async { axum::serve(listener, router).await }).unwrap();
+	runtime
+		.block_on(async { axum::serve(listener, router).await })
+		.unwrap();
 }
 
 const LOOKUP: [char; 16] = [
