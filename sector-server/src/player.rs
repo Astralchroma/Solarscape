@@ -1,5 +1,6 @@
 use crate::sector::{ClientLock, Sector, SharedSector, TickLock};
 use nalgebra::{convert_unchecked, vector, IsometryMatrix3, Vector3};
+use rustc_hash::FxBuildHasher;
 use solarscape_shared::{
 	connection::{Connection, ServerEnd},
 	data::{
@@ -76,17 +77,20 @@ impl Player {
 	pub fn compute_locks(
 		&self,
 		sector: &Arc<SharedSector>,
-	) -> (HashSet<ChunkCoordinates>, HashSet<ChunkCoordinates>) {
+	) -> (
+		HashSet<ChunkCoordinates, FxBuildHasher>,
+		HashSet<ChunkCoordinates, FxBuildHasher>,
+	) {
 		const MULTIPLIER: i32 = 1;
 
-		let mut client_locks = HashSet::new();
-		let mut tick_locks = HashSet::new();
+		let mut client_locks = HashSet::with_hasher(FxBuildHasher);
+		let mut tick_locks = HashSet::with_hasher(FxBuildHasher);
 
 		for voxject in sector.voxjects.values() {
 			// These values are relative to the current level. So a player position of
 			// (0.5 0.5 0.5, Chunk 0 0 0, Level 0) is the same as (0.25 0.25 0.25, Chunk 0, 0, 0, Level 1).
 
-			// Voxjects temporarily do not have a position until we intograte Rapier
+			// Voxjects temporarily do not have a position until we integrate Rapier
 			let mut player_position = IsometryMatrix3::default()
 				.inverse_transform_vector(&self.location.position.coords)
 				/ 16.0;

@@ -11,6 +11,7 @@ use rapier3d::{
 	dynamics::{RigidBodyBuilder, RigidBodyHandle},
 	geometry::{ColliderBuilder, ColliderHandle},
 };
+use rustc_hash::FxBuildHasher;
 use solarscape_shared::{
 	connection::{ClientEnd, Connection},
 	data::{
@@ -60,8 +61,8 @@ pub struct Sector {
 }
 
 pub struct SharedSector {
-	pub chunks: DashMap<ChunkCoordinates, Chunk>,
-	pub dependent_chunks: DashMap<ChunkCoordinates, HashSet<ChunkCoordinates>>,
+	pub chunks: DashMap<ChunkCoordinates, Chunk, FxBuildHasher>,
+	pub dependent_chunks: DashMap<ChunkCoordinates, HashSet<ChunkCoordinates>, FxBuildHasher>,
 }
 
 impl Sector {
@@ -85,8 +86,8 @@ impl Sector {
 
 		Self {
 			shared: Arc::new(SharedSector {
-				chunks: DashMap::new(),
-				dependent_chunks: DashMap::new(),
+				chunks: DashMap::with_hasher(FxBuildHasher),
+				dependent_chunks: DashMap::with_hasher(FxBuildHasher),
 			}),
 
 			player,

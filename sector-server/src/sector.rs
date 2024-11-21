@@ -9,6 +9,7 @@ use rapier3d::{
 	dynamics::{RigidBodyBuilder, RigidBodyHandle},
 	geometry::{ColliderBuilder, ColliderHandle},
 };
+use rustc_hash::FxBuildHasher;
 use solarscape_shared::{
 	connection::{Connection, ConnectionSend, ServerEnd},
 	data::{
@@ -66,7 +67,7 @@ pub struct Sector {
 	events: Receiver<Event>,
 
 	players: Vec<Player>,
-	ticking_chunks: HashMap<ChunkCoordinates, TickingChunk>,
+	ticking_chunks: HashMap<ChunkCoordinates, TickingChunk, FxBuildHasher>,
 	pub structures: Vec<Structure>,
 
 	pub physics: Physics,
@@ -90,7 +91,7 @@ impl Sector {
 			events,
 
 			players: vec![],
-			ticking_chunks: HashMap::new(),
+			ticking_chunks: HashMap::with_hasher(FxBuildHasher),
 			structures: vec![],
 
 			physics: Physics::new(),

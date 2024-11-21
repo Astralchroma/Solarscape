@@ -5,13 +5,13 @@ use crate::{
 	},
 	message::clientbound::SyncStructure,
 	physics::{AutoCleanup, Physics},
-	ShiftHasherBuilder,
 };
 use nalgebra::{vector, Isometry3, Point3, Vector3};
 use rapier3d::{
 	dynamics::{RigidBodyBuilder, RigidBodyHandle},
 	geometry::{ColliderBuilder, ColliderHandle},
 };
+use rustc_hash::FxBuildHasher;
 use std::collections::HashMap;
 
 #[cfg(feature = "backend")]
@@ -21,7 +21,7 @@ pub struct Structure {
 	pub id: Id,
 	pub rigid_body: AutoCleanup<RigidBodyHandle>,
 
-	blocks: HashMap<Vector3<i16>, Block, ShiftHasherBuilder<3>>,
+	blocks: HashMap<Vector3<i16>, Block, FxBuildHasher>,
 }
 
 impl Structure {
@@ -38,7 +38,7 @@ impl Structure {
 				.rotation(vector![x, y, z]),
 		);
 
-		let mut blocks = HashMap::with_capacity_and_hasher(1, ShiftHasherBuilder);
+		let mut blocks = HashMap::with_capacity_and_hasher(1, FxBuildHasher);
 		blocks.insert(
 			nalgebra::vector![0, 0, 0],
 			Block {

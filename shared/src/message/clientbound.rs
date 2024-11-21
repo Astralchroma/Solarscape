@@ -1,11 +1,9 @@
-use crate::{
-	data::{
-		world::{BlockType, ChunkCoordinates, Item, Location, Material},
-		Id,
-	},
-	ShiftHasherBuilder,
+use crate::data::{
+	world::{BlockType, ChunkCoordinates, Item, Location, Material},
+	Id,
 };
 use nalgebra::Vector3;
+use rustc_hash::FxBuildHasher;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::HashMap;
@@ -91,7 +89,7 @@ pub struct SyncStructure {
 	pub id: Id,
 	pub location: Location,
 
-	pub blocks: HashMap<Vector3<i16>, BlockType, ShiftHasherBuilder<3>>,
+	pub blocks: HashMap<Vector3<i16>, BlockType, FxBuildHasher>,
 }
 
 impl From<SyncStructure> for Clientbound {
