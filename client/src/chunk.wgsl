@@ -13,11 +13,11 @@ struct Chunk {
 
 struct Vertex {
 	@builtin(position) position: vec4<f32>,
-	@interpolate(linear) @location(0) chunk_position: vec3<f32>,
-	@interpolate(linear) @location(1) normal: vec3<f32>,
+	@interpolate(perspective) @location(0) chunk_position: vec3<f32>,
+	@interpolate(perspective) @location(1) normal: vec3<f32>,
 	@location(2) material_a: vec2<u32>,
 	@location(3) material_b: vec2<u32>,
-	@interpolate(linear) @location(4) weight: f32,
+	@interpolate(perspective) @location(4) weight: f32,
 }
 
 var<push_constant> camera: mat4x4<f32>;
