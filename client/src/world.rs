@@ -14,7 +14,7 @@ use rapier3d::{
 use solarscape_shared::{
 	connection::{ClientEnd, Connection},
 	data::{
-		world::{ChunkCoordinates, Material},
+		world::{ChunkCoordinates, Material, LEVELS},
 		Id,
 	},
 	message::{
@@ -211,7 +211,7 @@ impl Sector {
 		let mut upleveled_dependency_grid_coordinates = None;
 		let mut upleveled_dependency_chunks = Default::default();
 
-		let should_uplevel = *grid_coordinates.level != 30;
+		let should_uplevel = *grid_coordinates.level != LEVELS - 2;
 		if should_uplevel {
 			upleveled_dependency_grid_coordinates =
 				Some(dependency_grid_coordinates.map(|coordinates| coordinates.upleveled()));
